@@ -1,0 +1,1968 @@
+import React, { useEffect, useRef, useState } from 'react'
+import { supabase } from './supabaseClient.js'
+import { THEME } from './themes.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona } from './lib.js'
+import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
+import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
+import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
+import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag } from './monitoring.js'
+import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
+import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows } from './WorkoutRows.jsx'
+import { MessageThread } from './MessageThread.jsx'
+import { CommunityFeed } from './CommunityFeed.jsx'
+import { LiftProgress } from './LiftProgress.jsx'
+import { FoodSearch } from './FoodSearch.jsx'
+import { MuscleTargeter } from './MuscleTargeter.jsx'
+import { StravaConnect } from './StravaConnect.jsx'
+import { Classes } from './Classes.jsx'
+import { exchangeStrava } from './strava.js'
+import {
+  Ring, MacroBar, MacroRow, Loader, TrendChart,
+  IconHome, IconTrain, IconFridge, IconMeal, IconBody, IconAsk, IconForm, IconContent, IconCommunity, IconTest, ExSets,
+} from './ui.jsx'
+
+const FOCUS_OPTIONS = ['Full body', 'Push', 'Pull', 'Legs', 'Upper body']
+
+export default function ClientApp({ profile, onSignOut }) {
+  const [screen, setScreen] = useState('home')
+  const [targets, setTargets] = useState(null)
+  const [todayLogs, setTodayLogs] = useState([])
+  const [measurements, setMeasurements] = useState([])
+  const [coachName, setCoachName] = useState('')
+  const [heroImages, setHeroImages] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  async function loadAll() {
+    const [t, logs, meas] = await Promise.all([
+      supabase.from('macro_targets').select('*').eq('client_id', profile.id).maybeSingle(),
+      supabase.from('nutrition_logs').select('*').eq('client_id', profile.id).gte('logged_at', startOfTodayISO()).order('logged_at', { ascending: false }),
+      supabase.from('body_measurements').select('*').eq('client_id', profile.id).order('measured_at', { ascending: true }),
+    ])
+    setTargets(t.data || { protein_g: 150, carbs_g: 200, fat_g: 65, calories: 2200 })
+    setTodayLogs(logs.data || [])
+    setMeasurements(meas.data || [])
+    if (profile.trainer_id) {
+      const { data } = await supabase.from('profiles').select('full_name').eq('id', profile.trainer_id).maybeSingle()
+      setCoachName(data?.full_name || 'your coach')
+      const { data: heroes } = await supabase.from('hero_images').select('image_path').eq('coach_id', profile.trainer_id).order('created_at', { ascending: true })
+      setHeroImages((heroes || []).map((h) => supabase.storage.from('content-images').getPublicUrl(h.image_path).data.publicUrl))
+      const { data: p } = await supabase.from('coach_personas').select('*').eq('coach_id', profile.trainer_id).maybeSingle()
+      setPersona(p ? { name: p.display_name, audience: p.audience, philosophy: p.philosophy, tone: p.tone } : null)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadAll() }, [])
+
+  // Handle the Strava OAuth return (?code=...&state=strava_<userId>): exchange
+  // the code for a token, store the connection, then open the Strava screen.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code'), state = params.get('state')
+    if (!code || state !== 'strava_' + profile.id) return
+    ;(async () => {
+      try {
+        const t = await exchangeStrava(code)
+        await supabase.from('strava_connections').upsert({ client_id: profile.id, athlete_id: t.athlete_id, athlete_name: t.athlete_name, refresh_token: t.refresh_token, connected_at: new Date().toISOString() })
+      } catch { /* surfaced on the Strava screen */ }
+      window.history.replaceState({}, '', window.location.pathname)
+      setScreen('strava')
+    })()
+  }, [])
+
+  const consumed = sumMacros(todayLogs)
+  const remaining = remainingMacros(targets, consumed)
+
+  async function logFood({ name, protein_g, carbs_g, fat_g, calories }, source) {
+    const row = {
+      client_id: profile.id, source, name: name || null,
+      protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, calories: calories || 0,
+    }
+    const { data } = await supabase.from('nutrition_logs').insert(row).select().single()
+    if (data) setTodayLogs((l) => [data, ...l])
+  }
+
+  async function saveTargets(next) {
+    setTargets(next)
+    await supabase.from('macro_targets').upsert({ client_id: profile.id, ...next, updated_at: new Date().toISOString() })
+  }
+
+  async function addMeasurement(m) {
+    const { data } = await supabase.from('body_measurements').insert({ client_id: profile.id, ...m }).select().single()
+    if (data) setMeasurements((prev) => [...prev, data].sort((a, b) => a.measured_at.localeCompare(b.measured_at)))
+  }
+
+  if (loading) {
+    return <div className="full-center"><div className="spinner" /><p className="muted">Loading your day…</p></div>
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          {THEME.logo ? <img className="mark-img" src={THEME.logo} alt="" /> : <span className="mark-badge">{THEME.mark}</span>}
+          <span className="brand-name">{THEME.name}</span>
+        </div>
+        <button className="link-btn" onClick={onSignOut}>Sign out</button>
+      </header>
+
+      <main className="screen">
+        {screen === 'home' && <Home name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} onGo={setScreen} onSaveTargets={saveTargets} />}
+        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} />}
+        {screen === 'testing' && <Testing clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'muscles' && (
+          <div className="stack">
+            <button className="link-btn" onClick={() => setScreen('home')}>‹ Back</button>
+            <p className="eyebrow">Muscle targeter</p>
+            <h1 className="h1">Which muscle?</h1>
+            <p className="lead">Tap a muscle group to see the best exercises to train it.</p>
+            <MuscleTargeter />
+          </div>
+        )}
+        {screen === 'expert' && <NutritionExpert clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'monitoring' && <Monitoring clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'strava' && <StravaConnect clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'classes' && <Classes profile={profile} onBack={() => setScreen('home')} />}
+        {screen === 'programs' && <ProgramLibrary clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'recipes' && <RecipeLibrary clientId={profile.id} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
+        {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'barcode' && <BarcodeScan onLog={(m) => logFood(m, 'barcode')} onBack={() => setScreen('home')} />}
+        {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'nudges' && <NudgeSettings clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'checkin' && <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'fridge' && <FridgeScan remaining={remaining} onLog={(m) => logFood(m, 'fridge')} />}
+        {screen === 'meal' && <MealScan onLog={(m) => logFood(m, 'meal')} />}
+        {screen === 'food' && (
+          <div className="stack">
+            <p className="eyebrow">Food diary</p>
+            <h1 className="h1">Log a food or drink.</h1>
+            <p className="lead">Search thousands of foods and drinks, pick your portion, and it’s added to today.</p>
+            <FoodSearch onLog={(m) => logFood(m, 'manual')} />
+          </div>
+        )}
+        {screen === 'body' && <Body measurements={measurements} onAdd={addMeasurement} clientId={profile.id} coachName={coachName} />}
+        {screen === 'ask' && <KimHub clientId={profile.id} coachName={coachName} />}
+        {screen === 'form' && <FormCheck clientId={profile.id} coachName={coachName} />}
+        {screen === 'content' && <IGContent coachName={coachName} />}
+        {screen === 'community' && (
+          <div className="stack">
+            <p className="eyebrow">Community</p>
+            <h1 className="h1">The {coachName?.split(' ')[0] || 'Kim'} community.</h1>
+            <p className="lead">Share your wins and cheer each other on.</p>
+            <CommunityFeed communityCoachId={profile.trainer_id} me={profile.id} myName={profile.full_name} isCoach={false} />
+          </div>
+        )}
+      </main>
+
+      <nav className="tabbar six">
+        <Tab id="home" label="Today" active={screen} onGo={setScreen} icon={IconHome} />
+        <Tab id="train" label="Train" active={screen} onGo={setScreen} icon={IconTrain} />
+        <Tab id="fridge" label="Fridge" active={screen} onGo={setScreen} icon={IconFridge} />
+        <Tab id="meal" label="Meal" active={screen} onGo={setScreen} icon={IconMeal} />
+        <Tab id="body" label="Body" active={screen} onGo={setScreen} icon={IconBody} />
+        <Tab id="ask" label={coachName?.split(' ')[0] || 'Coach'} active={screen} onGo={setScreen} icon={IconAsk} />
+      </nav>
+    </div>
+  )
+}
+
+/* ---------- Home ---------- */
+function HeroCarousel({ images }) {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    if (images.length <= 1) return
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce) return
+    const t = setInterval(() => setI((x) => (x + 1) % images.length), 5000)
+    return () => clearInterval(t)
+  }, [images.length])
+  if (!images.length) return null
+  return (
+    <div className="hero-banner">
+      {images.map((url, idx) => (
+        <img key={idx} src={url} alt="" className={'hero-slide' + (idx === i ? ' on' : '')} />
+      ))}
+      {images.length > 1 && (
+        <div className="hero-dots">
+          {images.map((_, idx) => (
+            <button key={idx} type="button" className={'hero-dot' + (idx === i ? ' on' : '')} onClick={() => setI(idx)} aria-label={`Photo ${idx + 1}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Home({ name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, onGo, onSaveTargets }) {
+  const [editing, setEditing] = useState(false)
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const pct = targets?.calories ? consumed.calories / targets.calories : 0
+  return (
+    <div className="stack">
+      <HeroCarousel images={(THEME.heroImages || []).concat(heroImages)} />
+      <p className="eyebrow">Today</p>
+      <h1 className="h1">Hi {name?.split(' ')[0] || 'there'} — let’s hit your numbers.</h1>
+      {coachName && <p className="lead">Coached by {coachName}.</p>}
+
+      <AccountabilityCard clientId={clientId} coachName={coachName} foodLoggedToday={foodLoggedToday} onGo={onGo} />
+
+      <div className="card ring-card">
+        <Ring value={pct} label="of daily kcal">
+          <b>{consumed.calories}</b>
+          <span>/ {targets?.calories || 0} kcal</span>
+        </Ring>
+        <div className="macro-list">
+          <MacroBar label="Protein" have={consumed.protein_g} goal={targets?.protein_g || 0} unit="g" />
+          <MacroBar label="Carbs" have={consumed.carbs_g} goal={targets?.carbs_g || 0} unit="g" />
+          <MacroBar label="Fat" have={consumed.fat_g} goal={targets?.fat_g || 0} unit="g" />
+        </div>
+      </div>
+
+      <p className="remaining-note">
+        {remaining.calories} kcal left · {remaining.protein_g}g protein to go ·{' '}
+        <button className="link-btn inline" onClick={() => setEditing((v) => !v)}>{editing ? 'close' : 'adjust targets'}</button>
+      </p>
+
+      {editing && <TargetEditor targets={targets} onSave={(t) => { onSaveTargets(t); setEditing(false) }} />}
+
+      <div className="tiles">
+        <button className="tile tile-hero" onClick={() => onGo('fridge')}>
+          <IconFridge />
+          <div><b>Fridge-to-Plate</b><span>Snap your fridge, get a meal that fits your macros</span></div>
+        </button>
+        {THEME.features?.booking && (
+          <button className="tile tile-hero" onClick={() => onGo('classes')}>
+            <IconTrain />
+            <div><b>Book a class</b><span>See the timetable & book your spot</span></div>
+          </button>
+        )}
+        <button className="tile" onClick={() => onGo('train')}>
+          <IconTrain />
+          <div><b>Today’s session</b><span>A plan built for your gym’s kit</span></div>
+        </button>
+        {THEME.features?.programs && (
+          <button className="tile tile-hero" onClick={() => onGo('programs')}>
+            <IconTrain />
+            <div><b>Program library</b><span>Follow a full plan built by {coachFirst}</span></div>
+          </button>
+        )}
+        <button className="tile" onClick={() => onGo('muscles')}>
+          <IconTrain />
+          <div><b>Muscle targeter</b><span>Tap a muscle, get exercises to train it</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('meal')}>
+          <IconMeal />
+          <div><b>Scan a meal</b><span>Photo → calories & macros</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('food')}>
+          <IconMeal />
+          <div><b>Log food</b><span>Search foods & drinks, add your portion</span></div>
+        </button>
+        {THEME.features?.barcode && (
+          <button className="tile" onClick={() => onGo('barcode')}>
+            <IconMeal />
+            <div><b>Barcode scan</b><span>Scan a product, log it in a tap</span></div>
+          </button>
+        )}
+        {THEME.features?.recipes && (
+          <button className="tile" onClick={() => onGo('recipes')}>
+            <IconMeal />
+            <div><b>Recipes</b><span>{coachFirst}’s go-to meals, log in one tap</span></div>
+          </button>
+        )}
+        {THEME.features?.videos && (
+          <button className="tile" onClick={() => onGo('videos')}>
+            <IconForm />
+            <div><b>Video library</b><span>Technique & mindset clips from {coachFirst}</span></div>
+          </button>
+        )}
+        <button className="tile" onClick={() => onGo('body')}>
+          <IconBody />
+          <div><b>Body scan</b><span>Track your progress</span></div>
+        </button>
+        <button className="tile tile-hero" onClick={() => onGo('ask')}>
+          <IconAsk />
+          <div><b>Ask {coachFirst}</b><span>Get an answer in {coachFirst}’s method, any time</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('form')}>
+          <IconForm />
+          <div><b>Form check</b><span>Upload a clip — AI + {coachFirst} check your form</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('content')}>
+          <IconContent />
+          <div><b>From {coachFirst}</b><span>{coachFirst}’s latest posts & inspiration</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('community')}>
+          <IconCommunity />
+          <div><b>Community</b><span>Share wins & cheer each other on</span></div>
+        </button>
+        <button className="tile tile-hero" onClick={() => onGo('checkin')}>
+          <IconAsk />
+          <div><b>Weekly check-in</b><span>Send {coachFirst} your progress & how the week went</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('strava')}>
+          <IconBody />
+          <div><b>Connect Strava</b><span>Pull your runs, rides & workouts into the app</span></div>
+        </button>
+        {THEME.features?.testing && (
+          <button className="tile" onClick={() => onGo('testing')}>
+            <IconTest />
+            <div><b>Performance testing</b><span>Log your tests & track your PBs</span></div>
+          </button>
+        )}
+        {THEME.features?.nutritionExpert && (
+          <button className="tile tile-hero" onClick={() => onGo('expert')}>
+            <IconMeal />
+            <div><b>Nutrition Expert</b><span>Evidence-based sports nutrition, any time</span></div>
+          </button>
+        )}
+        {THEME.features?.monitoring && (
+          <button className="tile" onClick={() => onGo('monitoring')}>
+            <IconBody />
+            <div><b>Readiness &amp; load</b><span>Daily check-in & training-load tracking</span></div>
+          </button>
+        )}
+        {THEME.features?.growth && (
+          <button className="tile" onClick={() => onGo('growth')}>
+            <IconTest />
+            <div><b>Growth tracker</b><span>Your height, growth & maturation</span></div>
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TargetEditor({ targets, onSave }) {
+  const [v, setV] = useState({ ...targets })
+  const set = (k) => (e) => setV((s) => ({ ...s, [k]: Number(e.target.value) || 0 }))
+  return (
+    <div className="card">
+      <div className="grid-2">
+        <label className="field">Calories<input type="number" value={v.calories} onChange={set('calories')} /></label>
+        <label className="field">Protein (g)<input type="number" value={v.protein_g} onChange={set('protein_g')} /></label>
+        <label className="field">Carbs (g)<input type="number" value={v.carbs_g} onChange={set('carbs_g')} /></label>
+        <label className="field">Fat (g)<input type="number" value={v.fat_g} onChange={set('fat_g')} /></label>
+      </div>
+      <button className="btn primary" onClick={() => onSave(v)}>Save targets</button>
+    </div>
+  )
+}
+
+/* ---------- Accountability bot ---------- */
+function AccountabilityCard({ clientId, coachName, foodLoggedToday, onGo }) {
+  const [settings, setSettings] = useState(null)
+  const [trainedToday, setTrainedToday] = useState(false)
+  const [marking, setMarking] = useState(false)
+  const coach = coachName?.split(' ')[0] || 'Kim'
+
+  async function load() {
+    const today = new Date().toISOString().slice(0, 10)
+    const [{ data: s }, { data: comps }] = await Promise.all([
+      supabase.from('accountability_settings').select('*').eq('client_id', clientId).maybeSingle(),
+      supabase.from('workout_completions').select('id').eq('client_id', clientId).eq('completed_on', today),
+    ])
+    setSettings(s || { level: 2, food_nudges: true, workout_nudges: true })
+    setTrainedToday((comps || []).length > 0)
+  }
+  useEffect(() => { load() }, [foodLoggedToday])
+
+  async function markTrained() {
+    setMarking(true)
+    const { error } = await supabase.from('workout_completions').insert({ client_id: clientId, source: 'nudge' })
+    if (!error) setTrainedToday(true)
+    setMarking(false)
+  }
+
+  if (!settings) return null
+  const level = settings.level || 2
+  const seed = daySeed()
+  const showFood = settings.food_nudges && !foodLoggedToday
+  const showWorkout = settings.workout_nudges && !trainedToday
+
+  return (
+    <div className={'card nudge-card lvl-' + level}>
+      <div className="nudge-head">
+        <b>{coach}’s check-in</b>
+        <button className="link-btn inline" onClick={() => onGo('nudges')}>Level {level} · adjust</button>
+      </div>
+      {!showFood && !showWorkout && (
+        <p className="nudge-msg done">Food logged and trained — you’re smashing it today. Proud of you.</p>
+      )}
+      {showFood && (
+        <div className="nudge-row">
+          <p className="nudge-msg">{pickNudge(FOOD_NUDGES, level, seed)}</p>
+          <button className="btn primary sm" onClick={() => onGo('meal')}>Log a meal</button>
+        </div>
+      )}
+      {showWorkout && (
+        <div className="nudge-row">
+          <p className="nudge-msg">{pickNudge(WORKOUT_NUDGES, level, seed + 1)}</p>
+          <div className="nudge-actions">
+            <button className="btn primary sm" onClick={() => onGo('train')}>Start a workout</button>
+            <button className="btn ghost sm" disabled={marking} onClick={markTrained}>I trained today</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NudgeSettings({ clientId, onBack }) {
+  const [settings, setSettings] = useState(null)
+  const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    supabase.from('accountability_settings').select('*').eq('client_id', clientId).maybeSingle()
+      .then(({ data }) => setSettings(data || { level: 2, food_nudges: true, workout_nudges: true }))
+  }, [])
+  async function save(next) {
+    setSettings(next)
+    await supabase.from('accountability_settings').upsert({ client_id: clientId, ...next, updated_at: new Date().toISOString() })
+    setSaved(true); setTimeout(() => setSaved(false), 1200)
+  }
+  if (!settings) return <p className="muted-note">Loading…</p>
+  const level = settings.level || 2
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Accountability</p>
+      <h1 className="h1">How hard should I push you?</h1>
+      <p className="lead">Pick the tone that keeps you on track. Change it any time — and your coach can nudge it too.</p>
+      <div className="level-picker">
+        {LEVELS.map((l) => (
+          <button key={l.n} type="button" className={'level-opt' + (level === l.n ? ' on' : '')} onClick={() => save({ ...settings, level: l.n })}>
+            <div className="level-n">{l.n}</div>
+            <div className="level-body"><b>{l.label}</b><span>{l.blurb}</span></div>
+          </button>
+        ))}
+      </div>
+      <div className="card">
+        <p className="eyebrow">Preview — level {level}</p>
+        <p className="nudge-msg">{pickNudge(FOOD_NUDGES, level, daySeed())}</p>
+        <p className="nudge-msg">{pickNudge(WORKOUT_NUDGES, level, daySeed() + 1)}</p>
+      </div>
+      <div className="card">
+        <label className="toggle-row"><span>Food reminders</span><input type="checkbox" checked={settings.food_nudges} onChange={(e) => save({ ...settings, food_nudges: e.target.checked })} /></label>
+        <label className="toggle-row"><span>Workout reminders</span><input type="checkbox" checked={settings.workout_nudges} onChange={(e) => save({ ...settings, workout_nudges: e.target.checked })} /></label>
+      </div>
+      {saved && <p className="logged-ok">Saved ✓</p>}
+
+      <PushReminders clientId={clientId} />
+    </div>
+  )
+}
+
+function PushReminders({ clientId }) {
+  const [status, setStatus] = useState('checking') // checking | unsupported | denied | off | on
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  async function refresh() { setStatus(await pushStatus()) }
+  useEffect(() => { if (pushSupported()) refresh(); else setStatus('unsupported') }, [])
+
+  async function turnOn() {
+    setBusy(true); setErr(''); setMsg('')
+    try { await enablePush(clientId); await refresh(); setMsg('Phone reminders are on.') }
+    catch (e) { setErr(e.message) }
+    finally { setBusy(false) }
+  }
+  async function turnOff() {
+    setBusy(true); setErr(''); setMsg('')
+    try { await disablePush(); await refresh(); setMsg('Phone reminders turned off.') }
+    catch (e) { setErr(e.message) }
+    finally { setBusy(false) }
+  }
+  async function test() {
+    setBusy(true); setErr(''); setMsg('')
+    try { await sendTestPush(); setMsg('Test sent — check your notifications.') }
+    catch (e) { setErr(e.message) }
+    finally { setBusy(false) }
+  }
+
+  const needsInstall = isIOS() && !isStandalone()
+  return (
+    <div className="card">
+      <p className="eyebrow">Phone reminders</p>
+      <p className="muted-note">Get nudged even when the app is closed — a morning food reminder and an evening workout reminder, in the tone you picked.</p>
+      {status === 'checking' && <p className="muted-note">Checking…</p>}
+      {status === 'unsupported' && <p className="muted-note">This browser can’t do phone reminders. Try Chrome on Android, or add the app to your Home Screen.</p>}
+      {needsInstall && status !== 'unsupported' && (
+        <p className="disclaimer-note">On iPhone: tap Share → “Add to Home Screen”, open the app from there, then turn reminders on.</p>
+      )}
+      {status === 'denied' && <p className="error">Notifications are blocked. Turn them on for this site in your browser settings, then come back.</p>}
+      {status === 'off' && <button className="btn primary big" disabled={busy} onClick={turnOn}>{busy ? 'Turning on…' : 'Turn on phone reminders'}</button>}
+      {status === 'on' && (
+        <div className="stack">
+          <p className="logged-ok">Reminders are on ✓</p>
+          <div className="nudge-actions">
+            <button className="btn primary sm" disabled={busy} onClick={test}>Send me a test</button>
+            <button className="btn ghost sm" disabled={busy} onClick={turnOff}>Turn off</button>
+          </div>
+        </div>
+      )}
+      {msg && <p className="logged-ok">{msg}</p>}
+      {err && <p className="error">{err}</p>}
+    </div>
+  )
+}
+
+/* ---------- Weekly check-in ---------- */
+function ScaleRow({ label, value, onChange }) {
+  return (
+    <div className="scale-row">
+      <span className="scale-label">{label}</span>
+      <div className="scale-btns">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} type="button" className={'scale-btn' + (value === n ? ' on' : '')} onClick={() => onChange(n)}>{n}</button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CheckinCard({ c, coach }) {
+  return (
+    <div className="card">
+      <p className="eyebrow accent">Check-in · {(c.created_at || '').slice(0, 10)}</p>
+      <div className="checkin-scores">
+        <span>Energy {c.energy}</span><span>Sleep {c.sleep}</span><span>Nutrition {c.nutrition}</span><span>Training {c.training}</span>
+        {c.weight_kg != null && <span>{c.weight_kg}kg</span>}
+      </div>
+      {c.wins && <p className="checkin-line"><b>Wins:</b> {c.wins}</p>}
+      {c.struggles && <p className="checkin-line"><b>Struggles:</b> {c.struggles}</p>}
+      {c.question && <p className="checkin-line"><b>Asked:</b> {c.question}</p>}
+      {c.coach_reply
+        ? <div className="fc-block coach"><b>From {coach}</b><p>{c.coach_reply}</p></div>
+        : <p className="muted-note">Waiting for {coach}’s reply.</p>}
+    </div>
+  )
+}
+
+function WeeklyCheckin({ clientId, coachName, onBack }) {
+  const coach = coachName?.split(' ')[0] || 'Kim'
+  const [energy, setEnergy] = useState(3)
+  const [sleep, setSleep] = useState(3)
+  const [nutrition, setNutrition] = useState(3)
+  const [training, setTraining] = useState(3)
+  const [weight, setWeight] = useState('')
+  const [wins, setWins] = useState('')
+  const [struggles, setStruggles] = useState('')
+  const [question, setQuestion] = useState('')
+  const [state, setState] = useState('idle') // idle | saving | done
+  const [past, setPast] = useState([])
+
+  async function load() {
+    const { data } = await supabase.from('weekly_checkins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(6)
+    setPast(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function submit(e) {
+    e.preventDefault()
+    setState('saving')
+    const row = { client_id: clientId, energy, sleep, nutrition, training, weight_kg: weight ? Number(weight) : null, wins: wins.trim() || null, struggles: struggles.trim() || null, question: question.trim() || null }
+    const { data } = await supabase.from('weekly_checkins').insert(row).select().single()
+    if (data) setPast((p) => [data, ...p])
+    setWins(''); setStruggles(''); setQuestion(''); setWeight('')
+    setState('done')
+  }
+
+  if (state === 'done') {
+    return (
+      <div className="stack">
+        <button className="link-btn" onClick={onBack}>‹ Back</button>
+        <p className="logged-ok big">Sent to {coach} ✓</p>
+        <p className="lead">Thanks for checking in. {coach} will read this and come back to you.</p>
+        <button className="btn ghost" onClick={() => setState('idle')}>New check-in</button>
+        {past.map((c) => <CheckinCard key={c.id} c={c} coach={coach} />)}
+      </div>
+    )
+  }
+  return (
+    <form className="stack" onSubmit={submit}>
+      <button type="button" className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Weekly check-in</p>
+      <h1 className="h1">How was your week?</h1>
+      <p className="lead">A quick snapshot for {coach} — rate each from 1 (tough) to 5 (great).</p>
+      <div className="card">
+        <ScaleRow label="Energy" value={energy} onChange={setEnergy} />
+        <ScaleRow label="Sleep" value={sleep} onChange={setSleep} />
+        <ScaleRow label="Nutrition" value={nutrition} onChange={setNutrition} />
+        <ScaleRow label="Training" value={training} onChange={setTraining} />
+        <label className="field">Weight this week (kg, optional)<input type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} /></label>
+      </div>
+      <label className="field">Wins this week<textarea value={wins} onChange={(e) => setWins(e.target.value)} placeholder="What went well?" /></label>
+      <label className="field">Struggles<textarea value={struggles} onChange={(e) => setStruggles(e.target.value)} placeholder="What was hard?" /></label>
+      <label className="field">Anything to ask {coach}?<textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Questions, worries, wins to celebrate…" /></label>
+      <button className="btn primary big" disabled={state === 'saving'} type="submit">{state === 'saving' ? 'Sending…' : `Send to ${coach}`}</button>
+      {past.length > 0 && <p className="eyebrow section-gap">Past check-ins</p>}
+      {past.map((c) => <CheckinCard key={c.id} c={c} coach={coach} />)}
+    </form>
+  )
+}
+
+/* ---------- Performance testing ---------- */
+function Testing({ clientId, onBack }) {
+  const [rows, setRows] = useState([])
+  const [testKey, setTestKey] = useState(PERF_TESTS[0].key)
+  const [value, setValue] = useState('')
+  const [date, setDate] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [pb, setPb] = useState(false)
+
+  async function load() {
+    const { data } = await supabase.from('performance_tests').select('*').eq('client_id', clientId).order('tested_on', { ascending: true })
+    setRows(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function save(e) {
+    e.preventDefault()
+    const v = Number(value)
+    if (!v) return
+    setSaving(true); setPb(false)
+    const t = TEST_BY_KEY[testKey]
+    const prior = rows.filter((r) => r.test_key === testKey)
+    const isPb = prior.length === 0 || (t.lowerBetter ? v < bestValue(prior, true) : v > bestValue(prior, false))
+    const row = { client_id: clientId, test_key: testKey, value: v, tested_on: date || undefined, note: note.trim() || null }
+    const { data } = await supabase.from('performance_tests').insert(row).select().single()
+    setSaving(false)
+    if (data) {
+      setRows((r) => [...r, data].sort((a, b) => (a.tested_on || '').localeCompare(b.tested_on || '')))
+      setValue(''); setNote('')
+      if (isPb) { setPb(true); setTimeout(() => setPb(false), 4000) }
+    }
+  }
+
+  const byTest = {}
+  rows.forEach((r) => { (byTest[r.test_key] = byTest[r.test_key] || []).push(r) })
+  const testedKeys = Object.keys(byTest)
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Performance testing</p>
+      <h1 className="h1">Your numbers.</h1>
+      <p className="lead">Log your test results and watch your PBs climb.</p>
+
+      <form className="card" onSubmit={save}>
+        <p className="eyebrow">Log a result</p>
+        <label className="field">Test
+          <select value={testKey} onChange={(e) => setTestKey(e.target.value)}>
+            {Object.entries(TEST_GROUPS).map(([g, tests]) => (
+              <optgroup key={g} label={g}>
+                {tests.map((t) => <option key={t.key} value={t.key}>{t.name} ({t.unit})</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <div className="grid-2">
+          <label className="field">Result ({TEST_BY_KEY[testKey].unit})<input type="number" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} /></label>
+          <label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        </div>
+        <label className="field">Note (optional)<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Conditions, kit, how it felt…" /></label>
+        <button className="btn primary" disabled={saving} type="submit">{saving ? 'Saving…' : 'Log result'}</button>
+        {pb && <p className="logged-ok big">New personal best!</p>}
+      </form>
+
+      {testedKeys.length === 0 && <p className="muted-note">No results logged yet. Add your first above.</p>}
+      {testedKeys.map((k) => <TestResultCard key={k} testKey={k} rows={byTest[k]} />)}
+    </div>
+  )
+}
+
+function TestResultCard({ testKey, rows }) {
+  const t = TEST_BY_KEY[testKey]
+  if (!t) return null
+  const sorted = [...rows].sort((a, b) => (a.tested_on || '').localeCompare(b.tested_on || ''))
+  const latest = sorted[sorted.length - 1]
+  const first = sorted[0]
+  const best = bestValue(rows, t.lowerBetter)
+  const latestIsBest = Number(latest.value) === best
+  const delta = Number(latest.value) - Number(first.value)
+  const improved = t.lowerBetter ? delta < 0 : delta > 0
+  const deltaStr = sorted.length > 1 ? `${delta > 0 ? '+' : ''}${delta.toFixed(2)}${t.unit}` : ''
+  return (
+    <div className="card">
+      <div className="test-head">
+        <div>
+          <p className="eyebrow accent">{t.group}</p>
+          <div className="test-name">{t.name}</div>
+        </div>
+        <div className="test-val">
+          <b>{Number(latest.value)}</b><span>{t.unit}</span>
+          {latestIsBest && <span className="pb-badge">PB</span>}
+        </div>
+      </div>
+      <p className="test-meta">Best {best}{t.unit}{deltaStr && <span className={improved ? 'delta good' : 'delta'}> · {deltaStr} since first</span>}</p>
+      <TrendChart data={sorted} field="value" />
+    </div>
+  )
+}
+
+/* ---------- Growth tracker (youth) ---------- */
+function Growth({ clientId, onBack }) {
+  const [yp, setYp] = useState(null)
+  const [meas, setMeas] = useState([])
+  const [dob, setDob] = useState('')
+  const [sex, setSex] = useState('M')
+  const [h, setH] = useState(''); const [sh, setSh] = useState(''); const [wt, setWt] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function load() {
+    const [{ data: p }, { data: gm }] = await Promise.all([
+      supabase.from('youth_profiles').select('*').eq('client_id', clientId).maybeSingle(),
+      supabase.from('growth_measurements').select('*').eq('client_id', clientId).order('measured_on', { ascending: true }),
+    ])
+    setYp(p || null); if (p) { setDob(p.dob || ''); setSex(p.sex || 'M') }
+    setMeas(gm || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function saveProfile() {
+    if (!dob) return
+    const { data } = await supabase.from('youth_profiles').upsert({ client_id: clientId, dob, sex, updated_at: new Date().toISOString() }).select().single()
+    if (data) setYp(data)
+  }
+  async function saveMeasurement() {
+    if (!h) return
+    setSaving(true)
+    const { data } = await supabase.from('growth_measurements').insert({ client_id: clientId, height_cm: Number(h) || null, sitting_height_cm: Number(sh) || null, weight_kg: Number(wt) || null }).select().single()
+    setSaving(false)
+    if (data) { setMeas((m) => [...m, data]); setH(''); setSh(''); setWt(''); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  }
+
+  const latest = meas[meas.length - 1]
+  const age = yp?.dob && latest ? ageYears(yp.dob, latest.measured_on) : null
+  const offset = (yp?.dob && latest) ? maturityOffset({ sex: yp.sex, age, height: latest.height_cm, sittingHeight: latest.sitting_height_cm, weight: latest.weight_kg }) : null
+  const phase = maturityPhase(offset)
+  const velocity = growthVelocity(meas)
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Growth tracker</p>
+      <h1 className="h1">Growing strong.</h1>
+
+      {!yp?.dob && (
+        <div className="card">
+          <p className="eyebrow">Set up</p>
+          <p className="muted-note">Add your date of birth and sex so we can track your growth and maturation.</p>
+          <div className="grid-2">
+            <label className="field">Date of birth<input type="date" value={dob} onChange={(e) => setDob(e.target.value)} /></label>
+            <label className="field">Sex<select value={sex} onChange={(e) => setSex(e.target.value)}><option value="M">Male</option><option value="F">Female</option></select></label>
+          </div>
+          <button className="btn primary" onClick={saveProfile}>Save</button>
+        </div>
+      )}
+
+      {offset != null && (
+        <div className="card">
+          <p className="eyebrow">Your maturation</p>
+          <div className="rd-status">
+            <span className={'rd-light ' + phase.color} />
+            <div><b>{phase.label}</b><span className="muted-note"> · {offset > 0 ? '+' : ''}{offset.toFixed(1)} yrs from your growth peak</span></div>
+          </div>
+          {velocity != null && <p className="muted-note">Growing about {velocity.toFixed(1)} cm/year.{velocity > 7 ? ' That’s a fast phase — listen to your body and tell your coach about any aches.' : ''}</p>}
+          <TrendChart data={meas.filter((m) => m.height_cm > 0)} field="height_cm" />
+          <p className="checkin-line">{growthGuidance(phase.key)}</p>
+        </div>
+      )}
+
+      <div className="card">
+        <p className="eyebrow">Log a measurement</p>
+        <div className="grid-2">
+          <label className="field">Height (cm)<input type="number" step="0.1" value={h} onChange={(e) => setH(e.target.value)} /></label>
+          <label className="field">Sitting height (cm)<input type="number" step="0.1" value={sh} onChange={(e) => setSh(e.target.value)} /></label>
+          <label className="field">Weight (kg)<input type="number" step="0.1" value={wt} onChange={(e) => setWt(e.target.value)} /></label>
+        </div>
+        <button className="btn primary" disabled={saving} onClick={saveMeasurement}>{saving ? 'Saving…' : 'Save measurement'}</button>
+        {saved && <p className="logged-ok">Saved ✓</p>}
+        <p className="disclaimer-note">This is a guide to help plan your training, not a medical assessment.</p>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Readiness & load monitoring ---------- */
+function Monitoring({ clientId, onBack }) {
+  const [checkins, setCheckins] = useState([])
+  const [loads, setLoads] = useState([])
+  const [tab, setTab] = useState('status')
+  const [w, setW] = useState({ sleep: 3, energy: 3, freshness: 3, mood: 3, motivation: 3 })
+  const [savingC, setSavingC] = useState(false)
+  const [savedC, setSavedC] = useState(false)
+  const [rpe, setRpe] = useState(6)
+  const [dur, setDur] = useState('')
+  const [savingS, setSavingS] = useState(false)
+  const [savedS, setSavedS] = useState(false)
+
+  async function load() {
+    const [{ data: c }, { data: l }] = await Promise.all([
+      supabase.from('readiness_checkins').select('*').eq('client_id', clientId).order('checked_on', { ascending: true }).limit(60),
+      supabase.from('session_loads').select('*').eq('client_id', clientId).order('session_on', { ascending: true }).limit(120),
+    ])
+    setCheckins(c || []); setLoads(l || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function saveCheckin() {
+    setSavingC(true)
+    const { data } = await supabase.from('readiness_checkins').insert({ client_id: clientId, ...w }).select().single()
+    setSavingC(false)
+    if (data) { setCheckins((x) => [...x, data]); setSavedC(true); setTimeout(() => { setSavedC(false); setTab('status') }, 1200) }
+  }
+  async function saveSession() {
+    const d = Number(dur); if (!d) return
+    setSavingS(true)
+    const { data } = await supabase.from('session_loads').insert({ client_id: clientId, rpe: Number(rpe), duration_min: d, load: Number(rpe) * d }).select().single()
+    setSavingS(false)
+    if (data) { setLoads((x) => [...x, data]); setDur(''); setSavedS(true); setTimeout(() => { setSavedS(false); setTab('status') }, 1200) }
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayCheckin = checkins.filter((c) => c.checked_on === todayStr).slice(-1)[0]
+  const score = readinessScore(todayCheckin)
+  const light = readinessLight(todayCheckin ? score : null)
+  const metrics = loadMetrics(loads)
+  const flag = acwrFlag(metrics.acwr)
+  const readinessTrend = checkins.map((c) => ({ score: readinessScore(c) })).filter((x) => x.score != null)
+  const setWv = (k) => (v) => setW((s) => ({ ...s, [k]: v }))
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Readiness &amp; load</p>
+      <h1 className="h1">How ready are you?</h1>
+      <div className="seg three">
+        <button type="button" className={tab === 'status' ? 'on' : ''} onClick={() => setTab('status')}>Status</button>
+        <button type="button" className={tab === 'checkin' ? 'on' : ''} onClick={() => setTab('checkin')}>Check-in</button>
+        <button type="button" className={tab === 'session' ? 'on' : ''} onClick={() => setTab('session')}>Log session</button>
+      </div>
+
+      {tab === 'status' && (
+        <div className="stack">
+          <div className="card">
+            <p className="eyebrow">Today’s readiness</p>
+            <div className="rd-status">
+              <span className={'rd-light ' + light.color} />
+              <div><b>{light.label}</b>{todayCheckin && score != null && <span className="muted-note"> · {score.toFixed(1)}/5</span>}</div>
+            </div>
+            {!todayCheckin && <p className="muted-note">No check-in yet today — tap Check-in.</p>}
+            <TrendChart data={readinessTrend} field="score" />
+            <p className="muted-note">Your readiness over time.</p>
+          </div>
+          <div className="card">
+            <p className="eyebrow">Training load</p>
+            <div className="metrics-2">
+              <Metric k="This week (AU)" v={metrics.acute} d="" />
+              <Metric k="ACWR" v={metrics.acwr != null ? metrics.acwr.toFixed(2) : '—'} d="" />
+            </div>
+            <p className="rd-flag"><span className={'rd-light ' + flag.color} /> {flag.label}</p>
+            <p className="muted-note">Acute:chronic workload ratio. Around 0.8–1.3 is the sweet spot; sharp spikes raise injury risk.</p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'checkin' && (
+        <div className="card">
+          <p className="eyebrow">Morning check-in</p>
+          <p className="muted-note">Rate each from 1 (worst) to 5 (best).</p>
+          {WELLNESS.map((item) => <ScaleRow key={item.key} label={item.label} value={w[item.key]} onChange={setWv(item.key)} />)}
+          <button className="btn primary" disabled={savingC} onClick={saveCheckin}>{savingC ? 'Saving…' : 'Save check-in'}</button>
+          {savedC && <p className="logged-ok">Saved ✓</p>}
+        </div>
+      )}
+
+      {tab === 'session' && (
+        <div className="card">
+          <p className="eyebrow">Log a session</p>
+          <p className="muted-note">After training, rate how hard it felt and how long it lasted.</p>
+          <label className="field">Effort — RPE (1 easy … 10 max)
+            <select value={rpe} onChange={(e) => setRpe(Number(e.target.value))}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <label className="field">Duration (minutes)<input type="number" value={dur} onChange={(e) => setDur(e.target.value)} /></label>
+          {dur && <p className="muted-note">Session load: {Number(rpe) * Number(dur)} AU</p>}
+          <button className="btn primary" disabled={savingS} onClick={saveSession}>{savingS ? 'Saving…' : 'Log session'}</button>
+          {savedS && <p className="logged-ok">Logged ✓</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Nutrition Expert ---------- */
+function NutritionExpert({ clientId, onBack }) {
+  const [tab, setTab] = useState('ask')
+  const [chats, setChats] = useState([])
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    supabase.from('expert_chats').select('*').eq('client_id', clientId).order('created_at', { ascending: true }).limit(50).then(({ data }) => setChats(data || []))
+  }, [])
+
+  async function ask() {
+    const question = q.trim()
+    if (!question || busy) return
+    setBusy(true); setError('')
+    const tempId = 'temp-' + Date.now()
+    setChats((c) => [...c, { id: tempId, question, answer: null }])
+    setQ('')
+    try {
+      const { answer } = await analyze({ mode: 'expert', question })
+      const { data } = await supabase.from('expert_chats').insert({ client_id: clientId, question, answer }).select().single()
+      setChats((c) => c.map((x) => (x.id === tempId ? (data || { id: tempId, question, answer }) : x)))
+    } catch (err) {
+      setError(err.message); setChats((c) => c.filter((x) => x.id !== tempId))
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Nutrition Expert</p>
+      <h1 className="h1">Fuel like a pro.</h1>
+      <p className="lead">Evidence-based sports nutrition, grounded in the ISSN, IOC and ACSM guidelines.</p>
+      <div className="seg">
+        <button type="button" className={tab === 'ask' ? 'on' : ''} onClick={() => setTab('ask')}>Ask the expert</button>
+        <button type="button" className={tab === 'lib' ? 'on' : ''} onClick={() => setTab('lib')}>Guidelines</button>
+      </div>
+      {tab === 'ask' ? (
+        <>
+          <div className="chat">
+            {chats.length === 0 && <p className="muted-note">Try “How much protein and carbs should I have as a 78kg footballer?” or “What’s the evidence on creatine?”</p>}
+            {chats.map((c) => (
+              <div className="chat-pair" key={c.id}>
+                <div className="bubble q">{c.question}</div>
+                {c.answer === null
+                  ? <div className="bubble a typing"><span className="spinner tiny" /> Checking the evidence…</div>
+                  : <div className="bubble a">{c.answer}</div>}
+              </div>
+            ))}
+          </div>
+          {error && <p className="error">{error}</p>}
+          <div className="ask-bar">
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask about fuelling, protein, supplements…" onKeyDown={(e) => { if (e.key === 'Enter') ask() }} />
+            <button className="btn primary" disabled={busy || !q.trim()} onClick={ask}>Ask</button>
+          </div>
+          <p className="disclaimer-note">General nutrition education, not medical or individual dietetic advice. For personal plans, medical conditions or any worries about eating or energy, speak to your coach and a registered dietitian.</p>
+        </>
+      ) : (
+        <div className="stack">
+          {NUTRITION_AREAS.map((area) => (
+            <div className="card" key={area}>
+              <p className="eyebrow accent">{area}</p>
+              {NUTRITION_KB.filter((k) => k.area === area).map((k) => (
+                <div className="fc-block" key={k.id}><b>{k.title}</b><p>{k.content}</p><p className="muted-note">Evidence: {k.source}</p></div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Train ---------- */
+function Train({ clientId }) {
+  const [tab, setTab] = useState(THEME.features?.templates ? 'start' : 'ai')
+  const [history, setHistory] = useState([])
+
+  async function loadHistory() {
+    const { data } = await supabase.from('workout_plans').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(50)
+    setHistory(data || [])
+  }
+  useEffect(() => { loadHistory() }, [])
+
+  function onSaved(plan) {
+    if (plan) setHistory((h) => [plan, ...h])
+  }
+
+  return (
+    <div className="stack">
+      <p className="eyebrow">Today’s session</p>
+      <h1 className="h1">Train your way.</h1>
+
+      <div className="seg">
+        {THEME.features?.templates && <button type="button" className={tab === 'start' ? 'on' : ''} onClick={() => setTab('start')}>Start a workout</button>}
+        <button type="button" className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>Generate with AI</button>
+        <button type="button" className={tab === 'own' ? 'on' : ''} onClick={() => setTab('own')}>Build your own</button>
+      </div>
+
+      {tab === 'start' && <StartWorkout clientId={clientId} onStarted={onSaved} />}
+      {tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
+      {tab === 'own' && <OwnPlan clientId={clientId} onSaved={onSaved} />}
+
+      <LiftProgress plans={history} title="Weights lifted" />
+
+      {history.length > 0 && (
+        <div className="stack">
+          <p className="eyebrow">Your sessions</p>
+          {history.map((p) => <SessionCard key={p.id} plan={p} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AiPlan({ clientId, onSaved }) {
+  const [goal, setGoal] = useState('Push')
+  const [state, setState] = useState('idle')
+  const [error, setError] = useState('')
+
+  async function generate() {
+    setState('loading'); setError('')
+    try {
+      const json = await analyze({ mode: 'workout', goal, equipment: THEME.equipment, gymName: THEME.trainGymName })
+      const { data } = await supabase.from('workout_plans').insert({
+        client_id: clientId, title: json.title, focus: json.focus,
+        exercises: json.exercises || [], finisher: json.finisher || null,
+      }).select().single()
+      onSaved(data)
+      setState('done')
+      setTimeout(() => setState('idle'), 2000)
+    } catch (err) {
+      setError(err.message); setState('error')
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="lead">Pick a focus and the AI writes a session using only the kit at {THEME.trainGymName}.</p>
+      <div className="focus-row">
+        {FOCUS_OPTIONS.map((f) => (
+          <button key={f} className={'focus-chip' + (goal === f ? ' on' : '')} onClick={() => setGoal(f)}>{f}</button>
+        ))}
+      </div>
+      {state !== 'loading' && <button className="btn primary big" onClick={generate}>Generate a session</button>}
+      {state === 'loading' && <Loader text="Writing your session…" />}
+      {state === 'done' && <p className="logged-ok">Added to your sessions ✓</p>}
+      {state === 'error' && <p className="error">{error}</p>}
+      <p className="muted-note">Your saved sessions appear below — tap one to view it.</p>
+    </div>
+  )
+}
+
+function OwnPlan({ clientId, onSaved }) {
+  const [title, setTitle] = useState('')
+  const [focus, setFocus] = useState('')
+  const [rows, setRows] = useState([newExerciseRow()])
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    const exercises = rowsToExercises(rows, 'Own choice')
+    if (exercises.length === 0) { setError('Add at least one exercise with a set.'); return }
+    setSaving(true); setError('')
+    const { data } = await supabase.from('workout_plans').insert({
+      client_id: clientId, title: title.trim() || 'My session', focus: focus.trim() || 'Custom', exercises, finisher: null,
+    }).select().single()
+    setSaving(false)
+    if (data) {
+      onSaved(data)
+      setSaved(true)
+      setTitle(''); setFocus(''); setRows([newExerciseRow()])
+      setTimeout(() => setSaved(false), 2500)
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="lead">Add your own session — your exercises, sets and reps.</p>
+      <div className="grid-2">
+        <label className="field">Session name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leg day" /></label>
+        <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Legs" /></label>
+      </div>
+      <ExerciseRowsEditor rows={rows} setRows={setRows} />
+      {error && <p className="error">{error}</p>}
+      <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save session'}</button>
+      {saved && <p className="logged-ok">Saved to your sessions ✓</p>}
+    </div>
+  )
+}
+
+// Programme library: browse the coach's multi-session programmes and start any
+// session from one (copies its snapshot into the client's sessions to log).
+function ProgramLibrary({ clientId, coachName, onBack }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [programs, setPrograms] = useState(null)
+  const [openId, setOpenId] = useState(null)
+  const [sessions, setSessions] = useState({})
+  const [startedId, setStartedId] = useState(null)
+
+  useEffect(() => {
+    supabase.from('workout_programs').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setPrograms(data || []))
+  }, [])
+
+  async function open(id) {
+    setOpenId((o) => (o === id ? null : id))
+    if (!sessions[id]) {
+      const { data } = await supabase.from('program_sessions').select('*').eq('program_id', id).order('position', { ascending: true })
+      setSessions((s) => ({ ...s, [id]: data || [] }))
+    }
+  }
+
+  async function startSession(ps) {
+    setStartedId(ps.id)
+    await supabase.from('workout_plans').insert({
+      client_id: clientId, title: ps.title, focus: ps.focus || 'Session',
+      exercises: ps.exercises || [], finisher: ps.finisher || null, assigned_by: null,
+    })
+    setTimeout(() => setStartedId(null), 2500)
+  }
+
+  return (
+    <div>
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">Program library</p>
+      <h1 className="h1">Follow a plan.</h1>
+      <p className="muted-note">Structured programs built by {coachFirst}. Open one and start any session — it drops into your sessions to log.</p>
+
+      {programs === null && <Loader text="Loading programs…" />}
+      {programs !== null && programs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs yet — {coachFirst} will add them here.</p>}
+
+      <div className="stack" style={{ marginTop: 12 }}>
+        {(programs || []).map((pr) => (
+          <div className="card session-card" key={pr.id}>
+            <button type="button" className="session-head" onClick={() => open(pr.id)}>
+              <div>
+                <div className="session-title">{pr.title}</div>
+                <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null].filter(Boolean).join(' · ')}</div>
+              </div>
+              <span className="chev">{openId === pr.id ? '−' : '+'}</span>
+            </button>
+            {openId === pr.id && (
+              <div className="stack" style={{ marginTop: 8 }}>
+                {pr.description && <p className="muted-note">{pr.description}</p>}
+                {(sessions[pr.id] || []).map((ps) => (
+                  <div className="card" key={ps.id} style={{ background: 'var(--surface-2)' }}>
+                    <div className="session-title">{ps.label ? ps.label + ' · ' : ''}{ps.title}</div>
+                    <ol className="ex-list" style={{ marginTop: 6 }}>
+                      {(ps.exercises || []).map((ex, i) => (
+                        <li className="ex" key={i}>
+                          <span className="ex-n">{i + 1}</span>
+                          <div className="ex-body"><div className="ex-name">{ex.name}</div><ExSets ex={ex} />{ex.cue && <div className="ex-cue">{ex.cue}</div>}</div>
+                        </li>
+                      ))}
+                      {ps.finisher && <p className="finisher"><b>Finisher:</b> {ps.finisher}</p>}
+                    </ol>
+                    <button type="button" className="btn primary sm" onClick={() => startSession(ps)}>
+                      {startedId === ps.id ? 'Added to your sessions ✓' : 'Start this session'}
+                    </button>
+                  </div>
+                ))}
+                {sessions[pr.id] && sessions[pr.id].length === 0 && <p className="muted-note">Sessions coming soon.</p>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Recipe library — the coach's saved meals with macros. Tap one to log it.
+function RecipeLibrary({ coachName, onLog, onBack }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [recipes, setRecipes] = useState(null)
+  const [loggedId, setLoggedId] = useState(null)
+
+  useEffect(() => {
+    supabase.from('recipes').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setRecipes(data || []))
+  }, [])
+
+  function log(r) {
+    onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, calories: r.calories || 0 })
+    setLoggedId(r.id); setTimeout(() => setLoggedId(null), 2500)
+  }
+
+  return (
+    <div>
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">Recipes</p>
+      <h1 className="h1">{coachFirst}’s meals.</h1>
+      <p className="muted-note">Coach-approved meals with the macros already worked out — tap to log one to today.</p>
+      {recipes === null && <Loader text="Loading recipes…" />}
+      {recipes !== null && recipes.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No recipes yet — {coachFirst} will add them here.</p>}
+      <div className="stack" style={{ marginTop: 12 }}>
+        {(recipes || []).map((r) => (
+          <div className="card" key={r.id}>
+            <div className="session-title">{r.title}</div>
+            <div className="session-sub">{[r.calories ? r.calories + ' kcal' : null, r.protein_g ? r.protein_g + 'g P' : null, r.carbs_g ? r.carbs_g + 'g C' : null, r.fat_g ? r.fat_g + 'g F' : null].filter(Boolean).join(' · ')}{r.serving_label ? ' · ' + r.serving_label : ''}</div>
+            {r.description && <p className="muted-note" style={{ marginTop: 6 }}>{r.description}</p>}
+            <button className="btn primary sm" style={{ marginTop: 10 }} onClick={() => log(r)}>{loggedId === r.id ? 'Added to today ✓' : 'Log this meal'}</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Turn a YouTube/Vimeo link into an embeddable URL; null => link out instead.
+function videoEmbed(url) {
+  try {
+    const u = new URL(url)
+    const host = u.hostname.replace(/^www\./, '')
+    if (host === 'youtube.com' && u.searchParams.get('v')) return 'https://www.youtube.com/embed/' + u.searchParams.get('v')
+    if (host === 'youtu.be') return 'https://www.youtube.com/embed/' + u.pathname.slice(1)
+    if (host === 'vimeo.com') { const id = u.pathname.split('/').filter(Boolean)[0]; if (/^\d+$/.test(id)) return 'https://player.vimeo.com/video/' + id }
+  } catch { /* not a URL */ }
+  return null
+}
+
+// Video library — the coach's technique/mindset clips.
+function VideoLibrary({ coachName, onBack }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [videos, setVideos] = useState(null)
+  const [openId, setOpenId] = useState(null)
+
+  useEffect(() => {
+    supabase.from('videos').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setVideos(data || []))
+  }, [])
+
+  return (
+    <div>
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">Video library</p>
+      <h1 className="h1">Watch &amp; learn.</h1>
+      <p className="muted-note">Technique and mindset clips from {coachFirst} — tap to watch.</p>
+      {videos === null && <Loader text="Loading videos…" />}
+      {videos !== null && videos.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No videos yet — {coachFirst} will add them here.</p>}
+      <div className="stack" style={{ marginTop: 12 }}>
+        {(videos || []).map((v) => {
+          const embed = videoEmbed(v.url)
+          const open = openId === v.id
+          return (
+            <div className="card" key={v.id}>
+              <div className="session-title">{v.title}</div>
+              <div className="session-sub">{v.category || 'Video'}</div>
+              {v.description && <p className="muted-note" style={{ marginTop: 6 }}>{v.description}</p>}
+              {open && embed && (
+                <div className="video-embed"><iframe src={embed} title={v.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>
+              )}
+              {embed ? (
+                <button className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setOpenId(open ? null : v.id)}>{open ? 'Hide' : 'Watch here'}</button>
+              ) : (
+                <a className="btn ghost sm" style={{ marginTop: 10, display: 'inline-block' }} href={v.url} target="_blank" rel="noopener noreferrer">Open video</a>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Barcode scanner. Manual entry is the primary path (works everywhere); the
+// camera is a bonus where the browser supports BarcodeDetector (Chrome/Android).
+function BarcodeScan({ onLog, onBack }) {
+  const [code, setCode] = useState('')
+  const [state, setState] = useState('idle') // idle | loading | found | notfound | error
+  const [product, setProduct] = useState(null)
+  const [grams, setGrams] = useState('100')
+  const [error, setError] = useState('')
+  const [logged, setLogged] = useState(false)
+  const [camOn, setCamOn] = useState(false)
+  const videoRef = useRef(null)
+  const canScan = typeof window !== 'undefined' && 'BarcodeDetector' in window
+
+  async function lookup(barcode) {
+    setState('loading'); setError(''); setProduct(null); setLogged(false)
+    try {
+      const res = await fetch('/.netlify/functions/barcode', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ barcode }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.status === 'not_found' || !json.product) { setState('notfound'); return }
+      setProduct(json.product); setState('found')
+    } catch { setState('error'); setError('Couldn’t look that up. Try again, or use Log food.') }
+  }
+
+  function stopCam() {
+    const v = videoRef.current
+    if (v && v.srcObject) { v.srcObject.getTracks().forEach((t) => t.stop()); v.srcObject = null }
+    setCamOn(false)
+  }
+  async function startCam() {
+    if (!canScan) return
+    setError(''); setCamOn(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      const v = videoRef.current
+      v.srcObject = stream; await v.play()
+      const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] })
+      const tick = async () => {
+        const el = videoRef.current
+        if (!el || !el.srcObject) return
+        try {
+          const codes = await detector.detect(el)
+          if (codes && codes.length && codes[0].rawValue) { const bc = codes[0].rawValue; stopCam(); setCode(bc); lookup(bc); return }
+        } catch { /* keep trying */ }
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    } catch { setError('Couldn’t open the camera — type the barcode instead.'); setCamOn(false) }
+  }
+  useEffect(() => () => stopCam(), [])
+
+  function submitManual(e) { e.preventDefault(); const c = code.replace(/\D/g, ''); if (c) lookup(c) }
+
+  const per = product?.per100
+  const g = Number(grams) || 0
+  const scale = g / 100
+  const scaled = per ? {
+    name: product.name,
+    protein_g: Math.round((per.protein_g || 0) * scale),
+    carbs_g: Math.round((per.carbs_g || 0) * scale),
+    fat_g: Math.round((per.fat_g || 0) * scale),
+    calories: Math.round((per.calories || 0) * scale),
+  } : null
+
+  return (
+    <div>
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">Barcode scan</p>
+      <h1 className="h1">Scan a product.</h1>
+      <p className="muted-note">Scan the barcode or type the number — we’ll pull the nutrition and you set the portion.</p>
+
+      {canScan && (
+        camOn ? (
+          <div className="stack" style={{ marginTop: 12 }}>
+            <video ref={videoRef} className="barcode-cam" muted playsInline />
+            <button className="btn ghost" onClick={stopCam}>Stop camera</button>
+          </div>
+        ) : (
+          <button className="btn primary big" style={{ marginTop: 12 }} onClick={startCam}>Scan with camera</button>
+        )
+      )}
+
+      <form className="auth-form" onSubmit={submitManual} style={{ marginTop: 14 }}>
+        <label>Barcode number
+          <input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. 5000159484695" />
+        </label>
+        <button className="btn ghost" type="submit" disabled={!code.replace(/\D/g, '')}>Look up</button>
+      </form>
+
+      {state === 'loading' && <Loader text="Looking it up…" />}
+      {state === 'notfound' && <p className="muted-note" style={{ marginTop: 14 }}>Couldn’t find that product. Use “Log food” to add it by name instead.</p>}
+      {error && <p className="error">{error}</p>}
+
+      {state === 'found' && product && per && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="session-title">{product.name}</div>
+          <div className="session-sub">Per 100{product.unit || 'g'}: {per.calories ?? '—'} kcal · {per.protein_g ?? 0}g P · {per.carbs_g ?? 0}g C · {per.fat_g ?? 0}g F</div>
+          <label className="field" style={{ marginTop: 12 }}>Portion (grams)<input type="number" inputMode="numeric" value={grams} onChange={(e) => setGrams(e.target.value)} /></label>
+          {scaled && <p className="muted-note">This portion: {scaled.calories} kcal · {scaled.protein_g}g P · {scaled.carbs_g}g C · {scaled.fat_g}g F</p>}
+          <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={() => { if (scaled) { onLog(scaled); setLogged(true) } }}>
+            {logged ? 'Added to today ✓' : 'Add to today'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Client-facing template picker. Lists the coach's published templates (RLS
+// scopes to the client's own coach) and copies the chosen one into the client's
+// sessions so they can log it. Self-started => assigned_by stays null.
+function StartWorkout({ clientId, onStarted }) {
+  const [templates, setTemplates] = useState(null)
+  const [openId, setOpenId] = useState(null)
+  const [startingId, setStartingId] = useState(null)
+  const [startedId, setStartedId] = useState(null)
+
+  useEffect(() => {
+    supabase.from('workout_templates').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setTemplates(data || []))
+  }, [])
+
+  async function start(t) {
+    setStartingId(t.id)
+    const { data } = await supabase.from('workout_plans').insert({
+      client_id: clientId, title: t.title, focus: t.focus || 'Session',
+      exercises: t.exercises || [], finisher: t.finisher || null, assigned_by: null,
+    }).select().single()
+    setStartingId(null)
+    if (data) { onStarted && onStarted(data); setStartedId(t.id); setTimeout(() => setStartedId(null), 2500) }
+  }
+
+  if (templates === null) return <Loader text="Loading sessions…" />
+  if (templates.length === 0) return <p className="muted-note">No sessions from your coach yet — they’ll appear here to start with one tap.</p>
+
+  return (
+    <div className="stack">
+      <p className="lead">Pick a session your coach has built and start it — it drops into your sessions to log as you go.</p>
+      {templates.map((t) => (
+        <div className="card session-card" key={t.id}>
+          <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
+            <div>
+              <div className="session-title">{t.title}</div>
+              <div className="session-sub">{t.focus ? t.focus + ' · ' : ''}{(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}</div>
+            </div>
+            <span className="chev">{openId === t.id ? '−' : '+'}</span>
+          </button>
+          {openId === t.id && (
+            <ol className="ex-list">
+              {(t.exercises || []).map((ex, i) => (
+                <li className="ex" key={i}>
+                  <span className="ex-n">{i + 1}</span>
+                  <div className="ex-body">
+                    <div className="ex-name">{ex.name}</div>
+                    <ExSets ex={ex} />
+                    {ex.cue && <div className="ex-cue">{ex.cue}</div>}
+                  </div>
+                </li>
+              ))}
+              {t.finisher && <p className="finisher"><b>Finisher:</b> {t.finisher}</p>}
+            </ol>
+          )}
+          <button type="button" className="btn primary sm" disabled={startingId === t.id} onClick={() => start(t)}>
+            {startedId === t.id ? 'Added to your sessions ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SessionCard({ plan, onUpdate }) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [rows, setRows] = useState([])
+  const [saving, setSaving] = useState(false)
+  const exs = plan.exercises || []
+
+  function startEdit() {
+    setRows(planToRows(exs))
+    setEditing(true)
+    setOpen(true)
+  }
+  async function save() {
+    const exercises = rowsToExercises(rows, exs[0]?.equipment || 'Own choice')
+    if (exercises.length === 0) { setEditing(false); return }
+    setSaving(true)
+    const { data } = await supabase.from('workout_plans').update({ exercises }).eq('id', plan.id).select().single()
+    setSaving(false)
+    if (data) { onUpdate && onUpdate(data); setEditing(false) }
+  }
+
+  return (
+    <div className="card session-card">
+      <button type="button" className="session-head" onClick={() => setOpen((o) => !o)}>
+        <div>
+          <div className="session-title">{plan.title}</div>
+          <div className="session-sub">{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'}{plan.assigned_by ? ' · From your coach' : ''}</div>
+        </div>
+        <span className="chev">{open ? '−' : '+'}</span>
+      </button>
+      {open && !editing && (
+        <>
+          <ol className="ex-list">
+            {exs.map((ex, i) => (
+              <li className="ex" key={i}>
+                <span className="ex-n">{i + 1}</span>
+                <div className="ex-body">
+                  <div className="ex-name">{ex.name}</div>
+                  <ExSets ex={ex} />
+                  {ex.cue && <div className="ex-cue">{ex.cue}</div>}
+                </div>
+              </li>
+            ))}
+            {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
+          </ol>
+          <button type="button" className="btn ghost sm" onClick={startEdit}>Edit / add weights</button>
+        </>
+      )}
+      {open && editing && (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <p className="muted-note">Log the reps and weight for each set — this feeds your weights-lifted progress.</p>
+          <ExerciseRowsEditor rows={rows} setRows={setRows} />
+          <div className="nudge-actions">
+            <button className="btn primary sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+            <button className="btn ghost sm" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Fridge ---------- */
+function FridgeScan({ remaining, onLog }) {
+  const [state, setState] = useState('idle')
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [logged, setLogged] = useState(false)
+  const inputRef = useRef(null)
+
+  async function onPick(e) {
+    const file = e.target.files?.[0]; if (!file) return
+    setLogged(false); setPreview(URL.createObjectURL(file)); setState('loading'); setError('')
+    try {
+      const { mediaType, data } = await fileToBase64(file)
+      const json = await analyze({ mode: 'fridge', image: data, mediaType, remaining })
+      setResult(json); setState('done')
+    } catch (err) { setError(err.message); setState('error') }
+  }
+
+  return (
+    <div className="stack">
+      <p className="eyebrow">Fridge-to-Plate</p>
+      <h1 className="h1">What’s in the fridge?</h1>
+      <p className="lead">Photograph your fridge or cupboard. The AI builds a meal that fits your <b>{remaining.calories} kcal</b> and <b>{remaining.protein_g}g protein</b> left today.</p>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPick} />
+      {preview && <div className="shot"><img src={preview} alt="Your fridge" /></div>}
+      {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Scan my fridge</button>}
+      {state === 'loading' && <Loader text="Reading your ingredients…" />}
+      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => inputRef.current?.click()}>Try another photo</button></div>}
+      {state === 'done' && result && (
+        <div className="stack">
+          <div className="chips">{result.ingredients?.map((ing, i) => <span className="chip" key={i}>{ing}</span>)}</div>
+          <div className="card meal-card">
+            <p className="eyebrow accent">Best fit for your macros</p>
+            <h2 className="meal-name">{result.meal?.name}</h2>
+            <p className="meal-desc">{result.meal?.description}</p>
+            <MacroRow m={result.meal} />
+            <p className="fit-note">{result.meal?.fit_note}</p>
+            {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog(result.meal); setLogged(true) }}>Log this meal</button>}
+          </div>
+          <button className="btn ghost" onClick={() => inputRef.current?.click()}>Scan again</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Meal ---------- */
+function MealScan({ onLog }) {
+  const [state, setState] = useState('idle')
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [logged, setLogged] = useState(false)
+  const inputRef = useRef(null)
+
+  async function onPick(e) {
+    const file = e.target.files?.[0]; if (!file) return
+    setLogged(false); setPreview(URL.createObjectURL(file)); setState('loading'); setError('')
+    try {
+      const { mediaType, data } = await fileToBase64(file)
+      const json = await analyze({ mode: 'meal', image: data, mediaType })
+      setResult(json); setState('done')
+    } catch (err) { setError(err.message); setState('error') }
+  }
+
+  return (
+    <div className="stack">
+      <p className="eyebrow">Meal scan</p>
+      <h1 className="h1">Snap your plate.</h1>
+      <p className="lead">Photograph any meal and the AI logs the calories and macros — no manual food diary.</p>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPick} />
+      {preview && <div className="shot"><img src={preview} alt="Your meal" /></div>}
+      {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Scan my meal</button>}
+      {state === 'loading' && <Loader text="Identifying your meal…" />}
+      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => inputRef.current?.click()}>Try another photo</button></div>}
+      {state === 'done' && result && (
+        <div className="stack">
+          <div className="card meal-card">
+            <p className="eyebrow accent">Detected · {result.confidence} confidence</p>
+            <h2 className="meal-name">{result.food_name}</h2>
+            <div className="chips">{result.items?.map((it, i) => <span className="chip" key={i}>{it}</span>)}</div>
+            <MacroRow m={result} />
+            {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog({ ...result, name: result.food_name }); setLogged(true) }}>Add to today</button>}
+          </div>
+          <button className="btn ghost" onClick={() => inputRef.current?.click()}>Scan again</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Body ---------- */
+function Body({ measurements, onAdd, clientId, coachName }) {
+  const [tab, setTab] = useState('scan')
+  return (
+    <div className="stack">
+      <p className="eyebrow">Body scan</p>
+      <h1 className="h1">Track your progress.</h1>
+      <div className="seg">
+        <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => setTab('scan')}>AI scan</button>
+        <button type="button" className={tab === 'log' ? 'on' : ''} onClick={() => setTab('log')}>Measurements</button>
+      </div>
+      {tab === 'scan' ? <BodyScan clientId={clientId} coachName={coachName} /> : <BodyLog measurements={measurements} onAdd={onAdd} />}
+    </div>
+  )
+}
+
+function BodyScan({ clientId, coachName }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [scans, setScans] = useState([])
+  const [state, setState] = useState('idle') // idle | scanning | done | error
+  const [summary, setSummary] = useState('')
+  const [error, setError] = useState('')
+  const inputRef = useRef(null)
+
+  async function load() {
+    const { data } = await supabase.from('body_scans').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(20)
+    setScans(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function onPick(e) {
+    const file = e.target.files?.[0]; if (!file) return
+    setError(''); setSummary(''); setState('scanning')
+    try {
+      const current = await scaleImageToBase64(file, 800)
+      // Include the most recent prior scan photo so the AI can compare change.
+      let frames = [current]
+      const prev = scans[0]
+      if (prev) {
+        try {
+          const { data: signed } = await supabase.storage.from('body-photos').createSignedUrl(prev.photo_path, 300)
+          if (signed?.signedUrl) frames = [await urlToBase64(signed.signedUrl, 800), current] // previous first, latest second
+        } catch { /* compare is best-effort */ }
+      }
+      // Upload the full photo and run the scan in parallel.
+      const path = `${clientId}/${crypto.randomUUID()}.jpg`
+      const uploadPromise = supabase.storage.from('body-photos').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+      const { summary: s } = await analyze({ mode: 'bodyscan', frames })
+      if (s) setSummary(s)
+      const up = await uploadPromise
+      if (up.error) throw new Error(up.error.message)
+      const { data } = await supabase.from('body_scans').insert({ client_id: clientId, photo_path: path, summary: s || null }).select().single()
+      if (data) setScans((c) => [data, ...c])
+      setState('done')
+    } catch (err) { setError(err.message); setState('error') }
+  }
+
+  const first = scans.length === 0
+  return (
+    <div className="stack">
+      <p className="lead">{first
+        ? 'Take a full-body progress photo — this becomes your baseline. Next time, the AI compares and shows what’s changed.'
+        : 'Take a new full-body photo and the AI compares it to your last scan to show what’s changed.'}</p>
+      <input ref={inputRef} type="file" accept="image/*" hidden onChange={onPick} />
+      {state !== 'scanning' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>{first ? 'Add my first scan' : 'Add a new scan'}</button>}
+      {state === 'scanning' && <Loader text="Scanning your progress…" />}
+      {summary && <div className="card"><div className="fc-block"><b>{first ? 'Your baseline' : 'Since your last scan'}</b><p>{summary}</p></div></div>}
+      {state === 'error' && <p className="error">{error}</p>}
+      <p className="disclaimer-note">Photos are private to you and {coachFirst}. AI reads visible change only — it can’t measure exact inches or body-fat, so treat figures as estimates.</p>
+      {scans.map((sc) => <BodyScanCard key={sc.id} scan={sc} />)}
+    </div>
+  )
+}
+
+function BodyScanCard({ scan }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    supabase.storage.from('body-photos').createSignedUrl(scan.photo_path, 3600).then(({ data }) => setUrl(data?.signedUrl || null))
+  }, [])
+  const when = (scan.created_at || '').slice(0, 10)
+  return (
+    <div className="card">
+      <p className="eyebrow accent">Scan · {when}</p>
+      {url ? <div className="shot"><img src={url} alt="Progress scan" /></div> : <p className="muted-note">Loading photo…</p>}
+      {scan.summary && <div className="fc-block"><p>{scan.summary}</p></div>}
+    </div>
+  )
+}
+
+function BodyLog({ measurements, onAdd }) {
+  const [w, setW] = useState('')
+  const [bf, setBf] = useState('')
+  const [waist, setWaist] = useState('')
+  const [saving, setSaving] = useState(false)
+  const latest = measurements[measurements.length - 1]
+  const first = measurements[0]
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!w && !bf && !waist) return
+    setSaving(true)
+    await onAdd({
+      weight_kg: w ? Number(w) : null,
+      body_fat: bf ? Number(bf) : null,
+      waist_cm: waist ? Number(waist) : null,
+    })
+    setW(''); setBf(''); setWaist(''); setSaving(false)
+  }
+
+  return (
+    <div className="stack">
+      {latest && (
+        <div className="card">
+          <div className="metrics-2">
+            {latest.weight_kg != null && <Metric k="Weight" v={`${latest.weight_kg}kg`} d={first?.weight_kg != null ? `${(latest.weight_kg - first.weight_kg).toFixed(1)}kg` : ''} />}
+            {latest.body_fat != null && <Metric k="Body fat" v={`${latest.body_fat}%`} d={first?.body_fat != null ? `${(latest.body_fat - first.body_fat).toFixed(1)}%` : ''} />}
+          </div>
+          <TrendChart data={measurements.filter((m) => m.weight_kg != null)} field="weight_kg" />
+          <p className="muted-note">Your weight trend over time.</p>
+        </div>
+      )}
+
+      <form className="card" onSubmit={submit}>
+        <p className="eyebrow">Log this week</p>
+        <div className="grid-2">
+          <label className="field">Weight (kg)<input type="number" step="0.1" value={w} onChange={(e) => setW(e.target.value)} /></label>
+          <label className="field">Body fat (%)<input type="number" step="0.1" value={bf} onChange={(e) => setBf(e.target.value)} /></label>
+          <label className="field">Waist (cm)<input type="number" step="0.1" value={waist} onChange={(e) => setWaist(e.target.value)} /></label>
+        </div>
+        <button className="btn primary" disabled={saving} type="submit">{saving ? 'Saving…' : 'Save measurement'}</button>
+      </form>
+    </div>
+  )
+}
+
+function Metric({ k, v, d }) {
+  return (
+    <div className="metric">
+      <div className="metric-k">{k}</div>
+      <div className="metric-v">{v} {d && <span className="delta good">{d}</span>}</div>
+    </div>
+  )
+}
+
+function KimHub({ clientId, coachName }) {
+  const [tab, setTab] = useState('ai')
+  return (
+    <div className="stack">
+      <p className="eyebrow">Your coach</p>
+      <h1 className="h1">{coachName || 'Kim'}, any time.</h1>
+      <div className="seg">
+        <button type="button" className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>Ask AI</button>
+        <button type="button" className={tab === 'msg' ? 'on' : ''} onClick={() => setTab('msg')}>Message {coachName?.split(' ')[0] || 'Kim'}</button>
+      </div>
+      {tab === 'ai'
+        ? <AskKim clientId={clientId} coachName={coachName} />
+        : (
+          <>
+            <p className="lead">Message {coachName?.split(' ')[0] || 'your coach'} directly — they’ll reply here.</p>
+            <MessageThread clientId={clientId} me="client" placeholder={`Message ${coachName?.split(' ')[0] || 'your coach'}…`} />
+          </>
+        )}
+    </div>
+  )
+}
+
+function AskKim({ clientId, coachName }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [knowledge, setKnowledge] = useState([])
+  const [comms, setComms] = useState([])
+  const [chats, setChats] = useState([])
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    supabase.from('coach_knowledge').select('title, content').then(({ data }) => setKnowledge(data || []))
+    supabase.from('messages').select('sender, body').eq('client_id', clientId).order('created_at', { ascending: true }).limit(30).then(({ data }) => setComms(data || []))
+    supabase.from('brain_chats').select('*').eq('client_id', clientId).order('created_at', { ascending: true }).limit(50).then(({ data }) => setChats(data || []))
+  }, [])
+
+  async function ask() {
+    const question = q.trim()
+    if (!question || busy) return
+    setBusy(true); setError('')
+    const tempId = 'temp-' + Date.now()
+    setChats((c) => [...c, { id: tempId, question, answer: null }])
+    setQ('')
+    try {
+      const { answer } = await analyze({ mode: 'ask', question, knowledge, comms })
+      const { data } = await supabase.from('brain_chats').insert({ client_id: clientId, question, answer }).select().single()
+      setChats((c) => c.map((x) => (x.id === tempId ? (data || { id: tempId, question, answer }) : x)))
+    } catch (err) {
+      setError(err.message)
+      setChats((c) => c.filter((x) => x.id !== tempId))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="lead">Ask a training or nutrition question and get an answer in {coachFirst}’s method — instantly.</p>
+
+      <div className="chat">
+        {chats.length === 0 && (
+          <p className="muted-note">Try “How much protein should I aim for?” or “I’m really sore — should I still train?”</p>
+        )}
+        {chats.map((c) => (
+          <div className="chat-pair" key={c.id}>
+            <div className="bubble q">{c.question}</div>
+            {c.answer === null
+              ? <div className="bubble a typing"><span className="spinner tiny" /> {coachFirst}’s brain is thinking…</div>
+              : <div className="bubble a">{c.answer}</div>}
+          </div>
+        ))}
+      </div>
+      {error && <p className="error">{error}</p>}
+
+      <div className="ask-bar">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Ask ${coachFirst} anything…`} onKeyDown={(e) => { if (e.key === 'Enter') ask() }} />
+        <button className="btn primary" disabled={busy || !q.trim()} onClick={ask}>Ask</button>
+      </div>
+      <p className="disclaimer-note">General guidance in {coachFirst}’s style — not medical advice. For anything specific, message {coachFirst}.</p>
+    </div>
+  )
+}
+
+function FormCheck({ clientId, coachName }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [exercise, setExercise] = useState('')
+  const [checks, setChecks] = useState([])
+  const [state, setState] = useState('idle')
+  const [preview, setPreview] = useState('')
+  const [error, setError] = useState('')
+  const inputRef = useRef(null)
+
+  async function load() {
+    const { data } = await supabase.from('form_checks').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(20)
+    setChecks(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function onPick(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError('')
+    setPreview('')
+    try {
+      setState('analysing')
+      const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
+      const path = `${clientId}/${crypto.randomUUID()}.${ext}`
+
+      // Upload the clip and run the AI form check at the same time, so the
+      // pointers (what the client is waiting for) don't sit behind the upload.
+      const uploadPromise = supabase.storage.from('form-videos').upload(path, file, { contentType: file.type || 'video/mp4', upsert: false })
+
+      let ai_feedback = null
+      try {
+        // A video → pull a few frames; a photo → use the photo itself as one frame.
+        const frames = file.type.startsWith('image/') ? [await scaleImageToBase64(file, 800)] : await extractFrames(file, 3)
+        if (frames.length) {
+          const { feedback } = await analyze({ mode: 'form', exercise: exercise.trim(), frames })
+          ai_feedback = feedback
+          if (feedback) setPreview(feedback) // show pointers instantly, upload keeps running
+        }
+      } catch { /* AI is best-effort — Kim still reviews */ }
+
+      const up = await uploadPromise
+      if (up.error) throw new Error(up.error.message)
+      const { data } = await supabase.from('form_checks').insert({ client_id: clientId, storage_path: path, exercise: exercise.trim() || null, ai_feedback }).select().single()
+      if (data) setChecks((c) => [data, ...c])
+      setExercise('')
+      setState('done')
+      setTimeout(() => { setState('idle'); setPreview('') }, 4000)
+    } catch (err) {
+      setError(err.message)
+      setState('error')
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="eyebrow">Form check</p>
+      <h1 className="h1">Check your form.</h1>
+      <p className="lead">Upload a short video or a photo of your lift — record a new one or choose an existing file — and get instant AI pointers, then {coachFirst} reviews it.</p>
+      <label className="field">Which exercise?<input value={exercise} onChange={(e) => setExercise(e.target.value)} placeholder="e.g. Back squat" /></label>
+      <input ref={inputRef} type="file" accept="video/*,image/*" hidden onChange={onPick} />
+      {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Upload a video or photo</button>}
+      {state === 'analysing' && !preview && <Loader text="Checking your form…" />}
+      {preview && <div className="card"><div className="fc-block"><b>Instant AI pointers</b><p>{preview}</p></div>{state === 'analysing' && <p className="disclaimer-note">Saving your clip for {coachFirst}…</p>}</div>}
+      {state === 'done' && <p className="logged-ok">Sent to {coachFirst} ✓</p>}
+      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => inputRef.current?.click()}>Try again</button></div>}
+      <p className="disclaimer-note">Keep clips short (a few reps). AI pointers are general guidance — {coachFirst} gives the final word.</p>
+
+      {checks.map((c) => <FormCheckCard key={c.id} check={c} coachFirst={coachFirst} />)}
+    </div>
+  )
+}
+
+function FormCheckCard({ check, coachFirst }) {
+  const coach = coachFirst || 'your coach'
+  const [url, setUrl] = useState(null)
+  const isImage = /\.(jpe?g|png|webp|heic|gif)$/i.test(check.storage_path || '')
+  useEffect(() => {
+    supabase.storage.from('form-videos').createSignedUrl(check.storage_path, 3600).then(({ data }) => setUrl(data?.signedUrl || null))
+  }, [])
+  return (
+    <div className="card">
+      <p className="eyebrow accent">{check.exercise || 'Form check'}</p>
+      {url
+        ? (isImage ? <div className="shot"><img src={url} alt="Form check" /></div> : <video className="form-video" src={url} controls playsInline />)
+        : <p className="muted-note">Loading…</p>}
+      {check.ai_feedback && <div className="fc-block"><b>AI pointers</b><p>{check.ai_feedback}</p></div>}
+      {check.coach_feedback
+        ? <div className="fc-block coach"><b>From {coach}</b><p>{check.coach_feedback}</p></div>
+        : <p className="muted-note">{coach} will review this and add feedback.</p>}
+    </div>
+  )
+}
+
+function IgEmbed({ url }) {
+  useEffect(() => {
+    if (!document.getElementById('ig-embed-js')) {
+      const s = document.createElement('script')
+      s.id = 'ig-embed-js'
+      s.async = true
+      s.src = 'https://www.instagram.com/embed.js'
+      s.onload = () => window.instgrm?.Embeds?.process()
+      document.body.appendChild(s)
+    } else {
+      window.instgrm?.Embeds?.process()
+    }
+  }, [url])
+  return (
+    <blockquote className="instagram-media" data-instgrm-permalink={url} data-instgrm-width="100%" style={{ margin: 0, width: '100%', minHeight: 120 }}>
+      <a href={url} target="_blank" rel="noreferrer">View on Instagram</a>
+    </blockquote>
+  )
+}
+
+function IGContent({ coachName }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const first = coachName?.split(' ')[0] || 'Kim'
+  useEffect(() => {
+    supabase.from('featured_content').select('*').order('created_at', { ascending: false }).then(({ data }) => { setItems(data || []); setLoading(false) })
+  }, [])
+  return (
+    <div className="stack">
+      <p className="eyebrow">From {first}</p>
+      <h1 className="h1">Content &amp; inspiration.</h1>
+      <p className="lead">Posts and reels {first} wants you to see.</p>
+      {loading && <p className="muted-note">Loading…</p>}
+      {!loading && items.length === 0 && <p className="muted-note">No content yet — check back soon.</p>}
+      {items.map((it) => (
+        <div className="card ig-card" key={it.id}>
+          {it.caption && <p className="ig-caption">{it.caption}</p>}
+          {it.image_path
+            ? <img className="content-img" src={supabase.storage.from('content-images').getPublicUrl(it.image_path).data.publicUrl} alt={it.caption || 'Content'} />
+            : <IgEmbed url={it.ig_url} />}
+        </div>
+      ))}
+      <a className="btn ghost" href="https://www.instagram.com/cbk_coachedbykim" target="_blank" rel="noreferrer">Follow {first} on Instagram</a>
+    </div>
+  )
+}
+
+function Tab({ id, label, active, onGo, icon: Icon }) {
+  return (
+    <button className={'tab' + (active === id ? ' on' : '')} onClick={() => onGo(id)}>
+      <Icon /><span>{label}</span>
+    </button>
+  )
+}

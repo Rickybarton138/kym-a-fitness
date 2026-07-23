@@ -1,0 +1,22 @@
+{
+  "name": "kym-a-fitness",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Kym A Fitness - AI coaching app for Kym (PT) and her clients. Vite + React + Supabase + Claude.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7"
+  }
+}

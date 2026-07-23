@@ -1,0 +1,16 @@
+{
+  "name": "Coached by Kim",
+  "short_name": "Coached by Kim",
+  "description": "AI coaching from Kim — training, nutrition and your progress, any time.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3ede2",
+  "theme_color": "#f3ede2",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
