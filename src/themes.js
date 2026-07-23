@@ -139,7 +139,26 @@ export const BRANDS = {
   },
 }
 
+// Per-gym deploys map their own domain to a single brand, so one build serves
+// every gym: each domain LOCKS to its brand (no ?brand= switching, no other
+// gym's look ever shows). Hosts not listed here (coached-by-kim, localhost) keep
+// the multi-brand behaviour below.
+const HOST_BRAND = {
+  'redefine-academy.netlify.app': 'paul',
+  'redefineacademy.com': 'paul',
+  'www.redefineacademy.com': 'paul',
+}
+
 function resolveBrandSlug() {
+  try {
+    const host = window.location.hostname
+    if (HOST_BRAND[host] && BRANDS[HOST_BRAND[host]]) return HOST_BRAND[host]
+  } catch { /* SSR / no window */ }
+
+  // Build-time override (fallback path for local/preview builds)
+  const forced = import.meta.env.VITE_DEFAULT_BRAND
+  if (forced && BRANDS[forced]) return forced
+
   let slug = null
   try {
     const params = new URLSearchParams(window.location.search)
