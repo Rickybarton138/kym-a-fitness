@@ -145,6 +145,7 @@ export const BRANDS = {
 // the multi-brand behaviour below.
 const HOST_BRAND = {
   'redefine-academy.netlify.app': 'paul',
+  'app.redefineacademy.com': 'paul',
   'redefineacademy.com': 'paul',
   'www.redefineacademy.com': 'paul',
 }
