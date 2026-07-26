@@ -6,14 +6,14 @@ import { THEME } from './themes.js'
 // writes their starting nutrition targets, then drops them into the app.
 // Shown by App.jsx whenever a client has no onboarded_at.
 
-const ACTIVITY = [
+export const ACTIVITY = [
   { key: 'sedentary', factor: 1.2,   label: 'Mostly sitting', sub: 'Little or no exercise' },
   { key: 'light',     factor: 1.375, label: 'Lightly active', sub: 'Exercise 1–3 days a week' },
   { key: 'moderate',  factor: 1.55,  label: 'Moderately active', sub: 'Exercise 3–5 days a week' },
   { key: 'active',    factor: 1.725, label: 'Very active', sub: 'Hard training 6–7 days a week' },
 ]
 
-const GOALS = [
+export const GOALS = [
   { key: 'lose',     label: 'Lose fat',      sub: 'Lean down, hold onto muscle', adj: -0.20, protein: 2.2 },
   { key: 'maintain', label: 'Maintain',      sub: 'Hold steady, get stronger',   adj: 0.0,   protein: 2.0 },
   { key: 'gain',     label: 'Build muscle',  sub: 'Lean, controlled gaining',     adj: 0.10,  protein: 2.0 },

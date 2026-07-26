@@ -9,6 +9,7 @@ import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag } from 
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows } from './WorkoutRows.jsx'
+import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
@@ -23,6 +24,32 @@ import {
 } from './ui.jsx'
 
 const FOCUS_OPTIONS = ['Full body', 'Push', 'Pull', 'Legs', 'Upper body']
+
+// Bottom nav. A brand may define `nav` in themes.js (array of { id, label }) to
+// group screens its own way; brands without one fall back to DEFAULT_NAV, so the
+// default six-tab bar (Kim / PPH / BBL) is byte-identical to before. Icons and
+// fallback labels resolve by id here so themes.js stays free of JSX.
+const TAB_META = {
+  home:      { label: 'Today',     icon: IconHome },
+  train:     { label: 'Train',     icon: IconTrain },
+  trainhub:  { label: 'Train',     icon: IconTrain },
+  nutrition: { label: 'Nutrition', icon: IconMeal },
+  fridge:    { label: 'Fridge',    icon: IconFridge },
+  meal:      { label: 'Meal',      icon: IconMeal },
+  videos:    { label: 'Videos',    icon: IconContent },
+  body:      { label: 'Body',      icon: IconBody },
+  ask:       { label: 'Coach',     icon: IconAsk },
+}
+const DEFAULT_NAV = [
+  { id: 'home' }, { id: 'train' }, { id: 'fridge' },
+  { id: 'meal' }, { id: 'body' }, { id: 'ask' },
+]
+// So a hub tab stays lit while you're inside one of its screens.
+const HUB_CHILDREN = {
+  trainhub:  ['train', 'programs', 'muscles', 'testing', 'strava'],
+  nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert'],
+  body:      ['body', 'growth', 'monitoring'],
+}
 
 export default function ClientApp({ profile, onSignOut }) {
   const [screen, setScreen] = useState('home')
@@ -74,6 +101,13 @@ export default function ClientApp({ profile, onSignOut }) {
   const consumed = sumMacros(todayLogs)
   const remaining = remainingMacros(targets, consumed)
 
+  // Bottom nav is brand-driven (see TAB_META / DEFAULT_NAV). A hub tab stays lit
+  // while you're on one of its child screens.
+  const nav = THEME.nav || DEFAULT_NAV
+  const activeTab = nav.some((n) => n.id === screen)
+    ? screen
+    : (nav.find((n) => HUB_CHILDREN[n.id]?.includes(screen))?.id || screen)
+
   async function logFood({ name, protein_g, carbs_g, fat_g, calories }, source) {
     const row = {
       client_id: profile.id, source, name: name || null,
@@ -110,6 +144,9 @@ export default function ClientApp({ profile, onSignOut }) {
       <main className="screen">
         {screen === 'home' && <Home name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} />}
+        {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
+        {screen === 'nutrition' && <NutritionHub coachName={coachName} onGo={setScreen} />}
+        {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'testing' && <Testing clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'muscles' && (
           <div className="stack">
@@ -155,13 +192,12 @@ export default function ClientApp({ profile, onSignOut }) {
         )}
       </main>
 
-      <nav className="tabbar six">
-        <Tab id="home" label="Today" active={screen} onGo={setScreen} icon={IconHome} />
-        <Tab id="train" label="Train" active={screen} onGo={setScreen} icon={IconTrain} />
-        <Tab id="fridge" label="Fridge" active={screen} onGo={setScreen} icon={IconFridge} />
-        <Tab id="meal" label="Meal" active={screen} onGo={setScreen} icon={IconMeal} />
-        <Tab id="body" label="Body" active={screen} onGo={setScreen} icon={IconBody} />
-        <Tab id="ask" label={coachName?.split(' ')[0] || 'Coach'} active={screen} onGo={setScreen} icon={IconAsk} />
+      <nav className={'tabbar' + (nav.length === 6 ? ' six' : '')}>
+        {nav.map((n) => {
+          const meta = TAB_META[n.id] || {}
+          const label = n.label || (n.id === 'ask' ? (coachName?.split(' ')[0] || 'Coach') : meta.label || n.id)
+          return <Tab key={n.id} id={n.id} label={label} active={activeTab} onGo={setScreen} icon={meta.icon || IconHome} />
+        })}
       </nav>
     </div>
   )
@@ -1232,6 +1268,14 @@ function VideoLibrary({ coachName, onBack }) {
       .then(({ data }) => setVideos(data || []))
   }, [])
 
+  // Group into folders by category/tag, so clips sit under Nutrition / Mindset /
+  // Lifestyle etc. Untagged videos fall into a "General" folder.
+  const videoFolders = (() => {
+    const groups = {}
+    ;(videos || []).forEach((v) => { const k = (v.category || 'General').trim() || 'General'; (groups[k] = groups[k] || []).push(v) })
+    return Object.entries(groups).sort((a, b) => (a[0] === 'General' ? 1 : b[0] === 'General' ? -1 : a[0].localeCompare(b[0])))
+  })()
+
   return (
     <div>
       <button className="link-btn" onClick={onBack}>‹ Back</button>
@@ -1240,27 +1284,29 @@ function VideoLibrary({ coachName, onBack }) {
       <p className="muted-note">Technique and mindset clips from {coachFirst} — tap to watch.</p>
       {videos === null && <Loader text="Loading videos…" />}
       {videos !== null && videos.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No videos yet — {coachFirst} will add them here.</p>}
-      <div className="stack" style={{ marginTop: 12 }}>
-        {(videos || []).map((v) => {
-          const embed = videoEmbed(v.url)
-          const open = openId === v.id
-          return (
-            <div className="card" key={v.id}>
-              <div className="session-title">{v.title}</div>
-              <div className="session-sub">{v.category || 'Video'}</div>
-              {v.description && <p className="muted-note" style={{ marginTop: 6 }}>{v.description}</p>}
-              {open && embed && (
-                <div className="video-embed"><iframe src={embed} title={v.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>
-              )}
-              {embed ? (
-                <button className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setOpenId(open ? null : v.id)}>{open ? 'Hide' : 'Watch here'}</button>
-              ) : (
-                <a className="btn ghost sm" style={{ marginTop: 10, display: 'inline-block' }} href={v.url} target="_blank" rel="noopener noreferrer">Open video</a>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {videoFolders.map(([folder, items]) => (
+        <div className="stack" key={folder} style={{ marginTop: 12 }}>
+          <p className="eyebrow accent">{folder}</p>
+          {items.map((v) => {
+            const embed = videoEmbed(v.url)
+            const open = openId === v.id
+            return (
+              <div className="card" key={v.id}>
+                <div className="session-title">{v.title}</div>
+                {v.description && <p className="muted-note" style={{ marginTop: 6 }}>{v.description}</p>}
+                {open && embed && (
+                  <div className="video-embed"><iframe src={embed} title={v.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>
+                )}
+                {embed ? (
+                  <button className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setOpenId(open ? null : v.id)}>{open ? 'Hide' : 'Watch here'}</button>
+                ) : (
+                  <a className="btn ghost sm" style={{ marginTop: 10, display: 'inline-block' }} href={v.url} target="_blank" rel="noopener noreferrer">Open video</a>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -1955,6 +2001,162 @@ function IGContent({ coachName }) {
         </div>
       ))}
       <a className="btn ghost" href="https://www.instagram.com/cbk_coachedbykim" target="_blank" rel="noreferrer">Follow {first} on Instagram</a>
+    </div>
+  )
+}
+
+/* ---------- Grouped hubs (brands with a grouped nav, e.g. ReDefine) ---------- */
+function TrainHub({ coachName, onGo }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  return (
+    <div className="stack">
+      <p className="eyebrow">Train</p>
+      <h1 className="h1">Your training.</h1>
+      <p className="lead">Everything for the gym floor in one place.</p>
+      <div className="tiles">
+        <button className="tile tile-hero" onClick={() => onGo('train')}>
+          <IconTrain />
+          <div><b>Today’s session</b><span>Start a workout, generate one, or build your own</span></div>
+        </button>
+        {THEME.features?.programs && (
+          <button className="tile" onClick={() => onGo('programs')}>
+            <IconTrain />
+            <div><b>Program library</b><span>Follow a full plan built by {coachFirst}</span></div>
+          </button>
+        )}
+        <button className="tile" onClick={() => onGo('muscles')}>
+          <IconTrain />
+          <div><b>Muscle targeter</b><span>Tap a muscle, get exercises to train it</span></div>
+        </button>
+        {THEME.features?.testing && (
+          <button className="tile" onClick={() => onGo('testing')}>
+            <IconTest />
+            <div><b>Performance testing</b><span>Log your tests &amp; track your PBs</span></div>
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function NutritionHub({ coachName, onGo }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  return (
+    <div className="stack">
+      <p className="eyebrow">Nutrition</p>
+      <h1 className="h1">Fuel your day.</h1>
+      <p className="lead">Log food, scan meals and stay on your targets.</p>
+      <div className="tiles">
+        <button className="tile tile-hero" onClick={() => onGo('meal')}>
+          <IconMeal />
+          <div><b>Scan a meal</b><span>Photo → calories &amp; macros</span></div>
+        </button>
+        <button className="tile tile-hero" onClick={() => onGo('fridge')}>
+          <IconFridge />
+          <div><b>Fridge-to-Plate</b><span>Snap your fridge, get a meal that fits your macros</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('food')}>
+          <IconMeal />
+          <div><b>Log food</b><span>Search foods &amp; drinks, add your portion</span></div>
+        </button>
+        {THEME.features?.barcode && (
+          <button className="tile" onClick={() => onGo('barcode')}>
+            <IconMeal />
+            <div><b>Barcode scan</b><span>Scan a product, log it in a tap</span></div>
+          </button>
+        )}
+        {THEME.features?.recipes && (
+          <button className="tile" onClick={() => onGo('recipes')}>
+            <IconMeal />
+            <div><b>Recipes</b><span>{coachFirst}’s go-to meals, log in one tap</span></div>
+          </button>
+        )}
+        <button className="tile" onClick={() => onGo('calc')}>
+          <IconMeal />
+          <div><b>Calorie calculator</b><span>Recalculate your targets any time</span></div>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// In-app recalculator. Reuses the onboarding maths but only ever upserts
+// macro_targets + the profile stats — never onboarded_at, and never inserts a
+// "Starting weight" row (that belongs to first-run onboarding only).
+function CalcTargets({ profile, onSaveTargets, onBack }) {
+  const [sex, setSex] = useState(profile.sex || 'male')
+  const [age, setAge] = useState(profile.age ? String(profile.age) : '')
+  const [height, setHeight] = useState(profile.height_cm ? String(profile.height_cm) : '')
+  const [weight, setWeight] = useState('')
+  const [activity, setActivity] = useState(profile.activity_level || 'moderate')
+  const [goal, setGoal] = useState(profile.goal || 'lose')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  // Pre-fill weight from the most recent measurement so a recalc starts from today.
+  useEffect(() => {
+    supabase.from('body_measurements').select('weight_kg').eq('client_id', profile.id)
+      .not('weight_kg', 'is', null).order('measured_at', { ascending: false }).limit(1)
+      .then(({ data }) => { if (data && data[0]?.weight_kg != null) setWeight(String(data[0].weight_kg)) })
+  }, [])
+
+  const valid = Number(age) >= 13 && Number(age) <= 100 && Number(height) >= 120 && Number(height) <= 230 && Number(weight) >= 30 && Number(weight) <= 300
+  const targets = valid ? computeTargets({ sex, age: Number(age), height_cm: Number(height), weight_kg: Number(weight), activity, goal }) : null
+
+  async function apply() {
+    if (!targets) return
+    setSaving(true); setError('')
+    try {
+      await onSaveTargets({ calories: targets.calories, protein_g: targets.protein_g, carbs_g: targets.carbs_g, fat_g: targets.fat_g })
+      const upP = await supabase.from('profiles').update({ sex, age: Number(age), height_cm: Number(height), activity_level: activity, goal }).eq('id', profile.id)
+      if (upP.error) throw new Error(upP.error.message)
+      setSaved(true); setTimeout(() => setSaved(false), 2500)
+    } catch (e) { setError(e.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Calorie calculator</p>
+      <h1 className="h1">Recalculate your targets.</h1>
+      <p className="lead">Update your numbers and we’ll set fresh calorie and macro targets.</p>
+      <div className="card">
+        <div className="seg small">
+          <button type="button" className={sex === 'male' ? 'on' : ''} onClick={() => setSex('male')}>Male</button>
+          <button type="button" className={sex === 'female' ? 'on' : ''} onClick={() => setSex('female')}>Female</button>
+        </div>
+        <div className="grid-2">
+          <label className="field">Age<input type="number" inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value)} placeholder="years" /></label>
+          <label className="field">Height (cm)<input type="number" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="cm" /></label>
+          <label className="field">Weight (kg)<input type="number" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="kg" /></label>
+        </div>
+        <label className="field">Activity
+          <select value={activity} onChange={(e) => setActivity(e.target.value)}>
+            {ACTIVITY.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+          </select>
+        </label>
+        <label className="field">Goal
+          <select value={goal} onChange={(e) => setGoal(e.target.value)}>
+            {GOALS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {targets && (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p className="eyebrow accent">New daily target</p>
+          <p style={{ fontSize: 34, fontWeight: 700, margin: '4px 0' }}>{targets.calories} <span className="muted" style={{ fontSize: 16 }}>kcal</span></p>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 18, marginTop: 8 }}>
+            <span><b>{targets.protein_g}g</b><span className="muted" style={{ display: 'block', fontSize: 12 }}>Protein</span></span>
+            <span><b>{targets.carbs_g}g</b><span className="muted" style={{ display: 'block', fontSize: 12 }}>Carbs</span></span>
+            <span><b>{targets.fat_g}g</b><span className="muted" style={{ display: 'block', fontSize: 12 }}>Fat</span></span>
+          </div>
+          <p className="muted-note" style={{ marginTop: 12 }}>Maintenance is around {targets.tdee} kcal.</p>
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+      <button className="btn primary big" disabled={!targets || saving} onClick={apply}>{saving ? 'Saving…' : 'Save new targets'}</button>
+      {saved && <p className="logged-ok">Targets updated ✓</p>}
     </div>
   )
 }

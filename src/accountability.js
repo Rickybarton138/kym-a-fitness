@@ -6,7 +6,7 @@ export const LEVELS = [
   { n: 1, label: 'Gentle', blurb: 'A soft, no-pressure whisper.' },
   { n: 2, label: 'Friendly', blurb: 'A warm little reminder.' },
   { n: 3, label: 'Encouraging', blurb: 'A proper nudge to keep your momentum.' },
-  { n: 4, label: 'Firm', blurb: 'No skipping — she means it.' },
+  { n: 4, label: 'Firm', blurb: 'No skipping — and I mean it.' },
   { n: 5, label: 'Tough love', blurb: 'Full accountability, no excuses (still on your side).' },
 ]
 

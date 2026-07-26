@@ -45,6 +45,17 @@ export const BRANDS = {
     mark: 'RD',
     scheme: 'dark',
     features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true },
+    // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout). Ids map to
+    // screens/hubs in ClientApp; label overrides the per-id default. Brands
+    // without a `nav` keep the default six-tab bar, so Kim/PPH/BBL are untouched.
+    nav: [
+      { id: 'home', label: 'Home' },
+      { id: 'trainhub', label: 'Train' },
+      { id: 'nutrition', label: 'Nutrition' },
+      { id: 'videos', label: 'Videos' },
+      { id: 'body', label: 'Progress' },
+      { id: 'ask', label: 'Coach' },
+    ],
     trainGymName: 'your gym',
     equipment: [
       'Squat racks & Olympic benches',
@@ -54,17 +65,22 @@ export const BRANDS = {
       'Cardio (treadmill, rower, bike, ski-erg)',
       'Functional rig & sled track',
     ],
+    // Palette pulled from Paul's real ReDefine logo: emerald-green lightning +
+    // gold "RE" on near-black. Emerald is the accent; gold is a highlight token
+    // (var(--gold)) — never a button background (white-on-gold fails contrast).
+    // Dark text sits on the bright emerald for AA contrast on buttons.
     vars: {
-      '--bg': '#0e0f12',
-      '--surface': '#191b1f',
-      '--surface-2': '#23262b',
-      '--line': '#2f333a',
-      '--text': '#f4f5f6',
-      '--muted': '#9aa0a8',
-      '--accent': '#f2662d',
-      '--accent-hi': '#ff7d44',
-      '--on-accent': '#ffffff',
-      '--ring-track': '#2f333a',
+      '--bg': '#0d0f0e',
+      '--surface': '#171a18',
+      '--surface-2': '#212523',
+      '--line': '#2d322f',
+      '--text': '#f4f6f5',
+      '--muted': '#98a09b',
+      '--accent': '#18c07d',
+      '--accent-hi': '#3ad598',
+      '--on-accent': '#052117',
+      '--gold': '#f5c518',
+      '--ring-track': '#2d322f',
       '--radius': '14px',
     },
   },
