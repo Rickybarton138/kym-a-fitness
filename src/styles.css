@@ -375,6 +375,10 @@ input { font-family: inherit; }
 .compare-col { display: flex; flex-direction: column; gap: 6px; }
 .compare-col .shot { margin: 0; }
 .compare-col .shot img { width: 100%; border-radius: 10px; display: block; }
+
+/* ---- Programme library filters ---- */
+.prog-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.prog-filters select { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; color: var(--text); font-size: 12.5px; }
 .rd-status { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }
 .rd-status b { font-size: 16px; }
 .rd-flag { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin: 8px 0 4px; }

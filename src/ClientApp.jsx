@@ -14,6 +14,7 @@ import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
+import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { MuscleTargeter } from './MuscleTargeter.jsx'
 import { StravaConnect } from './StravaConnect.jsx'
@@ -1253,11 +1254,15 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
   const [openId, setOpenId] = useState(null)
   const [sessions, setSessions] = useState({})
   const [startedId, setStartedId] = useState(null)
+  const [filters, setFilters] = useState({})
 
   useEffect(() => {
     supabase.from('workout_programs').select('*').order('created_at', { ascending: false })
       .then(({ data }) => setPrograms(data || []))
   }, [])
+
+  const anyFilter = Object.values(filters).some(Boolean)
+  const shown = (programs || []).filter((pr) => programMatches(pr, filters))
 
   async function open(id) {
     setOpenId((o) => (o === id ? null : id))
@@ -1286,13 +1291,26 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
       {programs === null && <Loader text="Loading programs…" />}
       {programs !== null && programs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs yet — {coachFirst} will add them here.</p>}
 
+      {programs !== null && programs.length > 0 && (
+        <div className="prog-filters">
+          {PROGRAM_DIMS.map((d) => (
+            <select key={d.key} value={filters[d.key] || ''} onChange={(e) => setFilters((f) => ({ ...f, [d.key]: e.target.value || undefined }))}>
+              <option value="">{d.label}: any</option>
+              {d.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          ))}
+          {anyFilter && <button type="button" className="link-btn inline" onClick={() => setFilters({})}>Clear</button>}
+        </div>
+      )}
+      {programs !== null && programs.length > 0 && shown.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs match those filters — try clearing one.</p>}
+
       <div className="stack" style={{ marginTop: 12 }}>
-        {(programs || []).map((pr) => (
+        {shown.map((pr) => (
           <div className="card session-card" key={pr.id}>
             <button type="button" className="session-head" onClick={() => open(pr.id)}>
               <div>
                 <div className="session-title">{pr.title}</div>
-                <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null].filter(Boolean).join(' · ')}</div>
+                <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null, ...PROGRAM_DIMS.map((d) => programTagLabel(d.key, pr[d.key]))].filter(Boolean).join(' · ')}</div>
               </div>
               <span className="chev">{openId === pr.id ? '−' : '+'}</span>
             </button>

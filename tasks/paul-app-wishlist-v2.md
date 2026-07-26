@@ -124,9 +124,12 @@ info, programme, nutrition plan, performance, training adherence, progress physi
    (`ProgressPhotos.jsx`, shared client+coach), Body scan, Measurements, Training
    (in-gym strength). Coach sees the same compare in ClientDetail. Kim's Body
    screen unchanged. Also shipped the (b) decision: per-exercise how-to video —
-   coach attaches a URL in the builder, player embeds/links it. Programme-library
-   filters (C: home/gym, equipment, gender, goal) still TODO — needs metadata on
-   workout_programs (next).
+   coach attaches a URL in the builder, player embeds/links it.
+   **7B — Programme-library filters DONE + LIVE 2026-07-26** (commit pending):
+   `workout_programs` gained location/equipment/audience (goal already existed);
+   `programMeta.js` defines the dimensions; coach create form tags a programme;
+   client library has a filter bar (unspecified programmes stay visible). Verified
+   filtering discriminates both ways. Phase 7 fully complete.
 8. Check-in form builder (E).
 9. Community/files/welcome/nutrition-tone (F).
 - Coaching-side IA restructure (G) folded in as each area is touched.

@@ -12,6 +12,7 @@ import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
+import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
@@ -1142,6 +1143,7 @@ function CoachPrograms({ coachId }) {
   const [desc, setDesc] = useState('')
   const [weeks, setWeeks] = useState('')
   const [level, setLevel] = useState('Beginner')
+  const [meta, setMeta] = useState({}) // location / equipment / audience / goal filters
   const [error, setError] = useState('')
   const [addFor, setAddFor] = useState(null) // program_id we're adding a session to
   const [pickTpl, setPickTpl] = useState('')
@@ -1171,10 +1173,12 @@ function CoachPrograms({ coachId }) {
     const { data, error: err } = await supabase.from('workout_programs').insert({
       coach_id: coachId, title: title.trim(), description: desc.trim() || null,
       weeks: Number(weeks) || null, level,
+      location: meta.location || null, equipment: meta.equipment || null,
+      audience: meta.audience || null, goal: meta.goal || null,
     }).select().single()
     if (err) { setError(err.message); return }
     setPrograms((p) => [data, ...p])
-    setTitle(''); setDesc(''); setWeeks(''); setLevel('Beginner'); setCreating(false); setError('')
+    setTitle(''); setDesc(''); setWeeks(''); setLevel('Beginner'); setMeta({}); setCreating(false); setError('')
     setOpenId(data.id); setSessions((s) => ({ ...s, [data.id]: [] })); setAddFor(data.id)
   }
 
@@ -1212,7 +1216,7 @@ function CoachPrograms({ coachId }) {
               <button type="button" className="session-head" onClick={() => toggle(pr.id)}>
                 <div>
                   <div className="session-title">{pr.title}</div>
-                  <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null].filter(Boolean).join(' · ')}</div>
+                  <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null, ...PROGRAM_DIMS.map((d) => programTagLabel(d.key, pr[d.key]))].filter(Boolean).join(' · ')}</div>
                 </div>
                 <span className="chev">{openId === pr.id ? '−' : '+'}</span>
               </button>
@@ -1271,6 +1275,17 @@ function CoachPrograms({ coachId }) {
                 {PROGRAM_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </label>
+          </div>
+          <p className="muted-note">Tags (help clients filter — optional):</p>
+          <div className="grid-2">
+            {PROGRAM_DIMS.map((d) => (
+              <label className="field" key={d.key}>{d.label}
+                <select className="ex-select" value={meta[d.key] || ''} onChange={(e) => setMeta((m) => ({ ...m, [d.key]: e.target.value || undefined }))}>
+                  <option value="">Any / unspecified</option>
+                  {d.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+            ))}
           </div>
           <button className="btn primary big" onClick={createProgram}>Create program</button>
           <button type="button" className="link-btn" onClick={() => { setCreating(false); setError('') }}>Cancel</button>
