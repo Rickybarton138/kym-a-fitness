@@ -142,7 +142,7 @@ export default function ClientApp({ profile, onSignOut }) {
       </header>
 
       <main className="screen">
-        {screen === 'home' && <Home name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} onGo={setScreen} onSaveTargets={saveTargets} />}
+        {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} />}
         {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub coachName={coachName} onGo={setScreen} />}
@@ -233,7 +233,7 @@ function HeroCarousel({ images }) {
   )
 }
 
-function Home({ name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, onGo, onSaveTargets }) {
+function Home({ profile, name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, onGo, onSaveTargets }) {
   const [editing, setEditing] = useState(false)
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const pct = targets?.calories ? consumed.calories / targets.calories : 0
@@ -244,6 +244,7 @@ function Home({ name, coachName, heroImages, targets, consumed, remaining, foodL
       <h1 className="h1">Hi {name?.split(' ')[0] || 'there'} — let’s hit your numbers.</h1>
       {coachName && <p className="lead">Coached by {coachName}.</p>}
 
+      {THEME.features?.agenda && <AgendaCard profile={profile} coachName={coachName} foodLoggedToday={foodLoggedToday} onGo={onGo} />}
       <AccountabilityCard clientId={clientId} coachName={coachName} foodLoggedToday={foodLoggedToday} onGo={onGo} />
 
       <div className="card ring-card">
@@ -403,6 +404,101 @@ function TargetEditor({ targets, onSave }) {
         <label className="field">Fat (g)<input type="number" value={v.fat_g} onChange={set('fat_g')} /></label>
       </div>
       <button className="btn primary" onClick={() => onSave(v)}>Save targets</button>
+    </div>
+  )
+}
+
+/* ---------- Daily agenda ("Today's plan") ---------- */
+function AgendaItem({ done, label, sub, children }) {
+  return (
+    <div className={'agenda-item' + (done ? ' done' : '')}>
+      <span className="agenda-dot" aria-hidden="true" />
+      <div className="agenda-body"><b>{label}</b><span>{sub}</span></div>
+      {children && <div className="agenda-action">{children}</div>}
+    </div>
+  )
+}
+
+function AgendaCard({ profile, coachName, foodLoggedToday, onGo }) {
+  const coach = coachName?.split(' ')[0] || 'your coach'
+  // One client-side date basis for the whole card (matches AccountabilityCard).
+  const today = new Date().toISOString().slice(0, 10)
+  const target = profile.step_target || 10000
+  const [steps, setSteps] = useState(null)
+  const [stepInput, setStepInput] = useState('')
+  const [savingSteps, setSavingSteps] = useState(false)
+  const [trainedToday, setTrainedToday] = useState(false)
+  const [marking, setMarking] = useState(false)
+  const [lastCheckin, setLastCheckin] = useState(undefined)
+
+  async function load() {
+    const [{ data: ds }, { data: comps }, { data: ci }] = await Promise.all([
+      supabase.from('daily_steps').select('*').eq('client_id', profile.id).eq('day', today).maybeSingle(),
+      supabase.from('workout_completions').select('id').eq('client_id', profile.id).eq('completed_on', today),
+      supabase.from('weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
+    ])
+    setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
+    setTrainedToday((comps || []).length > 0)
+    setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
+  }
+  useEffect(() => { load() }, [foodLoggedToday])
+
+  async function saveSteps() {
+    const n = Math.max(0, parseInt(stepInput, 10) || 0)
+    setSavingSteps(true)
+    const { data } = await supabase.from('daily_steps')
+      .upsert({ client_id: profile.id, day: today, steps: n, updated_at: new Date().toISOString() }, { onConflict: 'client_id,day' })
+      .select().single()
+    if (data) setSteps(data)
+    setSavingSteps(false)
+  }
+  async function markTrained() {
+    setMarking(true)
+    const { error } = await supabase.from('workout_completions').insert({ client_id: profile.id, source: 'agenda' })
+    if (!error) setTrainedToday(true)
+    setMarking(false)
+  }
+
+  const stepsVal = steps?.steps || 0
+  const checkedInToday = lastCheckin ? lastCheckin.slice(0, 10) === today : false
+  const isMonday = new Date().getDay() === 1
+  const daysSince = lastCheckin ? (Date.now() - new Date(lastCheckin).getTime()) / 86400000 : 999
+  const showCheckin = lastCheckin !== undefined && !checkedInToday && (isMonday || daysSince >= 7)
+  const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  return (
+    <div className="card agenda-card">
+      <div className="agenda-head">
+        <b>Today’s plan</b>
+        <span className="muted-note">{dateLabel}</span>
+      </div>
+      <div className="agenda-list">
+        <AgendaItem done={foodLoggedToday} label="Log your food" sub={foodLoggedToday ? 'Logged for today' : 'Keep your calories on track'}>
+          {!foodLoggedToday && <button className="btn ghost sm" onClick={() => onGo(THEME.nav ? 'nutrition' : 'meal')}>Log</button>}
+        </AgendaItem>
+
+        <AgendaItem done={stepsVal >= target} label={`Steps · ${stepsVal.toLocaleString()} / ${target.toLocaleString()}`} sub={stepsVal >= target ? 'Target hit — nice one' : 'Log your step count'}>
+          <span className="agenda-steps">
+            <input inputMode="numeric" placeholder="steps" value={stepInput} onChange={(e) => setStepInput(e.target.value)} />
+            <button className="btn ghost sm" disabled={savingSteps} onClick={saveSteps}>{savingSteps ? '…' : 'Save'}</button>
+          </span>
+        </AgendaItem>
+
+        <AgendaItem done={trainedToday} label="Train" sub={trainedToday ? 'Session done — great work' : 'Start today’s workout'}>
+          {!trainedToday && (
+            <span className="agenda-steps">
+              <button className="btn primary sm" onClick={() => onGo(THEME.nav ? 'trainhub' : 'train')}>Start</button>
+              <button className="btn ghost sm" disabled={marking} onClick={markTrained}>Done</button>
+            </span>
+          )}
+        </AgendaItem>
+
+        {showCheckin && (
+          <AgendaItem done={false} label="Weekly check-in" sub={`Send ${coach} how your week went`}>
+            <button className="btn ghost sm" onClick={() => onGo('checkin')}>Open</button>
+          </AgendaItem>
+        )}
+      </div>
     </div>
   )
 }

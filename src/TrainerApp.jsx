@@ -25,7 +25,7 @@ export default function TrainerApp({ profile, onSignOut }) {
 
   async function loadClients() {
     const { data } = await supabase
-      .from('profiles').select('id, full_name, created_at, membership_tier, goal')
+      .from('profiles').select('id, full_name, created_at, membership_tier, goal, step_target')
       .eq('trainer_id', profile.id).order('created_at', { ascending: true })
     setClients(data || [])
     setLoading(false)
@@ -135,6 +135,8 @@ function ClientDetail({ client, trainerId, onBack }) {
   const [saved, setSaved] = useState(false)
   const [tier, setTier] = useState(client.membership_tier || 'standard')
   const [tierBusy, setTierBusy] = useState(false)
+  const [stepTarget, setStepTarget] = useState(client.step_target != null ? String(client.step_target) : '')
+  const [stepSaved, setStepSaved] = useState(false)
 
   async function changeTier(t) {
     if (t === tier) return
@@ -142,6 +144,12 @@ function ClientDetail({ client, trainerId, onBack }) {
     const { error } = await supabase.rpc('set_member_tier', { p_client: client.id, p_tier: t })
     if (!error) setTier(t)
     setTierBusy(false)
+  }
+
+  async function saveStepTarget() {
+    const n = Math.max(0, parseInt(stepTarget, 10) || 0)
+    const { error } = await supabase.rpc('set_step_target', { p_client: client.id, p_steps: n })
+    if (!error) { setStepTarget(String(n)); setStepSaved(true); setTimeout(() => setStepSaved(false), 1500) }
   }
 
   async function load() {
@@ -193,6 +201,17 @@ function ClientDetail({ client, trainerId, onBack }) {
             </div>
 
             {THEME.features?.tags && <ClientTags clientId={client.id} coachId={trainerId} />}
+
+            {THEME.features?.agenda && (
+              <div className="card">
+                <p className="eyebrow">Daily step target</p>
+                <p className="muted-note" style={{ marginBottom: 8 }}>Shows on {(client.full_name || 'your client').split(' ')[0]}’s daily plan. Leave blank for the default 10,000.</p>
+                <div className="grid-2">
+                  <label className="field">Steps / day<input type="number" inputMode="numeric" value={stepTarget} onChange={(e) => setStepTarget(e.target.value)} placeholder="10000" /></label>
+                </div>
+                <button className="btn primary" onClick={saveStepTarget}>{stepSaved ? 'Saved ✓' : 'Save step target'}</button>
+              </div>
+            )}
 
             <div className="card">
               <p className="eyebrow accent">Today’s intake</p>

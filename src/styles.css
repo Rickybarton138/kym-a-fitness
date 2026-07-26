@@ -275,6 +275,23 @@ input { font-family: inherit; }
 .nudge-msg.done { color: var(--good); font-weight: 600; }
 .nudge-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ---- Daily agenda ("Today's plan") ---- */
+.agenda-card { border-left: 4px solid var(--accent); }
+.agenda-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.agenda-head b { font-size: 15px; }
+.agenda-list { display: flex; flex-direction: column; }
+.agenda-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); position: relative; }
+.agenda-item:first-child { border-top: 0; }
+.agenda-dot { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); background: transparent; }
+.agenda-item.done .agenda-dot { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface); }
+.agenda-body { flex: 1; min-width: 0; }
+.agenda-body b { display: block; font-size: 14.5px; }
+.agenda-item.done .agenda-body b { color: var(--muted); }
+.agenda-body span { display: block; font-size: 12.5px; color: var(--muted); }
+.agenda-action { flex: 0 0 auto; }
+.agenda-steps { display: inline-flex; gap: 6px; align-items: center; }
+.agenda-steps input { width: 74px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; color: var(--text); font-size: 13px; }
+
 .level-picker { display: flex; flex-direction: column; gap: 8px; }
 .level-opt { display: flex; align-items: center; gap: 12px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
 .level-opt.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
