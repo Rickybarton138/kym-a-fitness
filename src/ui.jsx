@@ -82,6 +82,7 @@ export function ExSets({ ex }) {
     return (
       <div className="set-list">
         {chip && <span className="settype-chip">{chip}</span>}
+        {ex.rpe && <span className="settype-chip rpe">RPE {ex.rpe}</span>}
         {ex.sets.map((st, i) => (
           <div className="set-line" key={i}>
             <span className="sl-n">{setWord} {i + 1}</span>
@@ -93,7 +94,7 @@ export function ExSets({ ex }) {
       </div>
     )
   }
-  return <div className="ex-meta">{ex.sets} × {ex.reps}{ex.weight ? ' @ ' + ex.weight : ''}{extra}</div>
+  return <div className="ex-meta">{ex.sets} × {ex.reps}{ex.weight ? ' @ ' + ex.weight : ''}{ex.rpe ? ' · RPE ' + ex.rpe : ''}{extra}</div>
 }
 
 const s = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }

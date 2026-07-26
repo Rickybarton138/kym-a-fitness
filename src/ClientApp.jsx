@@ -164,6 +164,9 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'programs' && <ProgramLibrary clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'recipes' && <RecipeLibrary clientId={profile.id} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
         {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'supplements' && <LinkList kind="supplement" coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'podcasts' && <LinkList kind="podcast" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'barcode' && <BarcodeScan onLog={(m) => logFood(m, 'barcode')} onBack={() => setScreen('home')} />}
         {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'nudges' && <NudgeSettings clientId={profile.id} onBack={() => setScreen('home')} />}
@@ -333,6 +336,24 @@ function Home({ name, coachName, heroImages, targets, consumed, remaining, foodL
           <IconCommunity />
           <div><b>Community</b><span>Share wins & cheer each other on</span></div>
         </button>
+        {THEME.features?.supplements && (
+          <button className="tile" onClick={() => onGo('supplements')}>
+            <IconMeal />
+            <div><b>Supplements</b><span>Trusted brands & your discount code</span></div>
+          </button>
+        )}
+        {THEME.features?.shop && (
+          <button className="tile" onClick={() => onGo('shop')}>
+            <IconContent />
+            <div><b>Shop</b><span>{coachFirst}’s book, merch &amp; gear</span></div>
+          </button>
+        )}
+        {THEME.features?.podcasts && (
+          <button className="tile" onClick={() => onGo('podcasts')}>
+            <IconContent />
+            <div><b>Podcasts</b><span>Listen to {coachFirst}’s episodes</span></div>
+          </button>
+        )}
         <button className="tile tile-hero" onClick={() => onGo('checkin')}>
           <IconAsk />
           <div><b>Weekly check-in</b><span>Send {coachFirst} your progress & how the week went</span></div>
@@ -1307,6 +1328,43 @@ function VideoLibrary({ coachName, onBack }) {
           })}
         </div>
       ))}
+    </div>
+  )
+}
+
+// Supplements / Shop / Podcasts — simple lists of the coach's outbound links.
+// RLS (cl_client_read) scopes coach_links to the client's own coach.
+const LINK_META = {
+  supplement: { eyebrow: 'Supplements', h1: 'Supplements & discounts.', lead: (c) => `${c}’s trusted brands — with your discount codes.`, cta: 'Shop now', empty: 'No supplement links yet.' },
+  shop:       { eyebrow: 'Shop',        h1: 'Shop.',                     lead: (c) => `Books, merch and gear from ${c}.`,          cta: 'View',      empty: 'Nothing in the shop yet.' },
+  podcast:    { eyebrow: 'Podcasts',    h1: 'Podcasts.',                 lead: (c) => `Listen in to ${c}’s episodes.`,            cta: 'Listen',    empty: 'No podcasts linked yet.' },
+}
+function LinkList({ kind, coachName, onBack }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const meta = LINK_META[kind] || LINK_META.shop
+  const [links, setLinks] = useState(null)
+  useEffect(() => {
+    supabase.from('coach_links').select('*').eq('kind', kind)
+      .order('position', { ascending: true }).order('created_at', { ascending: true })
+      .then(({ data }) => setLinks(data || []))
+  }, [kind])
+  return (
+    <div>
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">{meta.eyebrow}</p>
+      <h1 className="h1">{meta.h1}</h1>
+      <p className="muted-note">{meta.lead(coachFirst)}</p>
+      {links === null && <Loader text="Loading…" />}
+      {links !== null && links.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>{meta.empty}</p>}
+      <div className="stack" style={{ marginTop: 12 }}>
+        {(links || []).map((l) => (
+          <div className="card" key={l.id}>
+            <div className="session-title">{l.label}</div>
+            {l.note && <p className="muted-note" style={{ marginTop: 6 }}>{l.note}</p>}
+            <a className="btn primary sm" style={{ marginTop: 10, display: 'inline-block' }} href={l.url} target="_blank" rel="noopener noreferrer">{meta.cta}</a>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -16,7 +16,7 @@ export const setTypeNote = (k) => (SET_TYPES.find((t) => t.key === k) || SET_TYP
 
 // A fresh exercise starts with 3 empty sets, each with its own reps + weight.
 export function newExerciseRow() {
-  return { name: '', custom: false, cue: '', set_type: 'straight', group: '', sets: [{ reps: '', weight: '' }, { reps: '', weight: '' }, { reps: '', weight: '' }] }
+  return { name: '', custom: false, cue: '', set_type: 'straight', group: '', rpe: '', sets: [{ reps: '', weight: '' }, { reps: '', weight: '' }, { reps: '', weight: '' }] }
 }
 
 // Shared exercise editor: pick an exercise, then log each set's reps and weight
@@ -64,6 +64,8 @@ export function ExerciseRowsEditor({ rows, setRows }) {
                 <input className="ex-group-in" placeholder="Group (e.g. A)" maxLength={2}
                   value={r.group || ''} onChange={(e) => update(i, 'group', e.target.value.toUpperCase())} />
               )}
+              <input className="ex-rpe-in" type="number" min="1" max="10" placeholder="RPE" title="Target intensity, 1–10"
+                value={r.rpe || ''} onChange={(e) => update(i, 'rpe', e.target.value)} />
             </div>
             {(r.set_type && r.set_type !== 'straight') && <p className="muted-note ex-settype-note">{setTypeNote(r.set_type)}</p>}
 
@@ -98,7 +100,7 @@ export function planToRows(exercises) {
     const sets = Array.isArray(ex.sets)
       ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? '') }))
       : Array.from({ length: Math.max(1, Number(ex.sets) || 1) }, () => ({ reps: String(ex.reps ?? ''), weight: String(ex.weight ?? '') }))
-    return { name: ex.name || '', custom: !KNOWN_NAMES.has(ex.name), cue: ex.cue || '', set_type: ex.set_type || 'straight', group: ex.group || '', sets }
+    return { name: ex.name || '', custom: !KNOWN_NAMES.has(ex.name), cue: ex.cue || '', set_type: ex.set_type || 'straight', group: ex.group || '', rpe: ex.rpe != null ? String(ex.rpe) : '', sets }
   })
 }
 
@@ -109,12 +111,15 @@ export function rowsToExercises(rows, equipmentLabel) {
     .map((r) => {
       const set_type = r.set_type && r.set_type !== 'straight' ? r.set_type : undefined
       const group = set_type === 'superset' && (r.group || '').trim() ? r.group.trim() : undefined
+      const rpeNum = Number(r.rpe)
+      const rpe = r.rpe !== '' && r.rpe != null && rpeNum >= 1 && rpeNum <= 10 ? rpeNum : undefined
       return {
         name: r.name.trim(),
         equipment: equipmentLabel || 'Own choice',
         cue: (r.cue || '').trim(),
         ...(set_type ? { set_type } : {}),
         ...(group ? { group } : {}),
+        ...(rpe ? { rpe } : {}),
         sets: (r.sets || [])
           .filter((s) => String(s.reps).trim() || String(s.weight).trim())
           .map((s) => ({ reps: String(s.reps).trim(), weight: String(s.weight).trim() || null })),

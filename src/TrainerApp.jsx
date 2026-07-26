@@ -109,6 +109,7 @@ export default function TrainerApp({ profile, onSignOut }) {
         {THEME.features?.programs && <CoachPrograms coachId={profile.id} />}
         {THEME.features?.recipes && <CoachRecipes coachId={profile.id} />}
         {THEME.features?.videos && <CoachVideos coachId={profile.id} />}
+        {(THEME.features?.supplements || THEME.features?.shop || THEME.features?.podcasts) && <CoachLinks coachId={profile.id} />}
 
         <CoachVoice coachId={profile.id} coachName={profile.full_name} />
         <KimBrain coachId={profile.id} coachName={profile.full_name} />
@@ -973,6 +974,82 @@ function CoachVideos({ coachId }) {
             <label className="field">Note (optional)<input value={f.description} onChange={set('description')} placeholder="One line" /></label>
           </div>
           <button className="btn primary big" onClick={save}>Save video</button>
+          <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Supplements / Shop / Podcasts — outbound links the coach manages, surfaced in
+// the client app (gated per brand). One card handles all three kinds.
+const LINK_KINDS = [
+  { key: 'supplement', label: 'Supplement' },
+  { key: 'shop', label: 'Shop' },
+  { key: 'podcast', label: 'Podcast' },
+]
+function CoachLinks({ coachId }) {
+  const [items, setItems] = useState([])
+  const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ kind: 'supplement', label: '', url: '', note: '' })
+  const [error, setError] = useState('')
+
+  async function load() {
+    const { data } = await supabase.from('coach_links').select('*').eq('coach_id', coachId).order('kind', { ascending: true }).order('position', { ascending: true }).order('created_at', { ascending: true })
+    setItems(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+
+  async function save() {
+    if (!f.label.trim()) { setError('Give the link a label.'); return }
+    if (!f.url.trim()) { setError('Paste the link.'); return }
+    const { data, error: err } = await supabase.from('coach_links').insert({
+      coach_id: coachId, kind: f.kind, label: f.label.trim(), url: f.url.trim(), note: f.note.trim() || null,
+    }).select().single()
+    if (err) { setError(err.message); return }
+    setItems((i) => [...i, data])
+    setF({ kind: f.kind, label: '', url: '', note: '' }); setOpen(false); setError('')
+  }
+  async function del(id) {
+    await supabase.from('coach_links').delete().eq('id', id)
+    setItems((i) => i.filter((x) => x.id !== id))
+  }
+
+  const label = (k) => (LINK_KINDS.find((x) => x.key === k) || {}).label || k
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Supplements · Shop · Podcasts</p>
+      <p className="muted-note">Add links your clients see — Protein Works (with your code), your book, your podcast.</p>
+
+      {items.length > 0 && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          {items.map((l) => (
+            <div className="card" key={l.id} style={{ background: 'var(--surface-2)' }}>
+              <div className="session-title">{l.label}</div>
+              <div className="session-sub">{[label(l.kind), l.note, l.url].filter(Boolean).join(' · ')}</div>
+              <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => del(l.id)}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="error">{error}</p>}
+      {!open ? (
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => { setOpen(true); setError('') }}>Add link</button>
+      ) : (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <label className="field">Type
+            <select value={f.kind} onChange={set('kind')}>
+              {LINK_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+            </select>
+          </label>
+          <label className="field">Label<input value={f.label} onChange={set('label')} placeholder="e.g. The Protein Works" /></label>
+          <label className="field">Link<input value={f.url} onChange={set('url')} placeholder="https://…" /></label>
+          <label className="field">Note (optional)<input value={f.note} onChange={set('note')} placeholder="e.g. Use code PAUL10 for 10% off" /></label>
+          <button className="btn primary big" onClick={save}>Save link</button>
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>
       )}

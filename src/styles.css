@@ -381,7 +381,9 @@ input { font-family: inherit; }
 .ex-settype .ex-select { flex: 1; }
 .ex-group-in { width: 92px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; color: var(--text); font-size: 14px; text-transform: uppercase; }
 .ex-settype-note { margin: 6px 0 0; }
+.ex-rpe-in { width: 74px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; color: var(--text); font-size: 14px; }
 .settype-chip { display: inline-block; align-self: flex-start; margin-bottom: 3px; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-hi); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 9px; }
+.settype-chip.rpe { color: var(--gold, var(--accent-hi)); border-color: var(--gold, var(--accent)); margin-left: 6px; }
 
 /* ---- Video library + barcode camera ---- */
 .video-embed { position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 10px 0 2px; border-radius: 10px; overflow: hidden; background: #000; }
