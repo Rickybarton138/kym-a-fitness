@@ -97,7 +97,13 @@ info, programme, nutrition plan, performance, training adherence, progress physi
 ---
 
 ## Recommended build order
-5. Quick wins (A) — one deploy, immediately visible to Paul.
+5. Quick wins (A) — **DONE + LIVE 2026-07-26** (two deploys). Emerald/gold brand
+   colours from Paul's real logo; brand-driven grouped nav (Home/Train/Nutrition/
+   Videos/Progress/Coach) via themes.js `nav` (Kim/PPH/BBL untouched); Train +
+   Nutrition hubs; in-app calorie recalculator (baseline-safe); video folders by
+   tag; tone level-4 copy fix; Supplements/Shop/Podcasts (`coach_links` table +
+   coach manager + client sections); per-exercise RPE (round-trip verified).
+   Commits 2d8e90e + 865a4e1. Still `logo: null` — awaiting Paul's logo PNG.
 6. Daily agenda + guided workout (B).
 7. Programme library upgrades (C) + Progress hub (D).
 8. Check-in form builder (E).
