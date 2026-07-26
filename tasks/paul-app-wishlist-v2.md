@@ -104,7 +104,21 @@ info, programme, nutrition plan, performance, training adherence, progress physi
    tag; tone level-4 copy fix; Supplements/Shop/Podcasts (`coach_links` table +
    coach manager + client sections); per-exercise RPE (round-trip verified).
    Commits 2d8e90e + 865a4e1. Still `logo: null` — awaiting Paul's logo PNG.
-6. Daily agenda + guided workout (B).
+6. Daily agenda + guided workout (B). **DONE + LIVE 2026-07-26.**
+   - 6A: "Today's plan" agenda card (log food / steps vs coach target / train /
+     weekly check-in when due) + step tracking (`daily_steps` + `set_step_target`
+     RPC + coach field). Kept AccountabilityCard (push-notification route). Commit 518b3f3.
+   - 6B: guided workout player — tick sets, log reps/weight, RPE + set-type chips,
+     Finish → merges logged values into the exercise JSON (preserves set_type/rpe/
+     cue) + marks a completion (dedup-guarded) + refreshes the agenda. Handles
+     legacy count-shape plans. Per-exercise how-to video renders when `ex.video`
+     is set.
+   - OPEN DECISION for Ricky: exercise how-to videos. Options — (a) YouTube search
+     link per exercise (fast, but sends clients to rival coaches' videos), or
+     (b) coach attaches a demo URL per exercise (small follow-up, no rival links).
+     Shipped with (b)'s hook only; no generic search link until Ricky decides.
+   - 6C (scheduled programme -> daily "today's session") still deferred; agenda's
+     Train item currently links to the Train hub.
 7. Programme library upgrades (C) + Progress hub (D).
 8. Check-in form builder (E).
 9. Community/files/welcome/nutrition-tone (F).

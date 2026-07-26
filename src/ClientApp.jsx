@@ -8,7 +8,7 @@ import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
 import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
-import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows } from './WorkoutRows.jsx'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel } from './WorkoutRows.jsx'
 import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
@@ -59,6 +59,7 @@ export default function ClientApp({ profile, onSignOut }) {
   const [coachName, setCoachName] = useState('')
   const [heroImages, setHeroImages] = useState([])
   const [loading, setLoading] = useState(true)
+  const [workoutTick, setWorkoutTick] = useState(0) // bumped when a guided session finishes, so Home cards refresh
 
   async function loadAll() {
     const [t, logs, meas] = await Promise.all([
@@ -142,8 +143,8 @@ export default function ClientApp({ profile, onSignOut }) {
       </header>
 
       <main className="screen">
-        {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} onGo={setScreen} onSaveTargets={saveTargets} />}
-        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} />}
+        {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} onGo={setScreen} onSaveTargets={saveTargets} />}
+        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub coachName={coachName} onGo={setScreen} />}
         {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
@@ -233,7 +234,7 @@ function HeroCarousel({ images }) {
   )
 }
 
-function Home({ profile, name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, onGo, onSaveTargets }) {
+function Home({ profile, name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, workoutTick, onGo, onSaveTargets }) {
   const [editing, setEditing] = useState(false)
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const pct = targets?.calories ? consumed.calories / targets.calories : 0
@@ -244,8 +245,8 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
       <h1 className="h1">Hi {name?.split(' ')[0] || 'there'} — let’s hit your numbers.</h1>
       {coachName && <p className="lead">Coached by {coachName}.</p>}
 
-      {THEME.features?.agenda && <AgendaCard profile={profile} coachName={coachName} foodLoggedToday={foodLoggedToday} onGo={onGo} />}
-      <AccountabilityCard clientId={clientId} coachName={coachName} foodLoggedToday={foodLoggedToday} onGo={onGo} />
+      {THEME.features?.agenda && <AgendaCard profile={profile} coachName={coachName} foodLoggedToday={foodLoggedToday} workoutTick={workoutTick} onGo={onGo} />}
+      <AccountabilityCard clientId={clientId} coachName={coachName} foodLoggedToday={foodLoggedToday} workoutTick={workoutTick} onGo={onGo} />
 
       <div className="card ring-card">
         <Ring value={pct} label="of daily kcal">
@@ -419,7 +420,7 @@ function AgendaItem({ done, label, sub, children }) {
   )
 }
 
-function AgendaCard({ profile, coachName, foodLoggedToday, onGo }) {
+function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) {
   const coach = coachName?.split(' ')[0] || 'your coach'
   // One client-side date basis for the whole card (matches AccountabilityCard).
   const today = new Date().toISOString().slice(0, 10)
@@ -441,7 +442,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, onGo }) {
     setTrainedToday((comps || []).length > 0)
     setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
   }
-  useEffect(() => { load() }, [foodLoggedToday])
+  useEffect(() => { load() }, [foodLoggedToday, workoutTick])
 
   async function saveSteps() {
     const n = Math.max(0, parseInt(stepInput, 10) || 0)
@@ -504,7 +505,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, onGo }) {
 }
 
 /* ---------- Accountability bot ---------- */
-function AccountabilityCard({ clientId, coachName, foodLoggedToday, onGo }) {
+function AccountabilityCard({ clientId, coachName, foodLoggedToday, workoutTick, onGo }) {
   const [settings, setSettings] = useState(null)
   const [trainedToday, setTrainedToday] = useState(false)
   const [marking, setMarking] = useState(false)
@@ -519,7 +520,7 @@ function AccountabilityCard({ clientId, coachName, foodLoggedToday, onGo }) {
     setSettings(s || { level: 2, food_nudges: true, workout_nudges: true })
     setTrainedToday((comps || []).length > 0)
   }
-  useEffect(() => { load() }, [foodLoggedToday])
+  useEffect(() => { load() }, [foodLoggedToday, workoutTick])
 
   async function markTrained() {
     setMarking(true)
@@ -1125,7 +1126,7 @@ function NutritionExpert({ clientId, onBack }) {
 }
 
 /* ---------- Train ---------- */
-function Train({ clientId }) {
+function Train({ clientId, onWorkoutDone }) {
   const [tab, setTab] = useState(THEME.features?.templates ? 'start' : 'ai')
   const [history, setHistory] = useState([])
 
@@ -1159,7 +1160,7 @@ function Train({ clientId }) {
       {history.length > 0 && (
         <div className="stack">
           <p className="eyebrow">Your sessions</p>
-          {history.map((p) => <SessionCard key={p.id} plan={p} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
+          {history.map((p) => <SessionCard key={p.id} plan={p} clientId={clientId} onWorkoutDone={onWorkoutDone} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
         </div>
       )}
     </div>
@@ -1637,9 +1638,108 @@ function StartWorkout({ clientId, onStarted }) {
   )
 }
 
-function SessionCard({ plan, onUpdate }) {
+// Guided workout player — walk through a session, tick each set, log what you
+// actually lifted. Merges logged reps/weight back into the EXISTING exercise
+// objects (preserving set_type/group/rpe/cue/name/equipment) — never via
+// rowsToExercises, which would strip them. Handles legacy plans where `sets` is
+// a count rather than an array.
+function toPlayer(exercises) {
+  return (exercises || []).map((ex) => {
+    const sets = Array.isArray(ex.sets)
+      ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? ''), done: false }))
+      : Array.from({ length: Math.max(1, Number(ex.sets) || 1) }, () => ({ reps: String(ex.reps ?? ''), weight: String(ex.weight ?? ''), done: false }))
+    return { ...ex, sets }
+  })
+}
+function fromPlayer(playerExs) {
+  return playerExs.map((ex) => {
+    const { reps, weight, sets, ...rest } = ex
+    return { ...rest, sets: (sets || []).map((s) => ({ reps: String(s.reps).trim(), weight: String(s.weight).trim() || null })) }
+  })
+}
+
+function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
+  const [exs, setExs] = useState(() => toPlayer(plan.exercises))
+  const [saving, setSaving] = useState(false)
+  const [finished, setFinished] = useState(false)
+
+  const totalSets = exs.reduce((n, ex) => n + ex.sets.length, 0)
+  const doneSets = exs.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0)
+  const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0
+
+  const toggleSet = (ei, si) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, done: !s.done })) })))
+  const updateSet = (ei, si, k, v) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, [k]: v })) })))
+
+  async function finish() {
+    setSaving(true)
+    const exercises = fromPlayer(exs)
+    const { data } = await supabase.from('workout_plans').update({ exercises }).eq('id', plan.id).select().single()
+    // Mark today complete once — guard against a duplicate if they already tapped "Done".
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: existing } = await supabase.from('workout_completions').select('id').eq('client_id', clientId).eq('completed_on', today).limit(1)
+    if (!existing || existing.length === 0) {
+      await supabase.from('workout_completions').insert({ client_id: clientId, source: 'guided' })
+    }
+    setSaving(false)
+    if (data) onDone && onDone(data)
+    onFinishedToday && onFinishedToday()
+    setFinished(true)
+  }
+
+  if (finished) {
+    return (
+      <div className="stack" style={{ marginTop: 10 }}>
+        <p className="logged-ok big">Session complete ✓</p>
+        <p className="muted-note">Logged and saved — nice work. It’s in your weights-lifted progress.</p>
+        <button className="btn ghost sm" onClick={onExit}>Done</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="stack gw" style={{ marginTop: 10 }}>
+      <div className="gw-progress"><div className="gw-bar" style={{ width: pct + '%' }} /></div>
+      <p className="muted-note">{doneSets}/{totalSets} sets done — tick each set as you go and log what you actually lifted.</p>
+      {exs.map((ex, ei) => {
+        const embed = ex.video ? videoEmbed(ex.video) : null
+        return (
+          <div className="card gw-ex" key={ei} style={{ background: 'var(--surface-2)' }}>
+            <div className="gw-ex-head">
+              <div className="ex-name">{ex.name}</div>
+              {ex.video && !embed && <a className="link-btn inline" href={ex.video} target="_blank" rel="noopener noreferrer">How to</a>}
+            </div>
+            <div className="gw-chips">
+              {(ex.set_type && ex.set_type !== 'straight') && <span className="settype-chip">{ex.set_type === 'superset' && ex.group ? 'Superset ' + ex.group : setTypeLabel(ex.set_type)}</span>}
+              {ex.rpe && <span className="settype-chip rpe">RPE {ex.rpe}</span>}
+            </div>
+            {embed && <div className="video-embed"><iframe src={embed} title={ex.name} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>}
+            <div className="gw-sets">
+              {ex.sets.map((s, si) => (
+                <label className={'gw-set' + (s.done ? ' done' : '')} key={si}>
+                  <input type="checkbox" checked={s.done} onChange={() => toggleSet(ei, si)} />
+                  <span className="gw-set-n">Set {si + 1}</span>
+                  <input className="gw-in" inputMode="numeric" placeholder="reps" value={s.reps} onChange={(e) => updateSet(ei, si, 'reps', e.target.value)} />
+                  <input className="gw-in" inputMode="decimal" placeholder="kg" value={s.weight} onChange={(e) => updateSet(ei, si, 'weight', e.target.value)} />
+                </label>
+              ))}
+            </div>
+            {ex.cue && <p className="ex-cue">{ex.cue}</p>}
+          </div>
+        )
+      })}
+      {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
+      <div className="nudge-actions">
+        <button className="btn primary big" disabled={saving} onClick={finish}>{saving ? 'Saving…' : 'Finish session'}</button>
+        <button className="btn ghost sm" onClick={onExit}>Exit</button>
+      </div>
+    </div>
+  )
+}
+
+function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
   const exs = plan.exercises || []
@@ -1667,7 +1767,7 @@ function SessionCard({ plan, onUpdate }) {
         </div>
         <span className="chev">{open ? '−' : '+'}</span>
       </button>
-      {open && !editing && (
+      {open && !editing && !playing && (
         <>
           <ol className="ex-list">
             {exs.map((ex, i) => (
@@ -1682,8 +1782,14 @@ function SessionCard({ plan, onUpdate }) {
             ))}
             {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
           </ol>
-          <button type="button" className="btn ghost sm" onClick={startEdit}>Edit / add weights</button>
+          <div className="nudge-actions">
+            <button type="button" className="btn primary sm" onClick={() => { setPlaying(true); setOpen(true) }}>Start session</button>
+            <button type="button" className="btn ghost sm" onClick={startEdit}>Edit / add weights</button>
+          </div>
         </>
+      )}
+      {open && playing && (
+        <GuidedWorkout plan={plan} clientId={clientId} onDone={onUpdate} onFinishedToday={onWorkoutDone} onExit={() => setPlaying(false)} />
       )}
       {open && editing && (
         <div className="stack" style={{ marginTop: 10 }}>
