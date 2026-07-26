@@ -448,6 +448,7 @@ input { font-family: inherit; }
 .community-audience .ex-select { flex: 1; }
 .post-link { display: inline-block; margin: 4px 0 6px; color: var(--accent-hi); font-weight: 600; font-size: 14px; text-decoration: none; word-break: break-all; }
 .aud-chip { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-hi); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 8px; margin-left: 6px; }
+.aud-chip.pinned { color: var(--on-accent); background: var(--accent); }
 
 /* ---- Client tags ---- */
 .tag-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

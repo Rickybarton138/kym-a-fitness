@@ -21,7 +21,7 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
 
   async function load() {
     if (!communityCoachId) return
-    const { data: ps } = await supabase.from('community_posts').select('*').eq('coach_id', communityCoachId).order('created_at', { ascending: false }).limit(50)
+    const { data: ps } = await supabase.from('community_posts').select('*').eq('coach_id', communityCoachId).order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(50)
     setPosts(ps || [])
     const ids = (ps || []).map((p) => p.id)
     if (ids.length) {
@@ -88,6 +88,16 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
     setPosts((p) => p.filter((x) => x.id !== id))
   }
 
+  // Coach only: pin/unpin a post. Pinned posts sort to the top (query order).
+  async function togglePin(post) {
+    const next = !post.pinned
+    setPosts((ps) => {
+      const updated = ps.map((x) => x.id === post.id ? { ...x, pinned: next } : x)
+      return [...updated].sort((a, b) => (b.pinned - a.pinned) || (a.created_at < b.created_at ? 1 : -1))
+    })
+    await supabase.from('community_posts').update({ pinned: next }).eq('id', post.id)
+  }
+
   return (
     <div className="stack">
       <div className="card">
@@ -119,7 +129,9 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
             <div className="post-head">
               <span className="avatar sm">{(p.author_name || '?').charAt(0).toUpperCase()}</span>
               <div className="post-author">{p.author_name || 'Member'}</div>
+              {p.pinned && <span className="aud-chip pinned">Pinned</span>}
               {isCoach && p.audience_tag && <span className="aud-chip">Only: {p.audience_tag}</span>}
+              {isCoach && <button type="button" className="link-btn inline" onClick={() => togglePin(p)}>{p.pinned ? 'Unpin' : 'Pin'}</button>}
               {(p.author_id === me || isCoach) && <button type="button" className="row-del" onClick={() => del(p.id)} aria-label="Delete">×</button>}
             </div>
             {p.body && <p className="post-body">{p.body}</p>}

@@ -138,7 +138,21 @@ info, programme, nutrition plan, performance, training adherence, progress physi
    check-in item is brand-aware (queries checkin_responses for Paul). Gated
    `features.checkinForms`; Kim's fixed weekly check-in untouched. No field
    reordering in v1 (delete + re-add). `checkinForms.js` holds types+template.
-9. Community/files/welcome/nutrition-tone (F).
+9. Community/files/welcome/nutrition-tone (F) — **DONE + LIVE 2026-07-26.**
+   - Files: `coach-files` PUBLIC bucket (folder-scoped write, public read — no signed
+     URLs) + `coach_files` table (videos RLS). Coach uploads PDFs; client Files section.
+   - Pinned posts: `community_posts.pinned` + coach Pin/Unpin; pinned sorts to top
+     (universal — small additive change to CommunityFeed). Groups = tag-gated feeds
+     (audience_tag, already live); no separate spaces.
+   - Welcome message: coach sets welcome text on `coach_personas.welcome`; new client's
+     onboarding calls `seed_welcome_message()` RPC (SECURITY DEFINER — a client can't
+     write a sender='coach' message; idempotent, no-op if any message exists).
+   - Nutrition tone: client picks lifestyle/performance (`profiles.nutrition_style`);
+     threaded via `setNutritionStyle` into every AI call; `styleLine()` appended at the
+     END of the nutrition prompts in analyze.mjs (keeps the cache prefix stable).
+     Verified prod returns a performance-style answer.
+   Gated `features.files`/`nutritionStyle`; Kim untouched (welcome only fires if coach
+   set welcome text). **ALL PHASES 5-9 COMPLETE.**
 - Coaching-side IA restructure (G) folded in as each area is touched.
 
 Cost note: most of round 2 is zero-AI (agenda, progress, forms, files, links) or

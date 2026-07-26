@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -65,6 +65,7 @@ export default function ClientApp({ profile, onSignOut }) {
   const [workoutTick, setWorkoutTick] = useState(0) // bumped when a guided session finishes, so Home cards refresh
 
   async function loadAll() {
+    setNutritionStyle(profile.nutrition_style)
     const [t, logs, meas] = await Promise.all([
       supabase.from('macro_targets').select('*').eq('client_id', profile.id).maybeSingle(),
       supabase.from('nutrition_logs').select('*').eq('client_id', profile.id).gte('logged_at', startOfTodayISO()).order('logged_at', { ascending: false }),
@@ -149,7 +150,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
-        {screen === 'nutrition' && <NutritionHub coachName={coachName} onGo={setScreen} />}
+        {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
         {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'testing' && <Testing clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'muscles' && (
@@ -171,6 +172,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'supplements' && <LinkList kind="supplement" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'podcasts' && <LinkList kind="podcast" coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'files' && <FilesLibrary coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'barcode' && <BarcodeScan onLog={(m) => logFood(m, 'barcode')} onBack={() => setScreen('home')} />}
         {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'nudges' && <NudgeSettings clientId={profile.id} onBack={() => setScreen('home')} />}
@@ -359,6 +361,12 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
           <button className="tile" onClick={() => onGo('podcasts')}>
             <IconContent />
             <div><b>Podcasts</b><span>Listen to {coachFirst}’s episodes</span></div>
+          </button>
+        )}
+        {THEME.features?.files && (
+          <button className="tile" onClick={() => onGo('files')}>
+            <IconForm />
+            <div><b>Files</b><span>{coachFirst}’s guides &amp; resources</span></div>
           </button>
         )}
         <button className="tile tile-hero" onClick={() => onGo('checkin')}>
@@ -1616,6 +1624,35 @@ function LinkList({ kind, coachName, onBack }) {
   )
 }
 
+// Files — the coach's shared PDFs/guides (public bucket, open in a new tab).
+function FilesLibrary({ coachName, onBack }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [files, setFiles] = useState(null)
+  useEffect(() => {
+    supabase.from('coach_files').select('*').order('created_at', { ascending: false }).then(({ data }) => setFiles(data || []))
+  }, [])
+  const fileUrl = (path) => supabase.storage.from('coach-files').getPublicUrl(path).data.publicUrl
+  return (
+    <div>
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">Files</p>
+      <h1 className="h1">Guides &amp; resources.</h1>
+      <p className="muted-note">Documents from {coachFirst} — tap to open.</p>
+      {files === null && <Loader text="Loading…" />}
+      {files !== null && files.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No files yet — {coachFirst} will add them here.</p>}
+      <div className="stack" style={{ marginTop: 12 }}>
+        {(files || []).map((f) => (
+          <div className="card" key={f.id}>
+            <div className="session-title">{f.title}</div>
+            {f.note && <p className="muted-note" style={{ marginTop: 6 }}>{f.note}</p>}
+            <a className="btn primary sm" style={{ marginTop: 10, display: 'inline-block' }} href={fileUrl(f.path)} target="_blank" rel="noopener noreferrer">Open</a>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Barcode scanner. Manual entry is the primary path (works everywhere); the
 // camera is a bonus where the browser supports BarcodeDetector (Chrome/Android).
 function BarcodeScan({ onLog, onBack }) {
@@ -2483,13 +2520,39 @@ function TrainHub({ coachName, onGo }) {
   )
 }
 
-function NutritionHub({ coachName, onGo }) {
+function NutritionStyle({ profile }) {
+  const [style, setStyle] = useState(profile.nutrition_style || '')
+  const [saved, setSaved] = useState(false)
+  async function pick(s) {
+    setStyle(s); setNutritionStyle(s)
+    await supabase.from('profiles').update({ nutrition_style: s }).eq('id', profile.id)
+    setSaved(true); setTimeout(() => setSaved(false), 1200)
+  }
+  return (
+    <div className="card">
+      <p className="eyebrow">Nutrition style</p>
+      <p className="muted-note">How much detail do you want from your nutrition coaching? Change any time.</p>
+      <div className="level-picker" style={{ marginTop: 8 }}>
+        <button type="button" className={'level-opt' + (style === 'lifestyle' ? ' on' : '')} onClick={() => pick('lifestyle')}>
+          <div className="level-body"><b>Lifestyle</b><span>A healthy relationship with food — sensible intake, good quality, and the foods you enjoy.</span></div>
+        </button>
+        <button type="button" className={'level-opt' + (style === 'performance' ? ' on' : '')} onClick={() => pick('performance')}>
+          <div className="level-body"><b>Performance &amp; recovery</b><span>Go deeper — macro splits, nutrient timing and recovery to maximise results.</span></div>
+        </button>
+      </div>
+      {saved && <p className="logged-ok">Saved ✓</p>}
+    </div>
+  )
+}
+
+function NutritionHub({ profile, coachName, onGo }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   return (
     <div className="stack">
       <p className="eyebrow">Nutrition</p>
       <h1 className="h1">Fuel your day.</h1>
       <p className="lead">Log food, scan meals and stay on your targets.</p>
+      {THEME.features?.nutritionStyle && <NutritionStyle profile={profile} />}
       <div className="tiles">
         <button className="tile tile-hero" onClick={() => onGo('meal')}>
           <IconMeal />

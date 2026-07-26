@@ -125,8 +125,18 @@ function buildWorkoutPrompt({ goal, equipment, gymName, persona }) {
   )
 }
 
-function buildPrompt(mode, remaining, persona) {
+// Client-chosen nutrition detail level (Paul's round-2 ask). Appended at the END
+// of the nutrition system prompts so the stable persona/knowledge prefix still
+// matches the prompt cache.
+function styleLine(nutritionStyle) {
+  if (nutritionStyle === 'lifestyle') return ' The client prefers a lifestyle approach: focus on a healthy relationship with food, sensible calorie intake, food quality and including foods they enjoy. Keep it simple and non-obsessive; go light on macro-timing detail unless they ask.'
+  if (nutritionStyle === 'performance') return ' The client wants performance and recovery optimisation: you can go deeper on macro splits, protein distribution, nutrient timing and recovery nutrition to maximise their results.'
+  return ''
+}
+
+function buildPrompt(mode, remaining, persona, nutritionStyle) {
   const intro = personaIntro(persona, 'nutrition coach')
+  const style = styleLine(nutritionStyle)
   if (mode === 'fridge') {
     const target = remaining
       ? `The client has these macros LEFT for today: ${remaining.protein_g}g protein, ${remaining.carbs_g}g carbs, ${remaining.fat_g}g fat (about ${remaining.calories} kcal). `
@@ -137,13 +147,15 @@ function buildPrompt(mode, remaining, persona) {
       target +
       'Suggest ONE realistic, balanced meal they could make right now using mainly the visible ingredients, getting as close as possible to their remaining targets for the day. ' +
       'Give the meal’s estimated protein, carbs, fat and calories, and an encouraging fit_note on how well it fits. ' +
-      'Estimate sensibly for a normal portion; do not invent ingredients that are not plausibly visible.'
+      'Estimate sensibly for a normal portion; do not invent ingredients that are not plausibly visible.' +
+      style
     )
   }
   return (
     intro + ' ' +
     'Look at this photo of a meal on a plate. Identify the individual foods and estimate the total calories and macros (protein, carbs, fat) for the portion shown. ' +
-    'Give a short food_name for the whole plate and a confidence level. Estimate sensibly for a normal portion.'
+    'Give a short food_name for the whole plate and a confidence level. Estimate sensibly for a normal portion.' +
+    style
   )
 }
 
@@ -192,7 +204,7 @@ function buildExpertSystem() {
   )
 }
 
-function buildAskSystem(knowledge, comms, persona) {
+function buildAskSystem(knowledge, comms, persona, nutritionStyle) {
   const name = (persona && persona.name) || 'the coach'
   const kb = (knowledge || [])
     .map((k, i) => `[${i + 1}] ${k.title ? k.title + ': ' : ''}${k.content}`)
@@ -212,7 +224,8 @@ function buildAskSystem(knowledge, comms, persona) {
     'Write in plain text — short sentences and short paragraphs, no markdown, no bold, no asterisks, no headings, no emojis. ' +
     'This is general fitness and nutrition guidance, not medical advice; for pain, injury, pregnancy or medical concerns, advise seeing a professional.' +
     (kb ? `\n\n${name.toUpperCase()}’S KNOWLEDGE:\n` + kb : `\n\n(No specific knowledge added yet — answer generally in the coach’s style.)`) +
-    (convo ? `\n\nRECENT MESSAGES BETWEEN ${name.toUpperCase()} AND THIS CLIENT (for context):\n` + convo : '')
+    (convo ? `\n\nRECENT MESSAGES BETWEEN ${name.toUpperCase()} AND THIS CLIENT (for context):\n` + convo : '') +
+    styleLine(nutritionStyle)
   )
 }
 
@@ -270,7 +283,7 @@ export const handler = async (event) => {
     return json(400, { error: 'Invalid JSON body.' })
   }
 
-  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona } = body
+  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle } = body
 
   // ---- Nutrition Expert: evidence-based sports-nutrition answers ----
   if (mode === 'expert') {
@@ -305,7 +318,7 @@ export const handler = async (event) => {
         body: JSON.stringify({
           model: MODEL_MID,
           max_tokens: 800,
-          system: cacheable(buildAskSystem(knowledge, comms, persona)),
+          system: cacheable(buildAskSystem(knowledge, comms, persona, nutritionStyle)),
           messages: [{ role: 'user', content: String(question).slice(0, 2000) }],
         }),
       })
@@ -404,7 +417,7 @@ export const handler = async (event) => {
     // model stays MODEL (Opus) — macro/photo accuracy matters here
     content = [
       { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } },
-      { type: 'text', text: buildPrompt(mode, remaining, persona) },
+      { type: 'text', text: buildPrompt(mode, remaining, persona, nutritionStyle) },
     ]
   } else {
     return json(400, { error: 'Unknown mode.' })

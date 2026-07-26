@@ -82,6 +82,12 @@ export default function Onboarding({ profile, onDone }) {
           client_id: profile.id, weight_kg: Number(weight), measured_at: now.slice(0, 10), note: 'Starting weight',
         })
       }
+      // Welcome message: onboarding runs exactly once. A client can't write a
+      // sender='coach' row (RLS), so a SECURITY DEFINER RPC seeds the coach's
+      // welcome into the chat; it's idempotent (no-op if any message exists).
+      if (profile.trainer_id) {
+        try { await supabase.rpc('seed_welcome_message') } catch { /* welcome is best-effort */ }
+      }
       onDone()
     } catch (e) { setError(e.message); setSaving(false) }
   }

@@ -114,6 +114,7 @@ export default function TrainerApp({ profile, onSignOut }) {
         {THEME.features?.videos && <CoachVideos coachId={profile.id} />}
         {(THEME.features?.supplements || THEME.features?.shop || THEME.features?.podcasts) && <CoachLinks coachId={profile.id} />}
         {THEME.features?.checkinForms && <CheckinFormBuilder coachId={profile.id} />}
+        {THEME.features?.files && <CoachFiles coachId={profile.id} />}
 
         <CoachVoice coachId={profile.id} coachName={profile.full_name} />
         <KimBrain coachId={profile.id} coachName={profile.full_name} />
@@ -313,7 +314,7 @@ function CoachVoice({ coachId, coachName }) {
     })
   }, [])
   async function save() {
-    await supabase.from('coach_personas').upsert({ coach_id: coachId, display_name: p.display_name, audience: p.audience, philosophy: p.philosophy, tone: p.tone, updated_at: new Date().toISOString() })
+    await supabase.from('coach_personas').upsert({ coach_id: coachId, display_name: p.display_name, audience: p.audience, philosophy: p.philosophy, tone: p.tone, welcome: p.welcome || null, updated_at: new Date().toISOString() })
     setPersona({ name: p.display_name, audience: p.audience, philosophy: p.philosophy, tone: p.tone })
     setSaved(true); setTimeout(() => setSaved(false), 1500)
   }
@@ -335,6 +336,7 @@ function CoachVoice({ coachId, coachName }) {
           <label className="field">Who you coach<input value={p.audience || ''} onChange={set('audience')} placeholder="e.g. everyday people chasing real results" /></label>
           <label className="field">Your philosophy<textarea value={p.philosophy || ''} onChange={set('philosophy')} placeholder="e.g. no-nonsense, honest coaching over gimmicks or quick fixes" /></label>
           <label className="field">Your tone<textarea value={p.tone || ''} onChange={set('tone')} placeholder="e.g. direct, motivating, straight-talking with a bit of tough love" /></label>
+          <label className="field">Welcome message<textarea value={p.welcome || ''} onChange={set('welcome')} placeholder="Auto-sent to each new client's chat when they join — welcome them and point them to their next steps." /></label>
           <button className="btn primary" onClick={save}>{saved ? 'Saved ✓' : 'Save AI voice'}</button>
         </div>
       )}
@@ -1209,6 +1211,75 @@ function CoachLinks({ coachId }) {
           <label className="field">Link<input value={f.url} onChange={set('url')} placeholder="https://…" /></label>
           <label className="field">Note (optional)<input value={f.note} onChange={set('note')} placeholder="e.g. Use code PAUL10 for 10% off" /></label>
           <button className="btn primary big" onClick={save}>Save link</button>
+          <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Coach uploads shared PDFs/guides to a public bucket; every client sees them
+// in their Files section. coach_files mirrors the videos RLS pattern.
+function CoachFiles({ coachId }) {
+  const [items, setItems] = useState([])
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [note, setNote] = useState('')
+  const [file, setFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const ref = useRef(null)
+
+  async function load() {
+    const { data } = await supabase.from('coach_files').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
+    setItems(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function save() {
+    if (!title.trim()) { setError('Give the file a title.'); return }
+    if (!file) { setError('Choose a file to upload.'); return }
+    setBusy(true); setError('')
+    try {
+      const ext = (file.name.split('.').pop() || 'pdf').toLowerCase()
+      const path = `${coachId}/${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage.from('coach-files').upload(path, file, { contentType: file.type || 'application/pdf' })
+      if (up.error) throw new Error(up.error.message)
+      const { data, error: err } = await supabase.from('coach_files').insert({ coach_id: coachId, title: title.trim(), path, note: note.trim() || null }).select().single()
+      if (err) throw new Error(err.message)
+      setItems((i) => [data, ...i]); setTitle(''); setNote(''); setFile(null); setOpen(false); if (ref.current) ref.current.value = ''
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  async function del(f) {
+    await supabase.storage.from('coach-files').remove([f.path])
+    await supabase.from('coach_files').delete().eq('id', f.id)
+    setItems((i) => i.filter((x) => x.id !== f.id))
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Files</p>
+      <p className="muted-note">Upload PDFs and guides — every client can open them from their Files section.</p>
+      {items.length > 0 && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          {items.map((f) => (
+            <div className="card" key={f.id} style={{ background: 'var(--surface-2)' }}>
+              <div className="session-title">{f.title}</div>
+              <div className="session-sub">{f.note || 'File'}</div>
+              <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => del(f)}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+      {!open ? (
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => { setOpen(true); setError('') }}>Add file</button>
+      ) : (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <label className="field">Title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Nutrition guide" /></label>
+          <label className="field">Note (optional)<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="One line" /></label>
+          <input ref={ref} type="file" accept="application/pdf,image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          <button className="btn primary big" disabled={busy} onClick={save}>{busy ? 'Uploading…' : 'Upload file'}</button>
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>
       )}

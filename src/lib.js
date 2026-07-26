@@ -19,9 +19,16 @@ export async function fileToBase64(file) {
 let activePersona = null
 export function setPersona(p) { activePersona = p }
 
+// The client's chosen nutrition detail level (lifestyle | performance), injected
+// into every AI call so nutrition answers match their preference.
+let activeNutritionStyle = null
+export function setNutritionStyle(s) { activeNutritionStyle = s || null }
+
 // Call the serverless Claude proxy.
 export async function analyze(payload) {
-  const body = activePersona && !payload.persona ? { ...payload, persona: activePersona } : payload
+  let body = payload
+  if (activePersona && !body.persona) body = { ...body, persona: activePersona }
+  if (activeNutritionStyle && !body.nutritionStyle) body = { ...body, nutritionStyle: activeNutritionStyle }
   const res = await fetch('/.netlify/functions/analyze', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
