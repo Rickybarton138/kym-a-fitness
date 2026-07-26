@@ -362,6 +362,19 @@ input { font-family: inherit; }
 
 /* ---- Readiness & load ---- */
 .seg.three { grid-template-columns: 1fr 1fr 1fr; }
+.seg.four { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.seg.four button { padding: 10px 4px; font-size: 12.5px; }
+
+/* ---- Progress photos + compare ---- */
+.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.photo-cell { position: relative; aspect-ratio: 3 / 4; border-radius: 10px; overflow: hidden; border: 2px solid var(--line); background: var(--surface-2); padding: 0; display: flex; align-items: center; justify-content: center; }
+.photo-cell.on { border-color: var(--accent); }
+.photo-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-date { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; text-align: center; padding: 2px; background: rgba(0,0,0,.45); color: #fff; }
+.compare-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.compare-col { display: flex; flex-direction: column; gap: 6px; }
+.compare-col .shot { margin: 0; }
+.compare-col .shot img { width: 100%; border-radius: 10px; display: block; }
 .rd-status { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; }
 .rd-status b { font-size: 16px; }
 .rd-flag { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin: 8px 0 4px; }

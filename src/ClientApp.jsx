@@ -13,6 +13,7 @@ import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
+import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { FoodSearch } from './FoodSearch.jsx'
 import { MuscleTargeter } from './MuscleTargeter.jsx'
 import { StravaConnect } from './StravaConnect.jsx'
@@ -1897,18 +1898,52 @@ function MealScan({ onLog }) {
   )
 }
 
-/* ---------- Body ---------- */
+/* ---------- Body / Progress ---------- */
+// Brands with features.progressHub get the full Progress hub (photos + compare,
+// AI scan, measurements, in-gym training progress). Others keep the original
+// two-tab Body screen unchanged.
 function Body({ measurements, onAdd, clientId, coachName }) {
-  const [tab, setTab] = useState('scan')
+  const hub = THEME.features?.progressHub
+  const [tab, setTab] = useState(hub ? 'photos' : 'scan')
+  const [plans, setPlans] = useState([])
+
+  useEffect(() => {
+    if (!hub) return
+    supabase.from('workout_plans').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(60)
+      .then(({ data }) => setPlans(data || []))
+  }, [])
+
+  if (!hub) {
+    return (
+      <div className="stack">
+        <p className="eyebrow">Body scan</p>
+        <h1 className="h1">Track your progress.</h1>
+        <div className="seg">
+          <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => setTab('scan')}>AI scan</button>
+          <button type="button" className={tab === 'log' ? 'on' : ''} onClick={() => setTab('log')}>Measurements</button>
+        </div>
+        {tab === 'scan' ? <BodyScan clientId={clientId} coachName={coachName} /> : <BodyLog measurements={measurements} onAdd={onAdd} />}
+      </div>
+    )
+  }
+
   return (
     <div className="stack">
-      <p className="eyebrow">Body scan</p>
-      <h1 className="h1">Track your progress.</h1>
-      <div className="seg">
-        <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => setTab('scan')}>AI scan</button>
+      <p className="eyebrow">Progress</p>
+      <h1 className="h1">Your progress.</h1>
+      <div className="seg four">
+        <button type="button" className={tab === 'photos' ? 'on' : ''} onClick={() => setTab('photos')}>Photos</button>
+        <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => setTab('scan')}>Body scan</button>
         <button type="button" className={tab === 'log' ? 'on' : ''} onClick={() => setTab('log')}>Measurements</button>
+        <button type="button" className={tab === 'train' ? 'on' : ''} onClick={() => setTab('train')}>Training</button>
       </div>
-      {tab === 'scan' ? <BodyScan clientId={clientId} coachName={coachName} /> : <BodyLog measurements={measurements} onAdd={onAdd} />}
+      {tab === 'photos' && <ProgressPhotos clientId={clientId} />}
+      {tab === 'scan' && <BodyScan clientId={clientId} coachName={coachName} />}
+      {tab === 'log' && <BodyLog measurements={measurements} onAdd={onAdd} />}
+      {tab === 'train' && (
+        plans.length ? <LiftProgress plans={plans} title="Weights lifted" />
+          : <p className="muted-note">Log some weights in your sessions and your strength trend shows here.</p>
+      )}
     </div>
   )
 }

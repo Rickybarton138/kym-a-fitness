@@ -44,7 +44,7 @@ export const BRANDS = {
     logo: null, // monogram badge until Paul's wordmark is dropped in
     mark: 'RD',
     scheme: 'dark',
-    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true },
+    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true },
     // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout). Ids map to
     // screens/hubs in ClientApp; label overrides the per-id default. Brands
     // without a `nav` keep the default six-tab bar, so Kim/PPH/BBL are untouched.

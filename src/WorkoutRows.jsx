@@ -16,7 +16,7 @@ export const setTypeNote = (k) => (SET_TYPES.find((t) => t.key === k) || SET_TYP
 
 // A fresh exercise starts with 3 empty sets, each with its own reps + weight.
 export function newExerciseRow() {
-  return { name: '', custom: false, cue: '', set_type: 'straight', group: '', rpe: '', sets: [{ reps: '', weight: '' }, { reps: '', weight: '' }, { reps: '', weight: '' }] }
+  return { name: '', custom: false, cue: '', set_type: 'straight', group: '', rpe: '', video: '', sets: [{ reps: '', weight: '' }, { reps: '', weight: '' }, { reps: '', weight: '' }] }
 }
 
 // Shared exercise editor: pick an exercise, then log each set's reps and weight
@@ -83,6 +83,7 @@ export function ExerciseRowsEditor({ rows, setRows }) {
             <button type="button" className="add-set-btn" onClick={() => addSet(i)}>+ Add set</button>
 
             <input className="ex-cue-in" placeholder="Note (optional)" value={r.cue} onChange={(e) => update(i, 'cue', e.target.value)} />
+            <input className="ex-cue-in" placeholder="How-to video link (optional)" value={r.video || ''} onChange={(e) => update(i, 'video', e.target.value)} />
           </div>
         ))}
       </div>
@@ -100,7 +101,7 @@ export function planToRows(exercises) {
     const sets = Array.isArray(ex.sets)
       ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? '') }))
       : Array.from({ length: Math.max(1, Number(ex.sets) || 1) }, () => ({ reps: String(ex.reps ?? ''), weight: String(ex.weight ?? '') }))
-    return { name: ex.name || '', custom: !KNOWN_NAMES.has(ex.name), cue: ex.cue || '', set_type: ex.set_type || 'straight', group: ex.group || '', rpe: ex.rpe != null ? String(ex.rpe) : '', sets }
+    return { name: ex.name || '', custom: !KNOWN_NAMES.has(ex.name), cue: ex.cue || '', set_type: ex.set_type || 'straight', group: ex.group || '', rpe: ex.rpe != null ? String(ex.rpe) : '', video: ex.video || '', sets }
   })
 }
 
@@ -113,6 +114,7 @@ export function rowsToExercises(rows, equipmentLabel) {
       const group = set_type === 'superset' && (r.group || '').trim() ? r.group.trim() : undefined
       const rpeNum = Number(r.rpe)
       const rpe = r.rpe !== '' && r.rpe != null && rpeNum >= 1 && rpeNum <= 10 ? rpeNum : undefined
+      const video = (r.video || '').trim() || undefined
       return {
         name: r.name.trim(),
         equipment: equipmentLabel || 'Own choice',
@@ -120,6 +122,7 @@ export function rowsToExercises(rows, equipmentLabel) {
         ...(set_type ? { set_type } : {}),
         ...(group ? { group } : {}),
         ...(rpe ? { rpe } : {}),
+        ...(video ? { video } : {}),
         sets: (r.sets || [])
           .filter((s) => String(s.reps).trim() || String(s.weight).trim())
           .map((s) => ({ reps: String(s.reps).trim(), weight: String(s.weight).trim() || null })),

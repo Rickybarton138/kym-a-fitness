@@ -11,6 +11,7 @@ import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
+import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
@@ -249,6 +250,14 @@ function ClientDetail({ client, trainerId, onBack }) {
             <FormChecksReview clientId={client.id} />
 
             <ClientBodyScans clientId={client.id} />
+
+            {THEME.features?.progressHub && (
+              <div className="card">
+                <p className="eyebrow">Progress photos</p>
+                <p className="muted-note" style={{ marginBottom: 8 }}>Tap two to compare {(client.full_name || 'your client').split(' ')[0]}’s photos side by side.</p>
+                <ProgressPhotos clientId={client.id} />
+              </div>
+            )}
 
             {latest && (
               <div className="card">

@@ -119,7 +119,14 @@ info, programme, nutrition plan, performance, training adherence, progress physi
      Shipped with (b)'s hook only; no generic search link until Ricky decides.
    - 6C (scheduled programme -> daily "today's session") still deferred; agenda's
      Train item currently links to the Train hub.
-7. Programme library upgrades (C) + Progress hub (D).
+7. Progress hub (D) — **DONE + LIVE 2026-07-26.** Progress tab is now a hub
+   (gated `features.progressHub`): Photos with side-by-side compare
+   (`ProgressPhotos.jsx`, shared client+coach), Body scan, Measurements, Training
+   (in-gym strength). Coach sees the same compare in ClientDetail. Kim's Body
+   screen unchanged. Also shipped the (b) decision: per-exercise how-to video —
+   coach attaches a URL in the builder, player embeds/links it. Programme-library
+   filters (C: home/gym, equipment, gender, goal) still TODO — needs metadata on
+   workout_programs (next).
 8. Check-in form builder (E).
 9. Community/files/welcome/nutrition-tone (F).
 - Coaching-side IA restructure (G) folded in as each area is touched.
