@@ -207,6 +207,8 @@ function ClientDetail({ client, trainerId, onBack }) {
 
             {THEME.features?.tags && <ClientTags clientId={client.id} coachId={trainerId} />}
 
+            {THEME.features?.agenda && <WeeklySchedule clientId={client.id} coachId={trainerId} />}
+
             {THEME.features?.agenda && (
               <div className="card">
                 <p className="eyebrow">Daily step target</p>
@@ -1214,6 +1216,51 @@ function CoachLinks({ coachId }) {
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>
       )}
+    </div>
+  )
+}
+
+// Per-client weekly training schedule: assign a session template to each weekday.
+// The client's daily agenda names that day's session and starts it. dow uses JS
+// getDay() (0=Sun..6=Sat); rendered Mon-first.
+const SCHED_DOW = [[1, 'Monday'], [2, 'Tuesday'], [3, 'Wednesday'], [4, 'Thursday'], [5, 'Friday'], [6, 'Saturday'], [0, 'Sunday']]
+function WeeklySchedule({ clientId, coachId }) {
+  const [templates, setTemplates] = useState([])
+  const [sched, setSched] = useState({})
+  const [saved, setSaved] = useState(false)
+
+  async function load() {
+    const [{ data: t }, { data: s }] = await Promise.all([
+      supabase.from('workout_templates').select('id, title').eq('coach_id', coachId).order('created_at', { ascending: false }),
+      supabase.from('client_schedule').select('dow, template_id').eq('client_id', clientId),
+    ])
+    setTemplates(t || [])
+    const map = {}; (s || []).forEach((r) => { map[r.dow] = r.template_id || '' }); setSched(map)
+  }
+  useEffect(() => { load() }, [])
+
+  async function setDay(dow, template_id) {
+    setSched((m) => ({ ...m, [dow]: template_id }))
+    await supabase.from('client_schedule').upsert({ coach_id: coachId, client_id: clientId, dow, template_id: template_id || null, updated_at: new Date().toISOString() }, { onConflict: 'client_id,dow' })
+    setSaved(true); setTimeout(() => setSaved(false), 1000)
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Weekly schedule</p>
+      <p className="muted-note">Set which session runs each day — it shows on their daily plan, ready to start.</p>
+      {templates.length === 0 && <p className="muted-note" style={{ marginTop: 8 }}>Build a session template first (on your dashboard) to schedule it.</p>}
+      <div className="stack" style={{ marginTop: 8 }}>
+        {SCHED_DOW.map(([dow, label]) => (
+          <label className="field" key={dow}>{label}
+            <select className="ex-select" value={sched[dow] || ''} onChange={(e) => setDay(dow, e.target.value)}>
+              <option value="">Rest day</option>
+              {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+      {saved && <p className="logged-ok">Saved ✓</p>}
     </div>
   )
 }

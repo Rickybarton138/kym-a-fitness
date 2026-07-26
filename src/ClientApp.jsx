@@ -444,18 +444,34 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   const [trainedToday, setTrainedToday] = useState(false)
   const [marking, setMarking] = useState(false)
   const [lastCheckin, setLastCheckin] = useState(undefined)
+  const [todaySession, setTodaySession] = useState(null) // scheduled session for today (6C)
 
   async function load() {
-    const [{ data: ds }, { data: comps }, { data: ci }] = await Promise.all([
+    const dow = new Date().getDay()
+    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }] = await Promise.all([
       supabase.from('daily_steps').select('*').eq('client_id', profile.id).eq('day', today).maybeSingle(),
       supabase.from('workout_completions').select('id').eq('client_id', profile.id).eq('completed_on', today),
       supabase.from(THEME.features?.checkinForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
+      supabase.from('client_schedule').select('template_id').eq('client_id', profile.id).eq('dow', dow).maybeSingle(),
     ])
     setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
     setTrainedToday((comps || []).length > 0)
     setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
+    if (sc?.template_id) {
+      const { data: tpl } = await supabase.from('workout_templates').select('*').eq('id', sc.template_id).maybeSingle()
+      setTodaySession(tpl || null)
+    } else setTodaySession(null)
   }
   useEffect(() => { load() }, [foodLoggedToday, workoutTick])
+
+  async function startTodaySession() {
+    if (!todaySession) return
+    await supabase.from('workout_plans').insert({
+      client_id: profile.id, title: todaySession.title, focus: todaySession.focus || 'Session',
+      exercises: todaySession.exercises || [], finisher: todaySession.finisher || null, assigned_by: null,
+    })
+    onGo('train')
+  }
 
   async function saveSteps() {
     const n = Math.max(0, parseInt(stepInput, 10) || 0)
@@ -499,10 +515,14 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
           </span>
         </AgendaItem>
 
-        <AgendaItem done={trainedToday} label="Train" sub={trainedToday ? 'Session done — great work' : 'Start today’s workout'}>
+        <AgendaItem
+          done={trainedToday}
+          label={!trainedToday && todaySession ? `Today: ${todaySession.title}` : 'Train'}
+          sub={trainedToday ? 'Session done — great work' : (todaySession ? 'Your planned session is ready' : 'Rest day — add a session if you fancy it')}
+        >
           {!trainedToday && (
             <span className="agenda-steps">
-              <button className="btn primary sm" onClick={() => onGo(THEME.nav ? 'trainhub' : 'train')}>Start</button>
+              <button className="btn primary sm" onClick={todaySession ? startTodaySession : () => onGo(THEME.nav ? 'trainhub' : 'train')}>Start</button>
               <button className="btn ghost sm" disabled={marking} onClick={markTrained}>Done</button>
             </span>
           )}

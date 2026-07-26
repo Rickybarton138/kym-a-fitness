@@ -117,8 +117,10 @@ info, programme, nutrition plan, performance, training adherence, progress physi
      link per exercise (fast, but sends clients to rival coaches' videos), or
      (b) coach attaches a demo URL per exercise (small follow-up, no rival links).
      Shipped with (b)'s hook only; no generic search link until Ricky decides.
-   - 6C (scheduled programme -> daily "today's session") still deferred; agenda's
-     Train item currently links to the Train hub.
+   - 6C — **DONE + LIVE 2026-07-26.** `client_schedule` (per-client weekday->template,
+     is_my_client RLS); coach `WeeklySchedule` card; the agenda's Train item names today's
+     session ("Today: Upper Push A") + Start creates the plan and lands on Train ready to
+     play; rest days show "add a session". Verified end-to-end.
 7. Progress hub (D) — **DONE + LIVE 2026-07-26.** Progress tab is now a hub
    (gated `features.progressHub`): Photos with side-by-side compare
    (`ProgressPhotos.jsx`, shared client+coach), Body scan, Measurements, Training
