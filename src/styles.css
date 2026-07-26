@@ -327,6 +327,9 @@ input { font-family: inherit; }
 .scale-btns { display: flex; gap: 6px; }
 .scale-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; color: var(--muted); }
 .scale-btn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.scale10-btns { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin-top: 6px; }
+.scale10-btn { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; font-size: 13px; color: var(--muted); padding: 0; }
+.scale10-btn.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .checkin-scores { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .checkin-scores span { font-size: 12px; background: var(--surface-2); border-radius: 8px; padding: 3px 8px; }
 .checkin-line { font-size: 13.5px; margin: 4px 0; }

@@ -13,6 +13,7 @@ import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
+import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
 import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
@@ -112,6 +113,7 @@ export default function TrainerApp({ profile, onSignOut }) {
         {THEME.features?.recipes && <CoachRecipes coachId={profile.id} />}
         {THEME.features?.videos && <CoachVideos coachId={profile.id} />}
         {(THEME.features?.supplements || THEME.features?.shop || THEME.features?.podcasts) && <CoachLinks coachId={profile.id} />}
+        {THEME.features?.checkinForms && <CheckinFormBuilder coachId={profile.id} />}
 
         <CoachVoice coachId={profile.id} coachName={profile.full_name} />
         <KimBrain coachId={profile.id} coachName={profile.full_name} />
@@ -244,7 +246,7 @@ function ClientDetail({ client, trainerId, onBack }) {
 
             {THEME.features?.testing && <CoachPerformanceTests clientId={client.id} />}
 
-            <CoachCheckins clientId={client.id} />
+            {THEME.features?.checkinForms ? <CoachCheckinResponses clientId={client.id} /> : <CoachCheckins clientId={client.id} />}
 
             <CoachAccountability clientId={client.id} clientName={client.full_name} />
 
@@ -794,6 +796,134 @@ function CoachCheckinRow({ c, onReplied }) {
       {c.question && <p className="checkin-line"><b>Asked:</b> {c.question}</p>}
       <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply to this check-in…" />
       <button className="btn primary sm" disabled={saving} onClick={send}>{done ? 'Sent ✓' : saving ? 'Sending…' : 'Send reply'}</button>
+    </div>
+  )
+}
+
+// Coach review of dynamic check-in responses — each rendered against its own
+// field snapshot, so old responses read correctly after the form is edited.
+function CoachCheckinResponses({ clientId }) {
+  const [items, setItems] = useState([])
+  useEffect(() => {
+    supabase.from('checkin_responses').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(12)
+      .then(({ data }) => setItems(data || []))
+  }, [])
+  if (items.length === 0) return null
+  return (
+    <div className="card">
+      <p className="eyebrow">Weekly check-ins</p>
+      {items.map((c) => <CoachResponseRow key={c.id} c={c} onReplied={(reply) => setItems((xs) => xs.map((x) => x.id === c.id ? { ...x, coach_reply: reply } : x))} />)}
+    </div>
+  )
+}
+
+function CoachResponseRow({ c, onReplied }) {
+  const [reply, setReply] = useState(c.coach_reply || '')
+  const [saving, setSaving] = useState(false)
+  const [done, setDone] = useState(false)
+  async function send() {
+    if (!reply.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('checkin_responses').update({ coach_reply: reply.trim() }).eq('id', c.id)
+    setSaving(false)
+    if (!error) { setDone(true); onReplied(reply.trim()); setTimeout(() => setDone(false), 1200) }
+  }
+  return (
+    <div className="fc-block">
+      <b>Check-in · {(c.created_at || '').slice(0, 10)}</b>
+      {(c.fields || []).map((f) => <p className="checkin-line" key={f.id}><b>{f.label}:</b> {formatAnswer(f, c.answers?.[f.id])}</p>)}
+      <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply to this check-in…" />
+      <button className="btn primary sm" disabled={saving} onClick={send}>{done ? 'Sent ✓' : saving ? 'Sending…' : 'Send reply'}</button>
+    </div>
+  )
+}
+
+// Coach-side check-in form builder: create a form, load Paul's template, add /
+// remove / label fields. Clients answer the most recently created form.
+function CheckinFormBuilder({ coachId }) {
+  const [forms, setForms] = useState([])
+  const [editing, setEditing] = useState(null) // { id?, title, fields }
+  const [error, setError] = useState('')
+
+  async function load() {
+    const { data } = await supabase.from('checkin_forms').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
+    setForms(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  const startNew = () => { setEditing({ title: 'Weekly check-in', fields: paulTemplate() }); setError('') }
+  const startBlank = () => { setEditing({ title: 'Weekly check-in', fields: [newField('scale10', '')] }); setError('') }
+  const editForm = (f) => setEditing({ id: f.id, title: f.title, fields: (f.fields || []).map((x) => ({ ...x })) })
+
+  const setField = (i, k, v) => setEditing((e) => ({ ...e, fields: e.fields.map((f, j) => j === i ? { ...f, [k]: v } : f) }))
+  const addField = () => setEditing((e) => ({ ...e, fields: [...e.fields, newField('scale10', '')] }))
+  const removeField = (i) => setEditing((e) => ({ ...e, fields: e.fields.filter((_, j) => j !== i) }))
+
+  async function save() {
+    const fields = editing.fields.filter((f) => (f.label || '').trim()).map((f) => ({ ...f, label: f.label.trim() }))
+    if (fields.length === 0) { setError('Add at least one labelled question.'); return }
+    const row = { coach_id: coachId, title: editing.title.trim() || 'Weekly check-in', fields }
+    const res = editing.id
+      ? await supabase.from('checkin_forms').update(row).eq('id', editing.id).select().single()
+      : await supabase.from('checkin_forms').insert(row).select().single()
+    if (res.error) { setError(res.error.message); return }
+    await load(); setEditing(null); setError('')
+  }
+  async function del(id) {
+    await supabase.from('checkin_forms').delete().eq('id', id)
+    setForms((fs) => fs.filter((f) => f.id !== id))
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Check-in forms</p>
+      <p className="muted-note">Build the weekly check-in your clients fill in. Clients answer your most recent form.</p>
+
+      {!editing && (
+        <>
+          {forms.length > 0 && (
+            <div className="stack" style={{ marginTop: 12 }}>
+              {forms.map((f, idx) => (
+                <div className="card" key={f.id} style={{ background: 'var(--surface-2)' }}>
+                  <div className="session-title">{f.title}{idx === 0 ? ' · live' : ''}</div>
+                  <div className="session-sub">{(f.fields || []).length} question{(f.fields || []).length === 1 ? '' : 's'}</div>
+                  <div className="nudge-actions" style={{ marginTop: 8 }}>
+                    <button type="button" className="btn ghost sm" onClick={() => editForm(f)}>Edit</button>
+                    <button type="button" className="btn ghost sm" onClick={() => del(f.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="nudge-actions" style={{ marginTop: 12 }}>
+            <button type="button" className="btn primary" onClick={startNew}>Use my template</button>
+            <button type="button" className="btn ghost" onClick={startBlank}>Start blank</button>
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <label className="field">Form name<input value={editing.title} onChange={(e) => setEditing((s) => ({ ...s, title: e.target.value }))} /></label>
+          {editing.fields.map((f, i) => (
+            <div className="card" key={f.id} style={{ background: 'var(--surface-2)' }}>
+              <input className="ex-name-in" placeholder="Question" value={f.label} onChange={(e) => setField(i, 'label', e.target.value)} />
+              <div className="ex-settype">
+                <select className="ex-select" value={f.type} onChange={(e) => setField(i, 'type', e.target.value)}>
+                  {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+                </select>
+                <button type="button" className="row-del" onClick={() => removeField(i)} aria-label="Remove question">×</button>
+              </div>
+            </div>
+          ))}
+          <button type="button" className="btn ghost" onClick={addField}>+ Add question</button>
+          {error && <p className="error">{error}</p>}
+          <div className="nudge-actions">
+            <button className="btn primary big" onClick={save}>Save form</button>
+            <button type="button" className="link-btn" onClick={() => { setEditing(null); setError('') }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

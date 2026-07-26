@@ -15,6 +15,7 @@ import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
+import { formatAnswer } from './checkinForms.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { MuscleTargeter } from './MuscleTargeter.jsx'
 import { StravaConnect } from './StravaConnect.jsx'
@@ -173,7 +174,9 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'barcode' && <BarcodeScan onLog={(m) => logFood(m, 'barcode')} onBack={() => setScreen('home')} />}
         {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'nudges' && <NudgeSettings clientId={profile.id} onBack={() => setScreen('home')} />}
-        {screen === 'checkin' && <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'checkin' && (THEME.features?.checkinForms
+          ? <CheckinFormRun clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} onBack={() => setScreen('home')} />
+          : <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />)}
         {screen === 'fridge' && <FridgeScan remaining={remaining} onLog={(m) => logFood(m, 'fridge')} />}
         {screen === 'meal' && <MealScan onLog={(m) => logFood(m, 'meal')} />}
         {screen === 'food' && (
@@ -438,7 +441,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
     const [{ data: ds }, { data: comps }, { data: ci }] = await Promise.all([
       supabase.from('daily_steps').select('*').eq('client_id', profile.id).eq('day', today).maybeSingle(),
       supabase.from('workout_completions').select('id').eq('client_id', profile.id).eq('completed_on', today),
-      supabase.from('weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
+      supabase.from(THEME.features?.checkinForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
     ])
     setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
     setTrainedToday((comps || []).length > 0)
@@ -466,7 +469,8 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   const checkedInToday = lastCheckin ? lastCheckin.slice(0, 10) === today : false
   const isMonday = new Date().getDay() === 1
   const daysSince = lastCheckin ? (Date.now() - new Date(lastCheckin).getTime()) / 86400000 : 999
-  const showCheckin = lastCheckin !== undefined && !checkedInToday && (isMonday || daysSince >= 7)
+  const checkinDue = isMonday || daysSince >= 7
+  const showCheckin = lastCheckin !== undefined && (checkedInToday || checkinDue)
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -497,8 +501,8 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
         </AgendaItem>
 
         {showCheckin && (
-          <AgendaItem done={false} label="Weekly check-in" sub={`Send ${coach} how your week went`}>
-            <button className="btn ghost sm" onClick={() => onGo('checkin')}>Open</button>
+          <AgendaItem done={checkedInToday} label="Weekly check-in" sub={checkedInToday ? 'Sent — nice one' : `Send ${coach} how your week went`}>
+            {!checkedInToday && <button className="btn ghost sm" onClick={() => onGo('checkin')}>Open</button>}
           </AgendaItem>
         )}
       </div>
@@ -755,6 +759,133 @@ function WeeklyCheckin({ clientId, coachName, onBack }) {
       <button className="btn primary big" disabled={state === 'saving'} type="submit">{state === 'saving' ? 'Sending…' : `Send to ${coach}`}</button>
       {past.length > 0 && <p className="eyebrow section-gap">Past check-ins</p>}
       {past.map((c) => <CheckinCard key={c.id} c={c} coach={coach} />)}
+    </form>
+  )
+}
+
+/* ---------- Dynamic check-in (coach-built forms) ---------- */
+function Scale10Row({ label, value, onChange }) {
+  return (
+    <div className="field">
+      <span className="scale-label">{label}</span>
+      <div className="scale10-btns">
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+          <button key={n} type="button" className={'scale10-btn' + (value === n ? ' on' : '')} onClick={() => onChange(n)}>{n}</button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function FieldInput({ field, value, onChange }) {
+  if (field.type === 'scale10') return <Scale10Row label={field.label} value={value} onChange={onChange} />
+  if (field.type === 'overunder') return (
+    <div className="field">
+      <span className="scale-label">{field.label}</span>
+      <div className="seg three" style={{ marginTop: 6 }}>
+        {[['over', 'Over'], ['on', 'On track'], ['under', 'Under']].map(([v, l]) => (
+          <button key={v} type="button" className={value === v ? 'on' : ''} onClick={() => onChange(v)}>{l}</button>
+        ))}
+      </div>
+    </div>
+  )
+  if (field.type === 'yesno') return (
+    <div className="field">
+      <span className="scale-label">{field.label}</span>
+      <div className="seg" style={{ marginTop: 6 }}>
+        <button type="button" className={value === true ? 'on' : ''} onClick={() => onChange(true)}>Yes</button>
+        <button type="button" className={value === false ? 'on' : ''} onClick={() => onChange(false)}>No</button>
+      </div>
+    </div>
+  )
+  if (field.type === 'number') return (
+    <label className="field">{field.label}<input type="number" inputMode="numeric" value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))} /></label>
+  )
+  return <label className="field">{field.label}<textarea value={value ?? ''} onChange={(e) => onChange(e.target.value)} /></label>
+}
+
+// Renders a past response against its OWN snapshot of the fields, so later form
+// edits never change how an old check-in reads.
+function ResponseCard({ resp, coach }) {
+  const fields = resp.fields || []
+  return (
+    <div className="card">
+      <p className="eyebrow accent">Check-in · {(resp.created_at || '').slice(0, 10)}</p>
+      <div className="stack" style={{ gap: 6 }}>
+        {fields.map((f) => <p className="checkin-line" key={f.id}><b>{f.label}:</b> {formatAnswer(f, resp.answers?.[f.id])}</p>)}
+      </div>
+      {resp.coach_reply
+        ? <div className="fc-block coach"><b>From {coach}</b><p>{resp.coach_reply}</p></div>
+        : <p className="muted-note">Waiting for {coach}’s reply.</p>}
+    </div>
+  )
+}
+
+function CheckinFormRun({ clientId, trainerId, coachName, onBack }) {
+  const coach = coachName?.split(' ')[0] || 'your coach'
+  const [form, setForm] = useState(undefined) // undefined = loading, null = none set up
+  const [answers, setAnswers] = useState({})
+  const [past, setPast] = useState([])
+  const [state, setState] = useState('idle')
+
+  async function load() {
+    const [{ data: forms }, { data: resps }] = await Promise.all([
+      supabase.from('checkin_forms').select('*').order('created_at', { ascending: false }).limit(1),
+      supabase.from('checkin_responses').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(8),
+    ])
+    setForm(forms && forms[0] ? forms[0] : null)
+    setPast(resps || [])
+  }
+  useEffect(() => { load() }, [])
+
+  const setAnswer = (id, v) => setAnswers((a) => ({ ...a, [id]: v }))
+
+  async function submit(e) {
+    e.preventDefault()
+    setState('saving')
+    const { data } = await supabase.from('checkin_responses').insert({
+      form_id: form.id, coach_id: trainerId, client_id: clientId, answers, fields: form.fields || [],
+    }).select().single()
+    if (data) setPast((p) => [data, ...p])
+    setAnswers({})
+    setState('done')
+  }
+
+  if (form === undefined) return <div className="stack"><button className="link-btn" onClick={onBack}>‹ Back</button><p className="muted-note">Loading…</p></div>
+  if (form === null) {
+    return (
+      <div className="stack">
+        <button className="link-btn" onClick={onBack}>‹ Back</button>
+        <p className="eyebrow">Weekly check-in</p>
+        <h1 className="h1">Check-in</h1>
+        <p className="muted-note">{coach} hasn’t set up your check-in yet — it’ll appear here soon.</p>
+        {past.map((r) => <ResponseCard key={r.id} resp={r} coach={coach} />)}
+      </div>
+    )
+  }
+  if (state === 'done') {
+    return (
+      <div className="stack">
+        <button className="link-btn" onClick={onBack}>‹ Back</button>
+        <p className="logged-ok big">Sent to {coach} ✓</p>
+        <p className="lead">Thanks for checking in. {coach} will read this and come back to you.</p>
+        <button className="btn ghost" onClick={() => setState('idle')}>New check-in</button>
+        {past.map((r) => <ResponseCard key={r.id} resp={r} coach={coach} />)}
+      </div>
+    )
+  }
+  return (
+    <form className="stack" onSubmit={submit}>
+      <button type="button" className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Weekly check-in</p>
+      <h1 className="h1">{form.title || 'How was your week?'}</h1>
+      <p className="lead">A quick snapshot for {coach}.</p>
+      <div className="card">
+        {(form.fields || []).map((f) => <FieldInput key={f.id} field={f} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} />)}
+      </div>
+      <button className="btn primary big" disabled={state === 'saving'} type="submit">{state === 'saving' ? 'Sending…' : `Send to ${coach}`}</button>
+      {past.length > 0 && <p className="eyebrow section-gap">Past check-ins</p>}
+      {past.map((r) => <ResponseCard key={r.id} resp={r} coach={coach} />)}
     </form>
   )
 }

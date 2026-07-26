@@ -130,7 +130,14 @@ info, programme, nutrition plan, performance, training adherence, progress physi
    `programMeta.js` defines the dimensions; coach create form tags a programme;
    client library has a filter bar (unspecified programmes stay visible). Verified
    filtering discriminates both ways. Phase 7 fully complete.
-8. Check-in form builder (E).
+8. Check-in form builder (E) — **DONE + LIVE 2026-07-26.** Coach builds/edits a
+   check-in form (`checkin_forms`), one-tap loads Paul's exact 14-field template;
+   field types scale-10/over-under/number/yes-no/text. Client answers the most
+   recent form dynamically; responses (`checkin_responses`) snapshot the fields so
+   old answers keep their labels after edits. Coach reviews + replies. Agenda
+   check-in item is brand-aware (queries checkin_responses for Paul). Gated
+   `features.checkinForms`; Kim's fixed weekly check-in untouched. No field
+   reordering in v1 (delete + re-add). `checkinForms.js` holds types+template.
 9. Community/files/welcome/nutrition-tone (F).
 - Coaching-side IA restructure (G) folded in as each area is touched.
 
