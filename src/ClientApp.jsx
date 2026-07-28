@@ -445,18 +445,24 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   const [marking, setMarking] = useState(false)
   const [lastCheckin, setLastCheckin] = useState(undefined)
   const [todaySession, setTodaySession] = useState(null) // scheduled session for today (6C)
+  const [reminders, setReminders] = useState([])         // coach's custom reminders
+  const [remDone, setRemDone] = useState(() => new Set())
 
   async function load() {
     const dow = new Date().getDay()
-    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }] = await Promise.all([
+    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }, { data: rem }, { data: rd }] = await Promise.all([
       supabase.from('daily_steps').select('*').eq('client_id', profile.id).eq('day', today).maybeSingle(),
       supabase.from('workout_completions').select('id').eq('client_id', profile.id).eq('completed_on', today),
       supabase.from(THEME.features?.checkinForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
       supabase.from('client_schedule').select('template_id').eq('client_id', profile.id).eq('dow', dow).maybeSingle(),
+      supabase.from('client_reminders').select('*').eq('client_id', profile.id).order('at_time', { ascending: true }),
+      supabase.from('reminder_done').select('reminder_id').eq('client_id', profile.id).eq('done_on', today),
     ])
     setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
     setTrainedToday((comps || []).length > 0)
     setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
+    setReminders(rem || [])
+    setRemDone(new Set((rd || []).map((x) => x.reminder_id)))
     if (sc?.template_id) {
       const { data: tpl } = await supabase.from('workout_templates').select('*').eq('id', sc.template_id).maybeSingle()
       setTodaySession(tpl || null)
@@ -471,6 +477,12 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
       exercises: todaySession.exercises || [], finisher: todaySession.finisher || null, assigned_by: null,
     })
     onGo('train')
+  }
+
+  async function doReminder(r) {
+    setRemDone((s) => new Set(s).add(r.id))
+    await supabase.from('reminder_done').upsert({ reminder_id: r.id, client_id: profile.id, done_on: today }, { onConflict: 'reminder_id,done_on' })
+    if (r.kind === 'reply' || r.kind === 'evidence') onGo('ask') // open the coach chat
   }
 
   async function saveSteps() {
@@ -533,6 +545,16 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
             {!checkedInToday && <button className="btn ghost sm" onClick={() => onGo('checkin')}>Open</button>}
           </AgendaItem>
         )}
+
+        {reminders.map((r) => {
+          const done = remDone.has(r.id)
+          const cta = r.kind === 'evidence' ? 'Send' : r.kind === 'reply' ? 'Reply' : 'Done'
+          return (
+            <AgendaItem key={r.id} done={done} label={r.message} sub={done ? 'Done — nice one' : `From ${coach} · ${(r.at_time || '').slice(0, 5)}`}>
+              {!done && <button className="btn ghost sm" onClick={() => doReminder(r)}>{cta}</button>}
+            </AgendaItem>
+          )
+        })}
       </div>
     </div>
   )

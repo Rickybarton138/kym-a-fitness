@@ -209,6 +209,8 @@ function ClientDetail({ client, trainerId, onBack }) {
 
             {THEME.features?.agenda && <WeeklySchedule clientId={client.id} coachId={trainerId} />}
 
+            {THEME.features?.agenda && <ClientReminders clientId={client.id} coachId={trainerId} />}
+
             {THEME.features?.agenda && (
               <div className="card">
                 <p className="eyebrow">Daily step target</p>
@@ -1213,6 +1215,78 @@ function CoachLinks({ coachId }) {
           <label className="field">Link<input value={f.url} onChange={set('url')} placeholder="https://…" /></label>
           <label className="field">Note (optional)<input value={f.note} onChange={set('note')} placeholder="e.g. Use code PAUL10 for 10% off" /></label>
           <button className="btn primary big" onClick={save}>Save link</button>
+          <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Custom per-client reminders — the coach writes the message and the time; the
+// client gets a phone notification at that time and a task on their daily plan.
+const REMINDER_KINDS = [
+  { key: 'nudge', label: 'Just a reminder' },
+  { key: 'reply', label: 'Reply to me' },
+  { key: 'evidence', label: 'Send me evidence' },
+]
+function ClientReminders({ clientId, coachId }) {
+  const [items, setItems] = useState([])
+  const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ message: '', at_time: '20:00', kind: 'nudge' })
+  const [error, setError] = useState('')
+
+  async function load() {
+    const { data } = await supabase.from('client_reminders').select('*').eq('client_id', clientId).order('at_time', { ascending: true })
+    setItems(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+  const kindLabel = (k) => (REMINDER_KINDS.find((x) => x.key === k) || {}).label || k
+
+  async function save() {
+    if (!f.message.trim()) { setError('Write the reminder message.'); return }
+    if (!f.at_time) { setError('Pick a time.'); return }
+    const { data, error: err } = await supabase.from('client_reminders').insert({ coach_id: coachId, client_id: clientId, message: f.message.trim(), at_time: f.at_time, kind: f.kind }).select().single()
+    if (err) { setError(err.message); return }
+    setItems((i) => [...i, data].sort((a, b) => a.at_time.localeCompare(b.at_time)))
+    setF({ message: '', at_time: '20:00', kind: 'nudge' }); setOpen(false); setError('')
+  }
+  async function del(id) {
+    await supabase.from('client_reminders').delete().eq('id', id)
+    setItems((i) => i.filter((x) => x.id !== id))
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Reminders</p>
+      <p className="muted-note">Personal reminders for {(clientId ? 'this client' : 'them')} — your words, your time. They get a phone notification and it shows on their daily plan.</p>
+      {items.length > 0 && (
+        <div className="stack" style={{ marginTop: 12 }}>
+          {items.map((r) => (
+            <div className="card" key={r.id} style={{ background: 'var(--surface-2)' }}>
+              <div className="session-title">{r.message}</div>
+              <div className="session-sub">{(r.at_time || '').slice(0, 5)} · {kindLabel(r.kind)}</div>
+              <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => del(r.id)}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+      {!open ? (
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => { setOpen(true); setError('') }}>Add reminder</button>
+      ) : (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <label className="field">Message<textarea value={f.message} onChange={set('message')} placeholder="e.g. Message me 3 positives from today" /></label>
+          <div className="grid-2">
+            <label className="field">Time<input type="time" value={f.at_time} onChange={set('at_time')} /></label>
+            <label className="field">Type
+              <select value={f.kind} onChange={set('kind')}>
+                {REMINDER_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <button className="btn primary big" onClick={save}>Save reminder</button>
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>
       )}

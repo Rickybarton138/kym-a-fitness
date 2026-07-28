@@ -25,6 +25,29 @@ async function rpc(fn, args) {
   return res.json()
 }
 
+// Custom per-client reminders (coach-written, self-timed). Fires each reminder
+// once per UK day at/after its set time; content is the coach's own message.
+export async function runReminders() {
+  if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
+  const rows = await rpc('reminders_due', { p_secret: SECRET })
+  const titleFor = (kind) => kind === 'reply' ? 'A note for your coach' : kind === 'evidence' ? 'Send your coach evidence' : 'Reminder'
+  let sent = 0, pruned = 0
+  for (const r of rows) {
+    const sub = { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }
+    try {
+      await webpush.sendNotification(sub, JSON.stringify({ title: titleFor(r.kind), body: r.message, url: '/', tag: `rem-${r.reminder_id}` }))
+      sent++
+      await rpc('reminder_mark_sent', { p_secret: SECRET, p_id: r.reminder_id }).catch(() => {})
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await rpc('nudge_drop', { p_secret: SECRET, p_endpoint: r.endpoint }).catch(() => {})
+        pruned++
+      }
+    }
+  }
+  return { due: rows.length, sent, pruned }
+}
+
 export async function runNudges(kind) {
   if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
   const rows = await rpc('nudges_due', { p_secret: SECRET, p_kind: kind })
