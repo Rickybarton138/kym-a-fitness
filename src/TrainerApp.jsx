@@ -14,6 +14,7 @@ import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
+import { pushSupported, pushStatus, enablePush, disablePush, isIOS, isStandalone } from './push.js'
 import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
@@ -77,6 +78,8 @@ export default function TrainerApp({ profile, onSignOut }) {
 
         {THEME.features?.activityFeed && <CoachActivity profile={profile} clients={clients} onOpenClient={setSelected} />}
 
+        {THEME.features?.activityFeed && <CoachDigestToggle coachId={profile.id} />}
+
         {THEME.features?.cashflow && <CashflowDashboard />}
 
         {THEME.features?.briefing && <CoachBriefing profile={profile} clients={clients} />}
@@ -128,6 +131,32 @@ export default function TrainerApp({ profile, onSignOut }) {
           <CommunityFeed communityCoachId={profile.id} me={profile.id} myName={profile.full_name} isCoach={true} />
         </div>
       </main>
+    </div>
+  )
+}
+
+// Coach opt-in for the once-a-day activity digest (phone push). Reuses the same
+// web-push plumbing as the client reminders.
+function CoachDigestToggle({ coachId }) {
+  const [status, setStatus] = useState('checking')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  async function refresh() { setStatus(await pushStatus()) }
+  useEffect(() => { if (pushSupported()) refresh(); else setStatus('unsupported') }, [])
+  async function on() { setBusy(true); setErr(''); try { await enablePush(coachId); await refresh() } catch (e) { setErr(e.message) } finally { setBusy(false) } }
+  async function off() { setBusy(true); setErr(''); try { await disablePush(); await refresh() } catch (e) { setErr(e.message) } finally { setBusy(false) } }
+  const needsInstall = isIOS() && !isStandalone()
+  return (
+    <div className="card">
+      <p className="eyebrow">Daily summary</p>
+      <p className="muted-note">Get one phone notification a day summarising what your clients have been up to.</p>
+      {status === 'checking' && <p className="muted-note">Checking…</p>}
+      {status === 'unsupported' && <p className="muted-note">This browser can’t do notifications. Try Chrome on Android, or add the app to your Home Screen.</p>}
+      {needsInstall && status !== 'unsupported' && <p className="disclaimer-note">On iPhone: add the app to your Home Screen first, open it from there, then turn this on.</p>}
+      {status === 'denied' && <p className="error">Notifications are blocked — turn them on for this site in your browser settings, then come back.</p>}
+      {status === 'off' && <button className="btn primary" disabled={busy} onClick={on}>{busy ? 'Turning on…' : 'Turn on daily summary'}</button>}
+      {status === 'on' && <div className="stack"><p className="logged-ok">Daily summary is on ✓</p><button className="btn ghost sm" disabled={busy} onClick={off}>Turn off</button></div>}
+      {err && <p className="error">{err}</p>}
     </div>
   )
 }

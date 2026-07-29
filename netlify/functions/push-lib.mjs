@@ -25,6 +25,38 @@ async function rpc(fn, args) {
   return res.json()
 }
 
+// Once-a-day digest to coaches who opted in: one push summarising their clients'
+// activity over the last 24h.
+export async function runCoachDigest() {
+  if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
+  const rows = await rpc('coach_digest', { p_secret: SECRET })
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
+  let sent = 0, pruned = 0
+  for (const r of rows) {
+    const parts = []
+    if (r.checkins) parts.push(plural(r.checkins, 'check-in'))
+    if (r.forms) parts.push(plural(r.forms, 'form check'))
+    if (r.workouts) parts.push(plural(r.workouts, 'workout'))
+    if (r.meals) parts.push(plural(r.meals, 'meal') + ' logged')
+    if (r.msgs) parts.push(plural(r.msgs, 'message'))
+    if (r.ais) parts.push(plural(r.ais, 'AI question'))
+    if (r.scans) parts.push(plural(r.scans, 'body scan'))
+    const body = 'Today: ' + (parts.join(', ') || 'client activity')
+    const sub = { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }
+    try {
+      await webpush.sendNotification(sub, JSON.stringify({ title: 'Your clients today', body, url: '/', tag: 'coach-digest' }))
+      sent++
+      await rpc('coach_digest_mark_sent', { p_secret: SECRET, p_coach: r.coach_id }).catch(() => {})
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await rpc('nudge_drop', { p_secret: SECRET, p_endpoint: r.endpoint }).catch(() => {})
+        pruned++
+      }
+    }
+  }
+  return { due: rows.length, sent, pruned }
+}
+
 // Custom per-client reminders (coach-written, self-timed). Fires each reminder
 // once per UK day at/after its set time; content is the coach's own message.
 export async function runReminders() {
