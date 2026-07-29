@@ -11,6 +11,7 @@ export const BRANDS = {
     tagline: 'A fresh start. A stronger you.',
     logo: '/logo.jpg',
     mark: 'CBK',
+    features: { activityFeed: true },
     trainGymName: 'South Coast Power House',
     equipment: [
       'Squat racks & Olympic benches',
@@ -44,7 +45,7 @@ export const BRANDS = {
     logo: null, // monogram badge until Paul's wordmark is dropped in
     mark: 'RD',
     scheme: 'dark',
-    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true },
+    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true },
     // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout). Ids map to
     // screens/hubs in ClientApp; label overrides the per-id default. Brands
     // without a `nav` keep the default six-tab bar, so Kim/PPH/BBL are untouched.

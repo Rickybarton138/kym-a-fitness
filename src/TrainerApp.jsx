@@ -75,6 +75,8 @@ export default function TrainerApp({ profile, onSignOut }) {
           <button className="btn ghost" onClick={copyCode}>{copied ? 'Copied ✓' : 'Copy'}</button>
         </div>
 
+        {THEME.features?.activityFeed && <CoachActivity profile={profile} clients={clients} onOpenClient={setSelected} />}
+
         {THEME.features?.cashflow && <CashflowDashboard />}
 
         {THEME.features?.briefing && <CoachBriefing profile={profile} clients={clients} />}
@@ -126,6 +128,60 @@ export default function TrainerApp({ profile, onSignOut }) {
           <CommunityFeed communityCoachId={profile.id} me={profile.id} myName={profile.full_name} isCoach={true} />
         </div>
       </main>
+    </div>
+  )
+}
+
+// Live feed of everything a coach's clients do (Kim's request). Reads the
+// coach_activity() RPC (server-side, tenant-filtered). Items newer than the
+// coach's last-seen time are highlighted; "Mark all read" advances it. Tap a
+// row to open that client.
+function timeAgo(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (s < 60) return 'just now'
+  const mn = Math.floor(s / 60); if (mn < 60) return mn + 'm ago'
+  const h = Math.floor(mn / 60); if (h < 24) return h + 'h ago'
+  return Math.floor(h / 24) + 'd ago'
+}
+function CoachActivity({ profile, clients, onOpenClient }) {
+  const [items, setItems] = useState(null)
+  const [seen, setSeen] = useState(profile.activity_seen_at || null)
+
+  async function load() {
+    const { data } = await supabase.rpc('coach_activity', { p_limit: 40 })
+    setItems(data || [])
+  }
+  useEffect(() => { load() }, [])
+
+  const seenT = seen ? new Date(seen).getTime() : 0
+  const unread = (items || []).filter((a) => new Date(a.at).getTime() > seenT).length
+
+  async function markRead() {
+    setSeen(new Date().toISOString())
+    await supabase.rpc('mark_activity_seen')
+  }
+  const openClient = (id) => { const c = (clients || []).find((x) => x.id === id); if (c) onOpenClient(c) }
+
+  if (items === null) return null
+  return (
+    <div className="card">
+      <div className="nudge-head">
+        <b>Client activity{unread > 0 ? ` · ${unread} new` : ''}</b>
+        {unread > 0 && <button className="link-btn inline" onClick={markRead}>Mark all read</button>}
+      </div>
+      {items.length === 0 && <p className="muted-note">No client activity yet — it’ll show here as your clients use the app.</p>}
+      <div className="stack" style={{ marginTop: 6, gap: 0 }}>
+        {items.map((a, i) => {
+          const isNew = new Date(a.at).getTime() > seenT
+          return (
+            <button type="button" key={i} className={'act-row' + (isNew ? ' new' : '')} onClick={() => openClient(a.client_id)}>
+              <span className="act-dot" aria-hidden="true" />
+              <span className="act-body"><b>{(a.client_name || 'Client').split(' ')[0]}</b> {a.detail}</span>
+              <span className="act-time">{timeAgo(a.at)}</span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
