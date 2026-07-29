@@ -15,6 +15,7 @@ import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
 import { pushSupported, pushStatus, enablePush, disablePush, isIOS, isStandalone } from './push.js'
+import { BODY_REGIONS, SIDES, TISSUES, SEVERITIES, INJURY_STATUS, AVAILABILITY, NOTE_TYPES, RTP_LADDER, statusLabel, availabilityOf, noteTypeLabel } from './rehab.js'
 import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
@@ -331,6 +332,8 @@ function ClientDetail({ client, trainerId, onBack }) {
             </div>
 
             {THEME.features?.monitoring && <CoachMonitoring clientId={client.id} />}
+
+            {THEME.features?.rehab && <RehabCoach clientId={client.id} coachId={trainerId} />}
 
             {THEME.features?.growth && <CoachGrowth clientId={client.id} />}
 
@@ -1420,6 +1423,197 @@ function WeeklySchedule({ clientId, coachId }) {
         ))}
       </div>
       {saved && <p className="logged-ok">Saved ✓</p>}
+    </div>
+  )
+}
+
+/* ---------- Injury / rehab / return-to-play (PPH performance layer) ---------- */
+function RehabCoach({ clientId, coachId }) {
+  const [injuries, setInjuries] = useState([])
+  const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ body_region: BODY_REGIONS[0], side: 'N/A', tissue_type: TISSUES[0], severity: SEVERITIES[0], mechanism: '', onset_date: '' })
+  const [error, setError] = useState('')
+
+  async function load() {
+    const { data } = await supabase.from('injuries').select('*').eq('client_id', clientId).order('created_at', { ascending: false })
+    setInjuries(data || [])
+  }
+  useEffect(() => { load() }, [])
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+
+  async function add() {
+    const { data, error: err } = await supabase.from('injuries').insert({
+      client_id: clientId, coach_id: coachId, author_id: coachId,
+      body_region: f.body_region, side: f.side, tissue_type: f.tissue_type, severity: f.severity,
+      mechanism: f.mechanism.trim() || null, onset_date: f.onset_date || null, status: 'active', availability: 'unavailable',
+    }).select().single()
+    if (err) { setError(err.message); return }
+    setInjuries((i) => [data, ...i]); setOpen(false); setError('')
+    setF({ body_region: BODY_REGIONS[0], side: 'N/A', tissue_type: TISSUES[0], severity: SEVERITIES[0], mechanism: '', onset_date: '' })
+  }
+
+  const activeCount = injuries.filter((i) => i.status !== 'resolved').length
+  return (
+    <div className="card">
+      <p className="eyebrow">Medical / rehab{activeCount ? ` · ${activeCount} active` : ''}</p>
+      <p className="muted-note">Injury record, rehab protocols and return-to-play. The athlete sees their plan but can’t edit the record.</p>
+      <div className="stack" style={{ marginTop: 12 }}>
+        {injuries.map((inj) => <InjuryCard key={inj.id} injury={inj} clientId={clientId} coachId={coachId} onChange={(u) => setInjuries((xs) => xs.map((x) => x.id === u.id ? u : x))} onDelete={(id) => setInjuries((xs) => xs.filter((x) => x.id !== id))} />)}
+      </div>
+      {error && <p className="error">{error}</p>}
+      {!open ? (
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => { setOpen(true); setError('') }}>Log injury</button>
+      ) : (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div className="grid-2">
+            <label className="field">Region<select value={f.body_region} onChange={set('body_region')}>{BODY_REGIONS.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="field">Side<select value={f.side} onChange={set('side')}>{SIDES.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="field">Tissue<select value={f.tissue_type} onChange={set('tissue_type')}>{TISSUES.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="field">Severity<select value={f.severity} onChange={set('severity')}>{SEVERITIES.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="field">Onset<input type="date" value={f.onset_date} onChange={set('onset_date')} /></label>
+          </div>
+          <label className="field">Mechanism / notes<input value={f.mechanism} onChange={set('mechanism')} placeholder="e.g. sprint — felt a pull" /></label>
+          <button className="btn primary big" onClick={add}>Save injury</button>
+          <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InjuryCard({ injury, clientId, coachId, onChange, onDelete }) {
+  const [inj, setInj] = useState(injury)
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [note, setNote] = useState('')
+  const [noteType, setNoteType] = useState('progress')
+  const [protocols, setProtocols] = useState(null)
+  const av = availabilityOf(inj.availability)
+
+  async function loadDetail() {
+    if (notes !== null) return
+    const [{ data: ns }, { data: ps }] = await Promise.all([
+      supabase.from('injury_notes').select('*').eq('injury_id', inj.id).order('created_at', { ascending: false }),
+      supabase.from('rehab_protocols').select('*').eq('injury_id', inj.id).order('created_at', { ascending: false }),
+    ])
+    setNotes(ns || []); setProtocols(ps || [])
+  }
+  function toggle() { const willOpen = !open; setOpen(willOpen); if (willOpen) loadDetail() }
+
+  async function patch(fields) {
+    const { data } = await supabase.from('injuries').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', inj.id).select().single()
+    if (data) { setInj(data); onChange && onChange(data) }
+  }
+  async function addNote() {
+    if (!note.trim()) return
+    const { data } = await supabase.from('injury_notes').insert({ injury_id: inj.id, client_id: clientId, author_id: coachId, note_type: noteType, body: note.trim() }).select().single()
+    if (data) { setNotes((n) => [data, ...(n || [])]); setNote('') }
+  }
+  async function del() { await supabase.from('injuries').delete().eq('id', inj.id); onDelete && onDelete(inj.id) }
+  const advance = (dir) => {
+    const next = Math.max(0, Math.min(RTP_LADDER.length, inj.current_rtp_stage + dir))
+    patch({ current_rtp_stage: next, status: next >= RTP_LADDER.length ? 'rtp' : (next > 0 ? 'rehab' : inj.status) })
+  }
+  const clear = () => patch({ status: 'resolved', availability: 'full', current_rtp_stage: RTP_LADDER.length, cleared_by: coachId, cleared_at: new Date().toISOString() })
+
+  return (
+    <div className="card" style={{ background: 'var(--surface-2)' }}>
+      <button type="button" className="session-head" onClick={toggle}>
+        <div>
+          <div className="session-title">{inj.body_region}{inj.side && inj.side !== 'N/A' ? ` (${inj.side})` : ''}</div>
+          <div className="session-sub">{[inj.severity, inj.tissue_type, statusLabel(inj.status)].filter(Boolean).join(' · ')}</div>
+        </div>
+        <span className={'avail-badge ' + av.color}>{av.label}</span>
+      </button>
+      {open && (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <div className="grid-2">
+            <label className="field">Status<select value={inj.status} onChange={(e) => patch({ status: e.target.value })}>{INJURY_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></label>
+            <label className="field">Availability<select value={inj.availability} onChange={(e) => patch({ availability: e.target.value })}>{AVAILABILITY.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
+          </div>
+          <div>
+            <p className="eyebrow accent">Return to play</p>
+            <div className="rtp-ladder">
+              {RTP_LADDER.map((s, i) => (
+                <div key={i} className={'rtp-step' + (i < inj.current_rtp_stage ? ' done' : '') + (i === inj.current_rtp_stage ? ' current' : '')}>
+                  <span className="rtp-n">{i + 1}</span><span>{s}</span>
+                </div>
+              ))}
+            </div>
+            <div className="nudge-actions" style={{ marginTop: 8 }}>
+              <button className="btn ghost sm" onClick={() => advance(-1)} disabled={inj.current_rtp_stage <= 0}>Back</button>
+              <button className="btn ghost sm" onClick={() => advance(1)} disabled={inj.current_rtp_stage >= RTP_LADDER.length}>Advance stage</button>
+              {inj.status !== 'resolved' && <button className="btn primary sm" onClick={clear}>Clear for play</button>}
+            </div>
+            {inj.cleared_at && <p className="logged-ok">Cleared {(inj.cleared_at || '').slice(0, 10)} ✓</p>}
+          </div>
+          <RehabProtocols injuryId={inj.id} clientId={clientId} coachId={coachId} protocols={protocols} setProtocols={setProtocols} />
+          <div>
+            <p className="eyebrow accent">Clinical notes</p>
+            {(notes || []).map((n) => <div className="fc-block" key={n.id}><b>{noteTypeLabel(n.note_type)} · {(n.created_at || '').slice(0, 10)}</b><p>{n.body}</p></div>)}
+            <div className="stack" style={{ marginTop: 6 }}>
+              <select className="ex-select" value={noteType} onChange={(e) => setNoteType(e.target.value)}>{NOTE_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select>
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Assessment, treatment, progress…" />
+              <button className="btn ghost sm" onClick={addNote}>Add note</button>
+            </div>
+          </div>
+          <button type="button" className="link-btn" onClick={del}>Delete injury</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RehabProtocols({ injuryId, clientId, coachId, protocols, setProtocols }) {
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [items, setItems] = useState({})
+  async function addProtocol() {
+    if (!title.trim()) return
+    const { data } = await supabase.from('rehab_protocols').insert({ injury_id: injuryId, client_id: clientId, coach_id: coachId, title: title.trim() }).select().single()
+    if (data) { setProtocols((p) => [data, ...(p || [])]); setTitle(''); setOpen(false) }
+  }
+  async function loadItems(pid) {
+    if (items[pid]) return
+    const { data } = await supabase.from('rehab_protocol_items').select('*').eq('protocol_id', pid).order('position', { ascending: true })
+    setItems((s) => ({ ...s, [pid]: data || [] }))
+  }
+  async function addItem(pid, name, detail) {
+    const pos = (items[pid] || []).length
+    const { data } = await supabase.from('rehab_protocol_items').insert({ protocol_id: pid, client_id: clientId, name, detail: detail || null, position: pos }).select().single()
+    if (data) setItems((s) => ({ ...s, [pid]: [...(s[pid] || []), data] }))
+  }
+  return (
+    <div>
+      <p className="eyebrow accent">Rehab protocol</p>
+      {(protocols || []).map((pr) => <ProtocolRow key={pr.id} pr={pr} items={items[pr.id]} onOpen={() => loadItems(pr.id)} onAdd={(n, d) => addItem(pr.id, n, d)} />)}
+      {!open ? <button className="btn ghost sm" onClick={() => setOpen(true)}>Add protocol</button> : (
+        <div className="stack" style={{ marginTop: 6 }}>
+          <input className="ex-name-in" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Phase 1 — isometrics" />
+          <button className="btn ghost sm" onClick={addProtocol}>Save protocol</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProtocolRow({ pr, items, onOpen, onAdd }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState(''); const [detail, setDetail] = useState('')
+  function toggle() { const willOpen = !open; setOpen(willOpen); if (willOpen) onOpen() }
+  return (
+    <div className="card" style={{ background: 'var(--surface)', marginBottom: 6 }}>
+      <button type="button" className="session-head" onClick={toggle}><div className="session-title">{pr.title}</div><span className="chev">{open ? '−' : '+'}</span></button>
+      {open && (
+        <div className="stack" style={{ marginTop: 6 }}>
+          {(items || []).map((it) => <div key={it.id} className="checkin-line"><b>{it.name}</b>{it.detail ? ` — ${it.detail}` : ''}</div>)}
+          <div className="grid-2">
+            <input className="ex-name-in" value={name} onChange={(e) => setName(e.target.value)} placeholder="Drill" />
+            <input className="ex-name-in" value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="3×30s / notes" />
+          </div>
+          <button className="btn ghost sm" disabled={!name.trim()} onClick={() => { onAdd(name.trim(), detail.trim()); setName(''); setDetail('') }}>Add drill</button>
+        </div>
+      )}
     </div>
   )
 }

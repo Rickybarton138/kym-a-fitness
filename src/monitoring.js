@@ -45,3 +45,23 @@ export function acwrFlag(acwr) {
   if (acwr < 0.8) return { label: 'Detraining', color: 'amber' }
   return { label: 'Sweet spot', color: 'green' }
 }
+
+// Worst recent pain/soreness self-report. Feeds the rehab red-flag layer.
+export function sorenessFlag(soreness) {
+  const worst = (soreness || []).reduce((m, s) => Math.max(m, Number(s.pain) || 0), 0)
+  if (worst >= 7) return { key: 'red', color: 'red', pain: worst }
+  if (worst >= 4) return { key: 'amber', color: 'amber', pain: worst }
+  return { key: 'none', color: null, pain: worst }
+}
+
+// Merge wellness readiness with soreness: soreness can only pull the light DOWN,
+// never up. A wellness-green athlete reporting knee pain 8 shows red, with reason.
+export function combinedReadiness(wellnessLight, soreness) {
+  const s = sorenessFlag(soreness)
+  const rank = { grey: -1, none: -1, green: 0, amber: 1, red: 2 }
+  const base = wellnessLight || { color: 'grey', label: 'No check-in' }
+  if (s.color && (rank[s.color] ?? -1) > (rank[base.color] ?? -1)) {
+    return { color: s.color, label: s.color === 'red' ? 'Compromised — soreness' : 'Caution — soreness', reason: `Soreness ${s.pain}/10` }
+  }
+  return base
+}

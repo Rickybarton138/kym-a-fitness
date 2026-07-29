@@ -96,7 +96,7 @@ export const BRANDS = {
     logo: '/pph-logo.png',
     mark: 'PPH',
     scheme: 'dark',
-    features: { testing: true, squads: true, nutritionExpert: true, monitoring: true, growth: true },
+    features: { testing: true, squads: true, nutritionExpert: true, monitoring: true, growth: true, rehab: true, activityFeed: true },
     heroImages: ['/pph/hero1.jpg', '/pph/hero2.jpg'],
     trainGymName: 'The Physical Performance Hub',
     equipment: [
@@ -166,6 +166,7 @@ const HOST_BRAND = {
   'redefineacademy.com': 'paul',
   'www.redefineacademy.com': 'paul',
   'coached-by-kim.netlify.app': 'kim',
+  'the-physical-performance-hub.netlify.app': 'pph',
 }
 
 function resolveBrandSlug() {

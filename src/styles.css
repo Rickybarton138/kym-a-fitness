@@ -461,6 +461,19 @@ input { font-family: inherit; }
 .act-row:not(.new) .act-body { color: var(--muted); }
 .act-time { flex: 0 0 auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* ---- Injury / rehab / return-to-play ---- */
+.avail-badge { flex: 0 0 auto; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
+.avail-badge.green { color: #0a1f14; background: #57b98a; }
+.avail-badge.amber { color: #2a1e05; background: #e0a83a; }
+.avail-badge.red { color: #2a0f0d; background: #e0685a; }
+.rtp-ladder { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.rtp-step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; }
+.rtp-step .rtp-n { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.rtp-step.done { color: var(--text); }
+.rtp-step.done .rtp-n { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.rtp-step.current { color: var(--text); border-color: var(--accent); }
+.rtp-step.current .rtp-n { border-color: var(--accent); color: var(--accent); }
+
 /* ---- Client tags ---- */
 .tag-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .tag-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 6px 5px 12px; }

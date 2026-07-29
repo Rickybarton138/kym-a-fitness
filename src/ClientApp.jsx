@@ -16,6 +16,7 @@ import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
 import { formatAnswer } from './checkinForms.js'
+import { RTP_LADDER, BODY_REGIONS, availabilityOf, statusLabel } from './rehab.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { MuscleTargeter } from './MuscleTargeter.jsx'
 import { StravaConnect } from './StravaConnect.jsx'
@@ -173,6 +174,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'podcasts' && <LinkList kind="podcast" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'files' && <FilesLibrary coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'rehab' && <Rehab clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'barcode' && <BarcodeScan onLog={(m) => logFood(m, 'barcode')} onBack={() => setScreen('home')} />}
         {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'nudges' && <NudgeSettings clientId={profile.id} onBack={() => setScreen('home')} />}
@@ -393,6 +395,12 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
           <button className="tile" onClick={() => onGo('monitoring')}>
             <IconBody />
             <div><b>Readiness &amp; load</b><span>Daily check-in & training-load tracking</span></div>
+          </button>
+        )}
+        {THEME.features?.rehab && (
+          <button className="tile" onClick={() => onGo('rehab')}>
+            <IconBody />
+            <div><b>My rehab</b><span>Your rehab plan, return-to-play & soreness</span></div>
           </button>
         )}
         {THEME.features?.growth && (
@@ -1662,6 +1670,110 @@ function LinkList({ kind, coachName, onBack }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// Athlete rehab view (PPH): read-only injury/RTP + log rehab sessions & soreness.
+function Rehab({ clientId, coachName, onBack }) {
+  const coach = coachName?.split(' ')[0] || 'your coach'
+  const [tab, setTab] = useState('plan')
+  const [injuries, setInjuries] = useState(null)
+  const [items, setItems] = useState([])
+  const [sess, setSess] = useState({ pain_before: '', pain_during: '', pain_after: '', rpe: '', note: '' })
+  const [sore, setSore] = useState({ body_region: BODY_REGIONS[0], pain: '' })
+  const [saved, setSaved] = useState('')
+
+  async function load() {
+    const [{ data: inj }, { data: it }] = await Promise.all([
+      supabase.from('injuries').select('*').eq('client_id', clientId).neq('status', 'resolved').order('created_at', { ascending: false }),
+      supabase.from('rehab_protocol_items').select('*').eq('client_id', clientId).order('position', { ascending: true }),
+    ])
+    setInjuries(inj || []); setItems(it || [])
+  }
+  useEffect(() => { load() }, [])
+
+  const num = (v) => (v === '' ? null : Number(v))
+  async function logSession(e) {
+    e.preventDefault()
+    await supabase.from('rehab_sessions').insert({ client_id: clientId, pain_before: num(sess.pain_before), pain_during: num(sess.pain_during), pain_after: num(sess.pain_after), rpe: num(sess.rpe), note: sess.note.trim() || null })
+    setSess({ pain_before: '', pain_during: '', pain_after: '', rpe: '', note: '' }); setSaved('Session logged ✓'); setTimeout(() => setSaved(''), 2000)
+  }
+  async function logSoreness(e) {
+    e.preventDefault()
+    if (sore.pain === '') return
+    await supabase.from('soreness_logs').insert({ client_id: clientId, body_region: sore.body_region, pain: Number(sore.pain), note: null })
+    setSore({ body_region: BODY_REGIONS[0], pain: '' }); setSaved('Soreness logged ✓'); setTimeout(() => setSaved(''), 2000)
+  }
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow accent">Rehab</p>
+      <h1 className="h1">Back to full fitness.</h1>
+      <div className="seg three">
+        <button type="button" className={tab === 'plan' ? 'on' : ''} onClick={() => setTab('plan')}>My plan</button>
+        <button type="button" className={tab === 'session' ? 'on' : ''} onClick={() => setTab('session')}>Log session</button>
+        <button type="button" className={tab === 'soreness' ? 'on' : ''} onClick={() => setTab('soreness')}>Soreness</button>
+      </div>
+      {saved && <p className="logged-ok">{saved}</p>}
+
+      {tab === 'plan' && (
+        <div className="stack">
+          {injuries === null && <p className="muted-note">Loading…</p>}
+          {injuries !== null && injuries.length === 0 && <p className="muted-note">No active injuries — you’re good to go.</p>}
+          {(injuries || []).map((inj) => {
+            const av = availabilityOf(inj.availability)
+            return (
+              <div className="card" key={inj.id}>
+                <div className="post-head" style={{ marginBottom: 6 }}>
+                  <div className="session-title">{inj.body_region}{inj.side && inj.side !== 'N/A' ? ` (${inj.side})` : ''}</div>
+                  <span className={'avail-badge ' + av.color} style={{ marginLeft: 'auto' }}>{av.label}</span>
+                </div>
+                <p className="muted-note">Status: {statusLabel(inj.status)} · set by {coach}</p>
+                <div className="rtp-ladder" style={{ marginTop: 8 }}>
+                  {RTP_LADDER.map((s, i) => (
+                    <div key={i} className={'rtp-step' + (i < inj.current_rtp_stage ? ' done' : '') + (i === inj.current_rtp_stage ? ' current' : '')}>
+                      <span className="rtp-n">{i + 1}</span><span>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+          {items.length > 0 && (
+            <div className="card">
+              <p className="eyebrow accent">Your rehab drills</p>
+              {items.map((it) => <div key={it.id} className="checkin-line"><b>{it.name}</b>{it.detail ? ` — ${it.detail}` : ''}</div>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'session' && (
+        <form className="card" onSubmit={logSession}>
+          <p className="muted-note">Log your rehab session and how it felt — pain 0 (none) to 10 (severe).</p>
+          <div className="grid-2">
+            <label className="field">Pain before<input type="number" inputMode="numeric" min="0" max="10" value={sess.pain_before} onChange={(e) => setSess((s) => ({ ...s, pain_before: e.target.value }))} /></label>
+            <label className="field">Pain during<input type="number" inputMode="numeric" min="0" max="10" value={sess.pain_during} onChange={(e) => setSess((s) => ({ ...s, pain_during: e.target.value }))} /></label>
+            <label className="field">Pain after<input type="number" inputMode="numeric" min="0" max="10" value={sess.pain_after} onChange={(e) => setSess((s) => ({ ...s, pain_after: e.target.value }))} /></label>
+            <label className="field">Effort (RPE)<input type="number" inputMode="numeric" min="0" max="10" value={sess.rpe} onChange={(e) => setSess((s) => ({ ...s, rpe: e.target.value }))} /></label>
+          </div>
+          <label className="field">Note<textarea value={sess.note} onChange={(e) => setSess((s) => ({ ...s, note: e.target.value }))} placeholder="How did it feel?" /></label>
+          <button className="btn primary big" type="submit">Log rehab session</button>
+        </form>
+      )}
+
+      {tab === 'soreness' && (
+        <form className="card" onSubmit={logSoreness}>
+          <p className="muted-note">Flag any soreness or niggles — {coach} sees these, and it feeds your readiness score.</p>
+          <div className="grid-2">
+            <label className="field">Area<select value={sore.body_region} onChange={(e) => setSore((s) => ({ ...s, body_region: e.target.value }))}>{BODY_REGIONS.map((r) => <option key={r}>{r}</option>)}</select></label>
+            <label className="field">Pain (0–10)<input type="number" inputMode="numeric" min="0" max="10" value={sore.pain} onChange={(e) => setSore((s) => ({ ...s, pain: e.target.value }))} /></label>
+          </div>
+          <button className="btn primary big" type="submit" disabled={sore.pain === ''}>Log soreness</button>
+        </form>
+      )}
     </div>
   )
 }
