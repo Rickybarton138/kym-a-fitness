@@ -165,6 +165,7 @@ const HOST_BRAND = {
   'app.redefineacademy.com': 'paul',
   'redefineacademy.com': 'paul',
   'www.redefineacademy.com': 'paul',
+  'coached-by-kim.netlify.app': 'kim',
 }
 
 function resolveBrandSlug() {
