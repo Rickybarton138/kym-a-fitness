@@ -134,7 +134,7 @@ function styleLine(nutritionStyle) {
   return ''
 }
 
-function buildPrompt(mode, remaining, persona, nutritionStyle) {
+function buildPrompt(mode, remaining, persona, nutritionStyle, extras) {
   const intro = personaIntro(persona, 'nutrition coach')
   const style = styleLine(nutritionStyle)
   if (mode === 'fridge') {
@@ -154,6 +154,7 @@ function buildPrompt(mode, remaining, persona, nutritionStyle) {
   return (
     intro + ' ' +
     'Look at this photo of a meal on a plate. Identify the individual foods and estimate the total calories and macros (protein, carbs, fat) for the portion shown. ' +
+    (extras ? `The person also notes it was cooked/served with: ${extras}. Add these cooking fats, oils, dressings and sauces to your calorie and fat estimate — they are easy to miss from a photo. ` : '') +
     'Give a short food_name for the whole plate and a confidence level. Estimate sensibly for a normal portion.' +
     style
   )
@@ -283,7 +284,7 @@ export const handler = async (event) => {
     return json(400, { error: 'Invalid JSON body.' })
   }
 
-  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle } = body
+  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras } = body
 
   // ---- Nutrition Expert: evidence-based sports-nutrition answers ----
   if (mode === 'expert') {
@@ -417,7 +418,7 @@ export const handler = async (event) => {
     // model stays MODEL (Opus) — macro/photo accuracy matters here
     content = [
       { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } },
-      { type: 'text', text: buildPrompt(mode, remaining, persona, nutritionStyle) },
+      { type: 'text', text: buildPrompt(mode, remaining, persona, nutritionStyle, extras) },
     ]
   } else {
     return json(400, { error: 'Unknown mode.' })

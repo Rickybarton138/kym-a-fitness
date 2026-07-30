@@ -56,6 +56,14 @@ export function FoodSearch({ onLog }) {
         <button type="button" className="link-btn" onClick={() => setSelected(null)}>‹ Back to search</button>
         <p className="eyebrow accent">{selected.n}</p>
         <label className="field">Portion (g / ml)<input type="number" inputMode="decimal" value={grams} onChange={(e) => setGrams(e.target.value)} /></label>
+        {selected.s ? (
+          <div className="serving-chips">
+            <button type="button" className={grams === String(selected.s) ? 'on' : ''} onClick={() => setGrams(String(selected.s))}>Standard serving · {selected.s}g</button>
+            <button type="button" className={grams === '100' ? 'on' : ''} onClick={() => setGrams('100')}>100g</button>
+          </div>
+        ) : (
+          <p className="muted-note" style={{ marginTop: -4 }}>Weigh it for accuracy — enter the grams.</p>
+        )}
         <div className="macro-row">
           <span><b>{Math.round((selected.p || 0) * factor)}g</b> protein</span>
           <span><b>{Math.round((selected.c || 0) * factor)}g</b> carbs</span>

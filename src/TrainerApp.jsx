@@ -1275,7 +1275,7 @@ const LINK_KINDS = [
 function CoachLinks({ coachId }) {
   const [items, setItems] = useState([])
   const [open, setOpen] = useState(false)
-  const [f, setF] = useState({ kind: 'supplement', label: '', url: '', note: '' })
+  const [f, setF] = useState({ kind: 'supplement', label: '', url: '', note: '', image_url: '' })
   const [error, setError] = useState('')
 
   async function load() {
@@ -1290,11 +1290,11 @@ function CoachLinks({ coachId }) {
     if (!f.label.trim()) { setError('Give the link a label.'); return }
     if (!f.url.trim()) { setError('Paste the link.'); return }
     const { data, error: err } = await supabase.from('coach_links').insert({
-      coach_id: coachId, kind: f.kind, label: f.label.trim(), url: f.url.trim(), note: f.note.trim() || null,
+      coach_id: coachId, kind: f.kind, label: f.label.trim(), url: f.url.trim(), note: f.note.trim() || null, image_url: f.image_url.trim() || null,
     }).select().single()
     if (err) { setError(err.message); return }
     setItems((i) => [...i, data])
-    setF({ kind: f.kind, label: '', url: '', note: '' }); setOpen(false); setError('')
+    setF({ kind: f.kind, label: '', url: '', note: '', image_url: '' }); setOpen(false); setError('')
   }
   async function del(id) {
     await supabase.from('coach_links').delete().eq('id', id)
@@ -1333,6 +1333,7 @@ function CoachLinks({ coachId }) {
           <label className="field">Label<input value={f.label} onChange={set('label')} placeholder="e.g. The Protein Works" /></label>
           <label className="field">Link<input value={f.url} onChange={set('url')} placeholder="https://…" /></label>
           <label className="field">Note (optional)<input value={f.note} onChange={set('note')} placeholder="e.g. Use code PAUL10 for 10% off" /></label>
+          <label className="field">Image URL (optional)<input value={f.image_url} onChange={set('image_url')} placeholder="Paste a product image link to show a thumbnail" /></label>
           <button className="btn primary big" onClick={save}>Save link</button>
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>

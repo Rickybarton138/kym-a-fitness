@@ -53,7 +53,8 @@ export const handler = async (event) => {
       fat_g: round(num(n['fat_100g'])),
     }
 
-    return json(200, { status: 'found', product: { name, unit: 'g', per100 } })
+    const serving = num(p.serving_quantity) || null // grams per serving, if the product declares one
+    return json(200, { status: 'found', product: { name, unit: 'g', per100, serving } })
   } catch {
     return json(502, { error: 'Could not reach the food database. Try again.' })
   }

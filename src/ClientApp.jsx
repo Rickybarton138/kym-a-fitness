@@ -1626,6 +1626,20 @@ function videoEmbed(url) {
   return null
 }
 
+// YouTube thumbnail straight from the video id (free, no API). Vimeo needs an API
+// call so we skip it and fall back to a plain card.
+function videoThumb(url) {
+  try {
+    const u = new URL(url)
+    const host = u.hostname.replace(/^www\./, '')
+    let id = null
+    if (host === 'youtube.com') id = u.searchParams.get('v')
+    else if (host === 'youtu.be') id = u.pathname.slice(1)
+    if (id) return `https://img.youtube.com/vi/${id}/hqdefault.jpg`
+  } catch { /* not a URL */ }
+  return null
+}
+
 // Video library — the coach's technique/mindset clips.
 function VideoLibrary({ coachName, onBack }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
@@ -1659,8 +1673,15 @@ function VideoLibrary({ coachName, onBack }) {
           {items.map((v) => {
             const embed = videoEmbed(v.url)
             const open = openId === v.id
+            const thumb = videoThumb(v.url)
             return (
               <div className="card" key={v.id}>
+                {!open && thumb && (
+                  <button type="button" className="vid-thumb" onClick={() => embed ? setOpenId(v.id) : window.open(v.url, '_blank')}>
+                    <img src={thumb} alt={v.title} loading="lazy" />
+                    <span className="vid-play" aria-hidden="true">▶</span>
+                  </button>
+                )}
                 <div className="session-title">{v.title}</div>
                 {v.description && <p className="muted-note" style={{ marginTop: 6 }}>{v.description}</p>}
                 {open && embed && (
@@ -1707,6 +1728,7 @@ function LinkList({ kind, coachName, onBack }) {
       <div className="stack" style={{ marginTop: 12 }}>
         {(links || []).map((l) => (
           <div className="card" key={l.id}>
+            {l.image_url && <img className="link-img" src={l.image_url} alt={l.label} loading="lazy" />}
             <div className="session-title">{l.label}</div>
             {l.note && <p className="muted-note" style={{ marginTop: 6 }}>{l.note}</p>}
             <a className="btn primary sm" style={{ marginTop: 10, display: 'inline-block' }} href={l.url} target="_blank" rel="noopener noreferrer">{meta.cta}</a>
@@ -1962,6 +1984,12 @@ function BarcodeScan({ onLog, onBack }) {
           <div className="session-title">{product.name}</div>
           <div className="session-sub">Per 100{product.unit || 'g'}: {per.calories ?? '—'} kcal · {per.protein_g ?? 0}g P · {per.carbs_g ?? 0}g C · {per.fat_g ?? 0}g F</div>
           <label className="field" style={{ marginTop: 12 }}>Portion (grams)<input type="number" inputMode="numeric" value={grams} onChange={(e) => setGrams(e.target.value)} /></label>
+          {product.serving && (
+            <div className="serving-chips">
+              <button type="button" className={grams === String(product.serving) ? 'on' : ''} onClick={() => setGrams(String(product.serving))}>Standard serving · {product.serving}g</button>
+              <button type="button" className={grams === '100' ? 'on' : ''} onClick={() => setGrams('100')}>100g</button>
+            </div>
+          )}
           {scaled && <p className="muted-note">This portion: {scaled.calories} kcal · {scaled.protein_g}g P · {scaled.carbs_g}g C · {scaled.fat_g}g F</p>}
           <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={() => { if (scaled) { onLog(scaled); setLogged(true) } }}>
             {logged ? 'Added to today ✓' : 'Add to today'}
@@ -2279,6 +2307,7 @@ function MealScan({ onLog }) {
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
   const [logged, setLogged] = useState(false)
+  const [cooking, setCooking] = useState('')
   const inputRef = useRef(null)
 
   async function onPick(e) {
@@ -2286,7 +2315,7 @@ function MealScan({ onLog }) {
     setLogged(false); setPreview(URL.createObjectURL(file)); setState('loading'); setError('')
     try {
       const { mediaType, data } = await fileToBase64(file)
-      const json = await analyze({ mode: 'meal', image: data, mediaType })
+      const json = await analyze({ mode: 'meal', image: data, mediaType, extras: cooking.trim() || undefined })
       setResult(json); setState('done')
     } catch (err) { setError(err.message); setState('error') }
   }
@@ -2297,6 +2326,11 @@ function MealScan({ onLog }) {
       <h1 className="h1">Snap your plate.</h1>
       <p className="lead">Photograph any meal and the AI logs the calories and macros — no manual food diary.</p>
       <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPick} />
+      {state === 'idle' && (
+        <label className="field">Cooked with any oil, butter, dressing or sauce? (optional — improves accuracy)
+          <input value={cooking} onChange={(e) => setCooking(e.target.value)} placeholder="e.g. 1 tbsp olive oil, a spoon of mayo" />
+        </label>
+      )}
       {preview && <div className="shot"><img src={preview} alt="Your meal" /></div>}
       {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Scan my meal</button>}
       {state === 'loading' && <Loader text="Identifying your meal…" />}
