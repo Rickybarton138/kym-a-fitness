@@ -1938,10 +1938,77 @@ function CoachPrograms({ coachId }) {
     setPrograms((p) => p.filter((x) => x.id !== id))
   }
 
+  // AI programme generator — prompt -> draft -> publish.
+  const [genOn, setGenOn] = useState(false)
+  const [g, setG] = useState({ goal: '', days: 3, equipment: 'Full gym', level: 'Intermediate', weeks: 4 })
+  const [genBusy, setGenBusy] = useState(false)
+  const [genDraft, setGenDraft] = useState(null)
+  const [genErr, setGenErr] = useState('')
+  const gset = (k) => (e) => setG((s) => ({ ...s, [k]: e.target.value }))
+  async function genProgram() {
+    setGenBusy(true); setGenErr('')
+    try {
+      const res = await fetch('/.netlify/functions/program-generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(g) })
+      const j = await res.json()
+      if (!j.sessions?.length) setGenErr(j.error || 'Nothing came back — try again.')
+      else setGenDraft(j)
+    } catch (e) { setGenErr(String(e.message || e)) }
+    setGenBusy(false)
+  }
+  async function saveGenerated() {
+    const d = genDraft
+    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, title: d.title, description: d.description || null, weeks: d.weeks || null, level: g.level }).select().single()
+    if (err || !prog) { setGenErr(err?.message || 'Save failed.'); return }
+    const rows = d.sessions.map((s, i) => ({ program_id: prog.id, position: i, label: s.label, title: s.title, focus: s.focus, exercises: s.exercises, finisher: s.finisher }))
+    await supabase.from('program_sessions').insert(rows)
+    setPrograms((p) => [prog, ...p]); setGenDraft(null); setGenOn(false)
+  }
+
   return (
     <div className="card">
       <p className="eyebrow">Program library</p>
       <p className="muted-note">Bundle your templates into a plan clients can follow — they’ll browse these in “Program library”.</p>
+
+      <div style={{ margin: '10px 0 14px', paddingBottom: 12, borderBottom: '1px solid var(--line)' }}>
+        {!genOn && !genDraft && <button type="button" className="btn ghost" onClick={() => setGenOn(true)}>Generate a programme with AI</button>}
+        {genOn && !genDraft && (
+          <div className="stack">
+            <p className="eyebrow accent">Generate with AI</p>
+            <label className="field">Goal<input value={g.goal} onChange={gset('goal')} placeholder="e.g. Build muscle / fat loss / strength" /></label>
+            <div className="grid-2">
+              <label className="field">Sessions / week<input type="number" inputMode="numeric" value={g.days} onChange={gset('days')} /></label>
+              <label className="field">Weeks<input type="number" inputMode="numeric" value={g.weeks} onChange={gset('weeks')} /></label>
+            </div>
+            <label className="field">Level
+              <select value={g.level} onChange={gset('level')}>{PROGRAM_LEVELS.map((l) => <option key={l}>{l}</option>)}</select>
+            </label>
+            <label className="field">Equipment<input value={g.equipment} onChange={gset('equipment')} placeholder="e.g. Barbell, dumbbells, machines" /></label>
+            {genErr && <p className="error">{genErr}</p>}
+            <div className="nudge-actions">
+              <button className="btn primary sm" disabled={genBusy} onClick={genProgram}>{genBusy ? 'Drafting…' : 'Draft it'}</button>
+              <button type="button" className="btn ghost sm" onClick={() => setGenOn(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {genDraft && (
+          <div className="stack">
+            <p className="eyebrow accent">Draft — review &amp; publish</p>
+            <div className="session-title">{genDraft.title}</div>
+            <p className="muted-note">{genDraft.description} · {genDraft.weeks} weeks</p>
+            {genDraft.sessions.map((s, i) => (
+              <div className="card" key={i} style={{ background: 'var(--surface-2)' }}>
+                <div className="session-title">{s.label} · {s.title}</div>
+                <div className="session-sub">{s.focus}</div>
+                {s.exercises.map((e, n) => <div className="checkin-line" key={n}>{e.name} — {e.sets}×{e.reps}{e.rpe ? ` @ RPE ${e.rpe}` : ''}</div>)}
+                {s.finisher && <p className="muted-note" style={{ marginTop: 6 }}>Finisher: {s.finisher}</p>}
+              </div>
+            ))}
+            {genErr && <p className="error">{genErr}</p>}
+            <button className="btn primary big" onClick={saveGenerated}>Publish this programme</button>
+            <button type="button" className="link-btn" onClick={() => setGenDraft(null)}>Discard &amp; redo</button>
+          </div>
+        )}
+      </div>
 
       {programs.length > 0 && (
         <div className="stack" style={{ marginTop: 12 }}>
