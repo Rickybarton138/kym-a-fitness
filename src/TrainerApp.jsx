@@ -1909,6 +1909,7 @@ function CoachPrograms({ coachId }) {
       weeks: Number(weeks) || null, level,
       location: meta.location || null, equipment: meta.equipment || null,
       audience: meta.audience || null, goal: meta.goal || null,
+      audience_tag: meta.audience_tag?.trim() || null,
     }).select().single()
     if (err) { setError(err.message); return }
     setPrograms((p) => [data, ...p])
@@ -1957,7 +1958,7 @@ function CoachPrograms({ coachId }) {
   }
   async function saveGenerated() {
     const d = genDraft
-    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, title: d.title, description: d.description || null, weeks: d.weeks || null, level: g.level }).select().single()
+    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, title: d.title, description: d.description || null, weeks: d.weeks || null, level: g.level, audience_tag: g.audience_tag?.trim() || null }).select().single()
     if (err || !prog) { setGenErr(err?.message || 'Save failed.'); return }
     const rows = d.sessions.map((s, i) => ({ program_id: prog.id, position: i, label: s.label, title: s.title, focus: s.focus, exercises: s.exercises, finisher: s.finisher }))
     await supabase.from('program_sessions').insert(rows)
@@ -1983,6 +1984,7 @@ function CoachPrograms({ coachId }) {
               <select value={g.level} onChange={gset('level')}>{PROGRAM_LEVELS.map((l) => <option key={l}>{l}</option>)}</select>
             </label>
             <label className="field">Equipment<input value={g.equipment} onChange={gset('equipment')} placeholder="e.g. Barbell, dumbbells, machines" /></label>
+            <label className="field">Only show to tag (optional)<input value={g.audience_tag || ''} onChange={gset('audience_tag')} placeholder="e.g. standard — blank = everyone" /></label>
             {genErr && <p className="error">{genErr}</p>}
             <div className="nudge-actions">
               <button className="btn primary sm" disabled={genBusy} onClick={genProgram}>{genBusy ? 'Drafting…' : 'Draft it'}</button>
@@ -2088,6 +2090,7 @@ function CoachPrograms({ coachId }) {
               </label>
             ))}
           </div>
+          <label className="field">Only show to tag (optional)<input value={meta.audience_tag || ''} onChange={(e) => setMeta((m) => ({ ...m, audience_tag: e.target.value }))} placeholder="e.g. standard — blank shows to everyone" /></label>
           <button className="btn primary big" onClick={createProgram}>Create program</button>
           <button type="button" className="link-btn" onClick={() => { setCreating(false); setError('') }}>Cancel</button>
         </div>
