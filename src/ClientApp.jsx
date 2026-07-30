@@ -13,6 +13,7 @@ import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
 import { ExerciseGuide } from './ExerciseGuide.jsx'
+import { RecipeCreator } from './RecipeCreator.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
@@ -170,7 +171,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'strava' && <StravaConnect clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'classes' && <Classes profile={profile} onBack={() => setScreen('home')} />}
         {screen === 'programs' && <ProgramLibrary clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
-        {screen === 'recipes' && <RecipeLibrary clientId={profile.id} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
+        {screen === 'recipes' && <RecipeLibrary profile={profile} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
         {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'supplements' && <LinkList kind="supplement" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={() => setScreen('home')} />}
@@ -1577,19 +1578,27 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
 }
 
 // Recipe library — the coach's saved meals with macros. Tap one to log it.
-function RecipeLibrary({ coachName, onLog, onBack }) {
+function RecipeLibrary({ profile, coachName, onLog, onBack }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [recipes, setRecipes] = useState(null)
   const [loggedId, setLoggedId] = useState(null)
+  const [copiedId, setCopiedId] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const clientId = profile?.id
 
-  useEffect(() => {
-    supabase.from('recipes').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => setRecipes(data || []))
-  }, [])
+  async function load() {
+    const { data } = await supabase.from('recipes').select('*').order('created_at', { ascending: false })
+    setRecipes(data || [])
+  }
+  useEffect(() => { load() }, [])
 
   function log(r) {
     onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, calories: r.calories || 0 })
     setLoggedId(r.id); setTimeout(() => setLoggedId(null), 2500)
+  }
+  async function copyShopping(r) {
+    const list = (r.ingredients || []).join('\n')
+    try { await navigator.clipboard.writeText(`${r.title} — shopping list\n\n${list}`); setCopiedId(r.id); setTimeout(() => setCopiedId(null), 2000) } catch { /* clipboard blocked */ }
   }
 
   return (
@@ -1597,19 +1606,25 @@ function RecipeLibrary({ coachName, onLog, onBack }) {
       <button className="link-btn" onClick={onBack}>‹ Back</button>
       <p className="eyebrow accent">Recipes</p>
       <h1 className="h1">{coachFirst}’s meals.</h1>
-      <p className="muted-note">Coach-approved meals with the macros already worked out — tap to log one to today.</p>
+      <p className="muted-note">Coach-approved meals with the macros worked out — plus any you add yourself. Tap to log one to today.</p>
+      {clientId && <button className="btn ghost" style={{ marginTop: 12 }} onClick={() => setCreating(true)}>+ Create a recipe</button>}
       {recipes === null && <Loader text="Loading recipes…" />}
-      {recipes !== null && recipes.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No recipes yet — {coachFirst} will add them here.</p>}
+      {recipes !== null && recipes.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No recipes yet — add your own or {coachFirst} will add some.</p>}
       <div className="stack" style={{ marginTop: 12 }}>
         {(recipes || []).map((r) => (
           <div className="card" key={r.id}>
-            <div className="session-title">{r.title}</div>
+            {r.image_url && <img className="link-img" src={r.image_url} alt={r.title} loading="lazy" />}
+            <div className="session-title">{r.title}{r.client_id ? <span className="muted-note"> · yours</span> : ''}</div>
             <div className="session-sub">{[r.calories ? r.calories + ' kcal' : null, r.protein_g ? r.protein_g + 'g P' : null, r.carbs_g ? r.carbs_g + 'g C' : null, r.fat_g ? r.fat_g + 'g F' : null].filter(Boolean).join(' · ')}{r.serving_label ? ' · ' + r.serving_label : ''}</div>
             {r.description && <p className="muted-note" style={{ marginTop: 6 }}>{r.description}</p>}
-            <button className="btn primary sm" style={{ marginTop: 10 }} onClick={() => log(r)}>{loggedId === r.id ? 'Added to today ✓' : 'Log this meal'}</button>
+            <div className="nudge-actions">
+              <button className="btn primary sm" onClick={() => log(r)}>{loggedId === r.id ? 'Added to today ✓' : 'Log this meal'}</button>
+              {(r.ingredients || []).length > 0 && <button className="btn ghost sm" onClick={() => copyShopping(r)}>{copiedId === r.id ? 'Copied ✓' : 'Shopping list'}</button>}
+            </div>
           </div>
         ))}
       </div>
+      {creating && <RecipeCreator clientId={clientId} onSaved={(rec) => setRecipes((rs) => [rec, ...(rs || [])])} onClose={() => setCreating(false)} />}
     </div>
   )
 }
