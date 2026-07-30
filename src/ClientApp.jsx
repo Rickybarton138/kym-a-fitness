@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, mealByHour, MEALS } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -118,9 +118,9 @@ export default function ClientApp({ profile, onSignOut }) {
     ? screen
     : (nav.find((n) => HUB_CHILDREN[n.id]?.includes(screen))?.id || screen)
 
-  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories }, source) {
+  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type }, source) {
     const row = {
-      client_id: profile.id, source, name: name || null,
+      client_id: profile.id, source, name: name || null, meal_type: meal_type || mealByHour(),
       protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, fibre_g: fibre_g || 0, calories: calories || 0,
     }
     const { data } = await supabase.from('nutrition_logs').insert(row).select().single()
@@ -1910,6 +1910,7 @@ function BarcodeScan({ onLog, onBack }) {
   const [state, setState] = useState('idle') // idle | loading | found | notfound | error
   const [product, setProduct] = useState(null)
   const [grams, setGrams] = useState('100')
+  const [meal, setMeal] = useState(mealByHour())
   const [error, setError] = useState('')
   const [logged, setLogged] = useState(false)
   const [camOn, setCamOn] = useState(false)
@@ -2010,7 +2011,8 @@ function BarcodeScan({ onLog, onBack }) {
             </div>
           )}
           {scaled && <p className="muted-note">This portion: {scaled.calories} kcal · {scaled.protein_g}g P · {scaled.carbs_g}g C · {scaled.fat_g}g F</p>}
-          <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={() => { if (scaled) { onLog(scaled); setLogged(true) } }}>
+          <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+          <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={() => { if (scaled) { onLog({ ...scaled, meal_type: meal }); setLogged(true) } }}>
             {logged ? 'Added to today ✓' : 'Add to today'}
           </button>
         </div>
@@ -2327,6 +2329,7 @@ function MealScan({ onLog }) {
   const [preview, setPreview] = useState(null)
   const [logged, setLogged] = useState(false)
   const [cooking, setCooking] = useState('')
+  const [meal, setMeal] = useState(mealByHour())
   const inputRef = useRef(null)
 
   async function onPick(e) {
@@ -2361,7 +2364,8 @@ function MealScan({ onLog }) {
             <h2 className="meal-name">{result.food_name}</h2>
             <div className="chips">{result.items?.map((it, i) => <span className="chip" key={i}>{it}</span>)}</div>
             <MacroRow m={result} />
-            {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog({ ...result, name: result.food_name }); setLogged(true) }}>Add to today</button>}
+            <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+            {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog({ ...result, name: result.food_name, meal_type: meal }); setLogged(true) }}>Add to today</button>}
           </div>
           <button className="btn ghost" onClick={() => inputRef.current?.click()}>Scan again</button>
         </div>
@@ -2841,6 +2845,10 @@ function NutritionHub({ profile, coachName, onGo }) {
       <p className="lead">Log food, scan meals and stay on your targets.</p>
       {THEME.features?.nutritionStyle && <NutritionStyle profile={profile} />}
       <div className="tiles">
+        <button className="tile tile-hero" onClick={() => onGo('diary')}>
+          <IconMeal />
+          <div><b>Food diary</b><span>See &amp; edit each day, plan meals ahead</span></div>
+        </button>
         <button className="tile tile-hero" onClick={() => onGo('meal')}>
           <IconMeal />
           <div><b>Scan a meal</b><span>Photo → calories &amp; macros</span></div>

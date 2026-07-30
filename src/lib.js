@@ -118,6 +118,16 @@ export async function urlToBase64(url, max = 800) {
   return scaleImageToBase64(blob, max)
 }
 
+// The meals a food entry can belong to, and a sensible default from the clock.
+export const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks']
+export function mealByHour(d = new Date()) {
+  const h = d.getHours()
+  if (h < 11) return 'Breakfast'
+  if (h < 16) return 'Lunch'
+  if (h < 21) return 'Dinner'
+  return 'Snacks'
+}
+
 export function sumMacros(logs) {
   return (logs || []).reduce(
     (a, l) => ({

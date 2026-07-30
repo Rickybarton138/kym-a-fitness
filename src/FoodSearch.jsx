@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { searchFoods } from './foods.js'
+import { mealByHour, MEALS } from './lib.js'
 
 // Type-search a food/drink (built-in list + live database), pick a portion, log
 // the macros. Or add anything manually if it isn't found.
-export function FoodSearch({ onLog }) {
+export function FoodSearch({ onLog, defaultMeal }) {
   const [q, setQ] = useState('')
   const [api, setApi] = useState([])
   const [searching, setSearching] = useState(false)
@@ -11,6 +12,7 @@ export function FoodSearch({ onLog }) {
   const [grams, setGrams] = useState('')
   const [logged, setLogged] = useState('')
   const [manual, setManual] = useState(false)
+  const [meal, setMeal] = useState(defaultMeal || mealByHour())
   const timer = useRef(null)
 
   const local = searchFoods(q)
@@ -45,6 +47,7 @@ export function FoodSearch({ onLog }) {
       carbs_g: Math.round((selected.c || 0) * factor),
       fat_g: Math.round((selected.f || 0) * factor),
       fibre_g: Math.round((selected.fb || 0) * factor),
+      meal_type: meal,
     })
     setLogged(selected.n); setSelected(null); setQ(''); setApi([]); setGrams('')
     setTimeout(() => setLogged(''), 2200)
@@ -71,6 +74,7 @@ export function FoodSearch({ onLog }) {
           <span><b>{Math.round((selected.f || 0) * factor)}g</b> fat</span>
           <span className="kcal"><b>{Math.round(selected.k * factor)}</b> kcal</span>
         </div>
+        <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
         <button className="btn primary" disabled={!g} onClick={logSelected}>Add to today</button>
       </div>
     )
@@ -96,7 +100,8 @@ export function FoodSearch({ onLog }) {
 
       {!manual
         ? <button className="btn ghost" onClick={() => setManual(true)}>Can’t find it? Add manually</button>
-        : <ManualFood onLog={(m) => { onLog(m); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} />}
+        : <><label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+          <ManualFood onLog={(m) => { onLog({ ...m, meal_type: meal }); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} /></>}
     </div>
   )
 }
