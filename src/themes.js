@@ -43,7 +43,7 @@ export const BRANDS = {
     slug: 'paul',
     name: 'ReDefine Academy',
     tagline: 'The time to redefine is now.',
-    logo: null, // monogram badge until Paul's wordmark is dropped in
+    logo: '/brands/paul/logo.png', // Paul's real ReDefine logo
     mark: 'RD',
     scheme: 'dark',
     features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true },
