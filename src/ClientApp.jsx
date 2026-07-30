@@ -14,6 +14,7 @@ import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
 import { ExerciseGuide } from './ExerciseGuide.jsx'
 import { RecipeCreator } from './RecipeCreator.jsx'
+import { FoodDiary } from './FoodDiary.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
@@ -184,6 +185,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'checkin' && (THEME.features?.checkinForms
           ? <CheckinFormRun clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} onBack={() => setScreen('home')} />
           : <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />)}
+        {screen === 'diary' && <FoodDiary clientId={profile.id} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'fridge' && <FridgeScan remaining={remaining} onLog={(m) => logFood(m, 'fridge')} />}
         {screen === 'meal' && <MealScan onLog={(m) => logFood(m, 'meal')} />}
         {screen === 'food' && (
@@ -275,6 +277,7 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
       <p className="remaining-note">
         {remaining.calories} kcal left · {remaining.protein_g}g protein to go ·{' '}
         <button className="link-btn inline" onClick={() => setEditing((v) => !v)}>{editing ? 'close' : 'adjust targets'}</button>
+        {' · '}<button className="link-btn inline" onClick={() => onGo('diary')}>food diary</button>
       </p>
 
       {editing && <TargetEditor targets={targets} onSave={(t) => { onSaveTargets(t); setEditing(false) }} />}

@@ -14,6 +14,7 @@ import { LiftProgress } from './LiftProgress.jsx'
 import { SquadSession } from './SquadSession.jsx'
 import { printClientReport } from './report.js'
 import { CoachVald, ValdTests } from './VALD.jsx'
+import { FoodDiary } from './FoodDiary.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
@@ -374,16 +375,7 @@ function ClientDetail({ client, trainerId, onBack }) {
               </div>
             )}
 
-            <div className="card">
-              <p className="eyebrow">Recent food log</p>
-              {logs.length === 0 && <p className="muted-note">Nothing logged yet.</p>}
-              {logs.map((l) => (
-                <div className="logrow" key={l.id}>
-                  <span className="logname">{l.name || l.source}</span>
-                  <span className="logmac">{l.calories} kcal · {l.protein_g}p</span>
-                </div>
-              ))}
-            </div>
+            <FoodDiary clientId={client.id} title="Food diary" />
 
             <LiftProgress plans={plans} title="Weights lifted" />
 

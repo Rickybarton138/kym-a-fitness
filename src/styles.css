@@ -514,6 +514,18 @@ input { font-family: inherit; }
 .serving-chips button { background: var(--surface-2); border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600; }
 .serving-chips button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
+/* Food diary */
+.diary-nav { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
+.diary-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.diary-item:first-of-type { border-top: 0; }
+.diary-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.diary-macros { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.diary-week { display: flex; align-items: flex-end; gap: 6px; height: 90px; }
+.dw-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.dw-bar-wrap { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.dw-bar { width: 100%; border-radius: 5px 5px 0 0; min-height: 2px; }
+.dw-day { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+
 /* ---- Injury / rehab / return-to-play ---- */
 .avail-badge { flex: 0 0 auto; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
 .avail-badge.green { color: #0a1f14; background: #57b98a; }
