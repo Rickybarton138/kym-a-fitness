@@ -70,10 +70,21 @@ def dash(x, y, size=9, color=MUTED):
     c.setStrokeColor(color); c.setLineWidth(1.6); c.setLineCap(1)
     c.line(x, y+size*0.5, x+size, y+size*0.5)
 
-def mark(x, y, s=26):
-    # amber rounded square with "PPH"
-    c.setFillColor(ACCENT); c.roundRect(x, y, s, s, 6, fill=1, stroke=0)
-    text(x+s/2, y+s/2-4.5, "PPH", font="Helvetica-Bold", size=9.5, color=ONACC, align="c")
+LOGO = r"C:\Users\info\kym-a-fitness\public\pph-logo.png"
+
+def logo_tile(x, y, s, pad=0.09):
+    # The badge is dark-on-white; seat it in a white rounded chip so it reads on
+    # the dark page (standard way to place a logo on a dark deck).
+    c.setFillColor(TEXT); c.roundRect(x, y, s, s, s*0.18, fill=1, stroke=0)
+    p = s*pad
+    try:
+        c.drawImage(LOGO, x+p, y+p, s-2*p, s-2*p, mask='auto', preserveAspectRatio=True, anchor='c')
+    except Exception:
+        pass
+
+def page_logo():
+    # small brand chip, top-right of interior pages — makes it feel like their product
+    logo_tile(W-M-30, H-90, 30)
 
 def footer(pnum, label):
     c.setStrokeColor(LINE); c.setLineWidth(1); c.line(M, 42, W-M, 42)
@@ -84,9 +95,9 @@ def footer(pnum, label):
 page_bg()
 # subtle amber top accent bar
 c.setFillColor(ACCENT); c.rect(0, H-6, W, 6, fill=1, stroke=0)
-mark(M, H-118, 30)
-text(M+42, H-108, "THE PHYSICAL PERFORMANCE HUB", font="Helvetica-Bold", size=10.5, color=TEXT, tracking=1.5)
-text(M+42, H-122, "Complete support for every athlete", font="Helvetica", size=9, color=MUTED)
+logo_tile(M, H-135, 56)
+text(M+70, H-108, "THE PHYSICAL PERFORMANCE HUB", font="Helvetica-Bold", size=10.5, color=TEXT, tracking=1.5)
+text(M+70, H-122, "Complete support for every athlete", font="Helvetica", size=9, color=MUTED)
 
 # hero headline
 c.setFillColor(TEXT)
@@ -97,7 +108,8 @@ text(M, H-392, "Your brand.", font="Helvetica-Bold", size=42, color=ACCENT)
 y = H-440
 y = para(M, y, "A complete athlete-management system — programming, testing, monitoring, "
                "rehab and nutrition — built for The Physical Performance Hub. Your name on "
-               "every screen, an AI coach behind every plan.", W-2*M-120, size=12, color=MUTED, leading=18)
+               "every screen, an AI coach behind every plan, and your VALD force plates and "
+               "sprint gates plugged straight in.", W-2*M-120, size=12, color=MUTED, leading=18)
 
 # four quick badges
 badges = ["Live weight-room squad mode", "AI coach + full nutrition engine",
@@ -112,11 +124,13 @@ for i, b in enumerate(badges):
 panel(M, 70, W-2*M, 46, fill=SURFACE, stroke=LINE, r=10)
 text(M+18, 92, "Prepared for Sam & Jordan", font="Helvetica-Bold", size=10, color=TEXT)
 text(M+18, 79, "Founding-partner build  ·  July 2026", font="Helvetica", size=8.5, color=MUTED)
-text(W-M-18, 88, "thepph.co.uk", font="Helvetica-Bold", size=10, color=ACCENT, align="r")
+logo_tile(W-M-52, 78, 30)
+text(W-M-62, 88, "thepph.co.uk", font="Helvetica-Bold", size=10, color=ACCENT, align="r")
 c.showPage()
 
 # ---------------------------------------------------------- PAGE 2: POSITIONING
 page_bg()
+page_logo()
 eyebrow(M, H-70, "Why this beats what you have")
 text(M, H-100, "Everything Lumin does.", font="Helvetica-Bold", size=25, color=TEXT)
 text(M, H-130, "Plus the things it doesn't.", font="Helvetica-Bold", size=25, color=ACCENT)
@@ -152,6 +166,7 @@ c.showPage()
 # ------------------------------------------------------- PAGE 3: FEATURE TOUR 1
 def feature_page(title_lines, groups, pnum):
     page_bg()
+    page_logo()
     eyebrow(M, H-70, "What's inside")
     text(M, H-100, title_lines[0], font="Helvetica-Bold", size=25, color=TEXT)
     y = H-135
@@ -184,6 +199,10 @@ feature_page(
     ("Prove progress", [
         ("Testing battery", "Record and trend performance tests, with squad leaderboards and peer comparison."),
         ("Strength trends", "Every logged lift builds an athlete's weights-lifted history automatically."),
+    ]),
+    ("Connected to your VALD kit", [
+        ("ForceDecks & SmartSpeed sync", "Your force-plate and sprint-gate tests flow straight into each athlete's profile — no manual entry, no double-handling."),
+        ("Asymmetry flagged automatically", "Inter-limb asymmetry over 10% is surfaced to you as an injury-risk flag, right alongside readiness and load."),
     ])],
     "03")
 
@@ -210,6 +229,7 @@ feature_page(
 
 # ----------------------------------------------------------- PAGE 5: COMPARISON
 page_bg()
+page_logo()
 eyebrow(M, H-70, "Side by side")
 text(M, H-100, "The Physical Performance Hub", font="Helvetica-Bold", size=22, color=TEXT)
 text(M, H-124, "vs Lumin", font="Helvetica-Bold", size=22, color=MUTED)
@@ -258,6 +278,7 @@ c.showPage()
 
 # --------------------------------------------------------- PAGE 6: PRICING/NEXT
 page_bg()
+page_logo()
 eyebrow(M, H-70, "Pricing")
 text(M, H-100, "Priced per athlete.", font="Helvetica-Bold", size=24, color=TEXT)
 text(M, H-127, "Scales as you grow.", font="Helvetica-Bold", size=24, color=ACCENT)
