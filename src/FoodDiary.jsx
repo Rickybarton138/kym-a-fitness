@@ -63,6 +63,7 @@ export function FoodDiary({ clientId, title = 'Food diary', onBack }) {
     protein_g: Math.round(loggedDays.reduce((a, d) => a + d.protein_g, 0) / loggedDays.length),
     carbs_g: Math.round(loggedDays.reduce((a, d) => a + d.carbs_g, 0) / loggedDays.length),
     fat_g: Math.round(loggedDays.reduce((a, d) => a + d.fat_g, 0) / loggedDays.length),
+    fibre_g: Math.round(loggedDays.reduce((a, d) => a + d.fibre_g, 0) / loggedDays.length),
   } : null
   const maxCal = Math.max((targets?.calories || 0), ...(week || []).map((d) => d.calories), 1)
 
@@ -82,6 +83,7 @@ export function FoodDiary({ clientId, title = 'Food diary', onBack }) {
           <span><b>{totals.protein_g}</b>g P</span>
           <span><b>{totals.carbs_g}</b>g C</span>
           <span><b>{totals.fat_g}</b>g F</span>
+          <span><b>{totals.fibre_g}</b>g fibre</span>
         </div>
       </div>
 
@@ -110,7 +112,7 @@ export function FoodDiary({ clientId, title = 'Food diary', onBack }) {
           ))}
         </div>
         {avg ? (
-          <p className="muted-note" style={{ marginTop: 8 }}>Average over {loggedDays.length} logged day{loggedDays.length === 1 ? '' : 's'}: <b>{avg.calories} kcal</b>{targets?.calories ? ` (target ${targets.calories})` : ''} · {avg.protein_g}g P · {avg.carbs_g}g C · {avg.fat_g}g F</p>
+          <p className="muted-note" style={{ marginTop: 8 }}>Average over {loggedDays.length} logged day{loggedDays.length === 1 ? '' : 's'}: <b>{avg.calories} kcal</b>{targets?.calories ? ` (target ${targets.calories})` : ''} · {avg.protein_g}g P · {avg.carbs_g}g C · {avg.fat_g}g F · {avg.fibre_g}g fibre</p>
         ) : <p className="muted-note" style={{ marginTop: 8 }}>No food logged this week yet.</p>}
       </div>
     </div>

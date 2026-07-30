@@ -14,7 +14,7 @@ export const handler = async (event) => {
       `Generate ${n} distinct, practical "${cat}" recipes a coaching client could actually make. ` +
       'Return STRICT JSON array only, no markdown:\n' +
       '[{"title":"","servings":<int>,"ingredients":["qty + item", ...],"method":"a few short steps",' +
-      '"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]\n' +
+      '"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>,"fibre_g":<int>}]\n' +
       'Macros are PER SERVING and should be realistic. Vary the recipes (different mains, cuisines). Keep ingredients shopping-friendly.'
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -31,7 +31,7 @@ export const handler = async (event) => {
       servings: int(r.servings) || 1,
       ingredients: Array.isArray(r.ingredients) ? r.ingredients.map(String).slice(0, 40) : [],
       method: String(r.method || ''),
-      calories: int(r.calories), protein_g: int(r.protein_g), carbs_g: int(r.carbs_g), fat_g: int(r.fat_g),
+      calories: int(r.calories), protein_g: int(r.protein_g), carbs_g: int(r.carbs_g), fat_g: int(r.fat_g), fibre_g: int(r.fibre_g),
     })).filter((r) => r.calories > 0)
     return { statusCode: 200, headers: cors, body: JSON.stringify({ recipes }) }
   } catch (e) {

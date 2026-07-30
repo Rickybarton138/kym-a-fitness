@@ -118,10 +118,10 @@ export default function ClientApp({ profile, onSignOut }) {
     ? screen
     : (nav.find((n) => HUB_CHILDREN[n.id]?.includes(screen))?.id || screen)
 
-  async function logFood({ name, protein_g, carbs_g, fat_g, calories }, source) {
+  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories }, source) {
     const row = {
       client_id: profile.id, source, name: name || null,
-      protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, calories: calories || 0,
+      protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, fibre_g: fibre_g || 0, calories: calories || 0,
     }
     const { data } = await supabase.from('nutrition_logs').insert(row).select().single()
     if (data) setTodayLogs((l) => [data, ...l])
@@ -1596,7 +1596,7 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
   useEffect(() => { load() }, [])
 
   function log(r) {
-    onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, calories: r.calories || 0 })
+    onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, fibre_g: r.fibre_g || 0, calories: r.calories || 0 })
     setLoggedId(r.id); setTimeout(() => setLoggedId(null), 2500)
   }
   async function copyShopping(r) {
@@ -1965,6 +1965,7 @@ function BarcodeScan({ onLog, onBack }) {
     protein_g: Math.round((per.protein_g || 0) * scale),
     carbs_g: Math.round((per.carbs_g || 0) * scale),
     fat_g: Math.round((per.fat_g || 0) * scale),
+    fibre_g: Math.round((per.fibre_g || 0) * scale),
     calories: Math.round((per.calories || 0) * scale),
   } : null
 

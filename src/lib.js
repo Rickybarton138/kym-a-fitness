@@ -124,9 +124,10 @@ export function sumMacros(logs) {
       protein_g: a.protein_g + (l.protein_g || 0),
       carbs_g: a.carbs_g + (l.carbs_g || 0),
       fat_g: a.fat_g + (l.fat_g || 0),
+      fibre_g: a.fibre_g + (l.fibre_g || 0),
       calories: a.calories + (l.calories || 0),
     }),
-    { protein_g: 0, carbs_g: 0, fat_g: 0, calories: 0 },
+    { protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0, calories: 0 },
   )
 }
 

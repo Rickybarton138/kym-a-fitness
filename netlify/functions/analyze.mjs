@@ -39,10 +39,11 @@ const FRIDGE_SCHEMA = {
         protein_g: { type: 'integer' },
         carbs_g: { type: 'integer' },
         fat_g: { type: 'integer' },
+        fibre_g: { type: 'integer', description: 'Estimated dietary fibre in grams' },
         calories: { type: 'integer' },
         fit_note: { type: 'string', description: 'One short line on how well it fits the remaining macro targets' },
       },
-      required: ['name', 'description', 'protein_g', 'carbs_g', 'fat_g', 'calories', 'fit_note'],
+      required: ['name', 'description', 'protein_g', 'carbs_g', 'fat_g', 'fibre_g', 'calories', 'fit_note'],
     },
   },
   required: ['ingredients', 'meal'],
@@ -57,10 +58,11 @@ const MEAL_SCHEMA = {
     protein_g: { type: 'integer' },
     carbs_g: { type: 'integer' },
     fat_g: { type: 'integer' },
+    fibre_g: { type: 'integer', description: 'Estimated dietary fibre in grams' },
     calories: { type: 'integer' },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
   },
-  required: ['food_name', 'items', 'protein_g', 'carbs_g', 'fat_g', 'calories', 'confidence'],
+  required: ['food_name', 'items', 'protein_g', 'carbs_g', 'fat_g', 'fibre_g', 'calories', 'confidence'],
 }
 
 const WORKOUT_SCHEMA = {

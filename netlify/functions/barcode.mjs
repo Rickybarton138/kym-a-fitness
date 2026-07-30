@@ -51,6 +51,7 @@ export const handler = async (event) => {
       protein_g: round(num(n['proteins_100g'])),
       carbs_g: round(num(n['carbohydrates_100g'])),
       fat_g: round(num(n['fat_100g'])),
+      fibre_g: round(num(n['fiber_100g'])),
     }
 
     const serving = num(p.serving_quantity) || null // grams per serving, if the product declares one

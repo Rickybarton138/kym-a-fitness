@@ -8,7 +8,7 @@ const MODEL = 'claude-haiku-4-5-20251001'
 const INSTRUCTION =
   'Extract a single recipe and return STRICT JSON only, no markdown:\n' +
   '{"title":"","servings":<int>,"ingredients":["qty + item", ...],"method":"a few short numbered steps",' +
-  '"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}\n' +
+  '"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>,"fibre_g":<int>}\n' +
   'The macros are PER SERVING. If the source states nutrition, use it; otherwise estimate sensibly from the ingredients and servings. ' +
   'If servings are unknown, assume the recipe makes what it looks like and pick a sensible number. Keep ingredients as a clean shopping-friendly list.'
 
@@ -87,7 +87,7 @@ export const handler = async (event) => {
         servings: int(r.servings) || 1,
         ingredients: Array.isArray(r.ingredients) ? r.ingredients.map(String).slice(0, 40) : [],
         method: String(r.method || ''),
-        calories: int(r.calories), protein_g: int(r.protein_g), carbs_g: int(r.carbs_g), fat_g: int(r.fat_g),
+        calories: int(r.calories), protein_g: int(r.protein_g), carbs_g: int(r.carbs_g), fat_g: int(r.fat_g), fibre_g: int(r.fibre_g),
         image_url, source_url,
       }),
     }

@@ -28,7 +28,7 @@ export const handler = async (event) => {
         return {
           n: name,
           k: Math.round(Number(kcal)),
-          p: r1(n.proteins_100g), c: r1(n.carbohydrates_100g), f: r1(n.fat_100g),
+          p: r1(n.proteins_100g), c: r1(n.carbohydrates_100g), f: r1(n.fat_100g), fb: r1(n.fiber_100g),
           s: 100,
         }
       })

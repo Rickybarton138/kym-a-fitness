@@ -1115,7 +1115,7 @@ function CoachSessionCard({ plan, trainerId }) {
 function CoachRecipes({ coachId }) {
   const [items, setItems] = useState([])
   const [open, setOpen] = useState(false)
-  const [f, setF] = useState({ title: '', description: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', serving_label: '', tags: '' })
+  const [f, setF] = useState({ title: '', description: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', fibre_g: '', serving_label: '', tags: '' })
   const [error, setError] = useState('')
 
   async function load() {
@@ -1131,14 +1131,14 @@ function CoachRecipes({ coachId }) {
     const row = {
       coach_id: coachId, title: f.title.trim(), description: f.description.trim() || null,
       calories: Number(f.calories) || null, protein_g: Number(f.protein_g) || null,
-      carbs_g: Number(f.carbs_g) || null, fat_g: Number(f.fat_g) || null,
+      carbs_g: Number(f.carbs_g) || null, fat_g: Number(f.fat_g) || null, fibre_g: Number(f.fibre_g) || null,
       serving_label: f.serving_label.trim() || 'per serving',
       tags: f.tags.trim() ? f.tags.split(',').map((t) => t.trim()).filter(Boolean) : null,
     }
     const { data, error: err } = await supabase.from('recipes').insert(row).select().single()
     if (err) { setError(err.message); return }
     setItems((i) => [data, ...i])
-    setF({ title: '', description: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', serving_label: '', tags: '' })
+    setF({ title: '', description: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', fibre_g: '', serving_label: '', tags: '' })
     setOpen(false); setError('')
   }
   async function del(id) {
@@ -1167,7 +1167,7 @@ function CoachRecipes({ coachId }) {
     const chosen = gen.recipes.filter((_, i) => gen.sel.has(i))
     const rows = chosen.map((r) => ({
       coach_id: coachId, title: r.title, description: r.method || null, ingredients: r.ingredients || [],
-      servings: r.servings, calories: r.calories, protein_g: r.protein_g, carbs_g: r.carbs_g, fat_g: r.fat_g,
+      servings: r.servings, calories: r.calories, protein_g: r.protein_g, carbs_g: r.carbs_g, fat_g: r.fat_g, fibre_g: r.fibre_g,
       serving_label: 'per serving', tags: [genCat.toLowerCase()],
     }))
     const { data } = await supabase.from('recipes').insert(rows).select()
@@ -1204,6 +1204,7 @@ function CoachRecipes({ coachId }) {
             <label className="field">Protein (g)<input type="number" value={f.protein_g} onChange={set('protein_g')} /></label>
             <label className="field">Carbs (g)<input type="number" value={f.carbs_g} onChange={set('carbs_g')} /></label>
             <label className="field">Fat (g)<input type="number" value={f.fat_g} onChange={set('fat_g')} /></label>
+            <label className="field">Fibre (g)<input type="number" value={f.fibre_g} onChange={set('fibre_g')} /></label>
           </div>
           <div className="grid-2">
             <label className="field">Serving<input value={f.serving_label} onChange={set('serving_label')} placeholder="per serving" /></label>

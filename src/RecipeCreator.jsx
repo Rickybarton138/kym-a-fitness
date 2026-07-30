@@ -16,7 +16,7 @@ function Preview({ draft, setDraft, onSave, saving }) {
         <label className="field">Servings<input type="number" inputMode="numeric" value={draft.servings} onChange={set('servings')} /></label>
         <div />
       </div>
-      <p className="muted-note">Per serving: <b>{draft.calories} kcal</b> · {draft.protein_g}g P · {draft.carbs_g}g C · {draft.fat_g}g F</p>
+      <p className="muted-note">Per serving: <b>{draft.calories} kcal</b> · {draft.protein_g}g P · {draft.carbs_g}g C · {draft.fat_g}g F{draft.fibre_g ? ` · ${draft.fibre_g}g fibre` : ''}</p>
       {draft.ingredients?.length > 0 && (
         <div className="card" style={{ background: 'var(--surface-2)' }}>
           <p className="eyebrow">Ingredients</p>
@@ -30,6 +30,7 @@ function Preview({ draft, setDraft, onSave, saving }) {
         <label className="field">Protein (g)<input type="number" value={draft.protein_g} onChange={set('protein_g')} /></label>
         <label className="field">Carbs (g)<input type="number" value={draft.carbs_g} onChange={set('carbs_g')} /></label>
         <label className="field">Fat (g)<input type="number" value={draft.fat_g} onChange={set('fat_g')} /></label>
+        <label className="field">Fibre (g)<input type="number" value={draft.fibre_g || ''} onChange={set('fibre_g')} /></label>
       </div>
       <button className="btn primary big" disabled={saving || !draft.title} onClick={onSave}>{saving ? 'Saving…' : 'Save recipe'}</button>
     </div>
@@ -91,7 +92,7 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
       client_id: clientId, coach_id: null, title: d.title, servings: Number(d.servings) || 1,
       ingredients: d.ingredients || [], method: d.method || null, image_url: d.image_url || null, source_url: d.source_url || null,
       serving_label: 'per serving',
-      calories: Number(d.calories) || 0, protein_g: Number(d.protein_g) || 0, carbs_g: Number(d.carbs_g) || 0, fat_g: Number(d.fat_g) || 0,
+      calories: Number(d.calories) || 0, protein_g: Number(d.protein_g) || 0, carbs_g: Number(d.carbs_g) || 0, fat_g: Number(d.fat_g) || 0, fibre_g: Number(d.fibre_g) || 0,
     }).select().single()
     setSaving(false)
     if (err) { setError(err.message); return }

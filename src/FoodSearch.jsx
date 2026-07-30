@@ -44,6 +44,7 @@ export function FoodSearch({ onLog }) {
       protein_g: Math.round((selected.p || 0) * factor),
       carbs_g: Math.round((selected.c || 0) * factor),
       fat_g: Math.round((selected.f || 0) * factor),
+      fibre_g: Math.round((selected.fb || 0) * factor),
     })
     setLogged(selected.n); setSelected(null); setQ(''); setApi([]); setGrams('')
     setTimeout(() => setLogged(''), 2200)
@@ -106,9 +107,10 @@ function ManualFood({ onLog, onCancel }) {
   const [p, setP] = useState('')
   const [c, setC] = useState('')
   const [f, setF] = useState('')
+  const [fb, setFb] = useState('')
   function add() {
     if (!name.trim() || !kcal) return
-    onLog({ name: name.trim(), calories: Math.round(Number(kcal)) || 0, protein_g: Math.round(Number(p)) || 0, carbs_g: Math.round(Number(c)) || 0, fat_g: Math.round(Number(f)) || 0 })
+    onLog({ name: name.trim(), calories: Math.round(Number(kcal)) || 0, protein_g: Math.round(Number(p)) || 0, carbs_g: Math.round(Number(c)) || 0, fat_g: Math.round(Number(f)) || 0, fibre_g: Math.round(Number(fb)) || 0 })
   }
   return (
     <div className="card">
@@ -119,6 +121,7 @@ function ManualFood({ onLog, onCancel }) {
         <label className="field">Protein (g)<input type="number" inputMode="decimal" value={p} onChange={(e) => setP(e.target.value)} /></label>
         <label className="field">Carbs (g)<input type="number" inputMode="decimal" value={c} onChange={(e) => setC(e.target.value)} /></label>
         <label className="field">Fat (g)<input type="number" inputMode="decimal" value={f} onChange={(e) => setF(e.target.value)} /></label>
+        <label className="field">Fibre (g)<input type="number" inputMode="decimal" value={fb} onChange={(e) => setFb(e.target.value)} /></label>
       </div>
       <div className="nudge-actions">
         <button className="btn primary sm" disabled={!name.trim() || !kcal} onClick={add}>Add to today</button>
