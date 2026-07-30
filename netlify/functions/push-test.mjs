@@ -18,8 +18,8 @@ export const handler = async (event) => {
   if (!sub?.endpoint) return json(400, { error: 'No subscription provided.' })
   try {
     await webpush.sendNotification(sub, JSON.stringify({
-      title: 'Coached by Kim',
-      body: 'Reminders are on — this is what a nudge feels like. You can change the tone any time.',
+      title: 'Reminders are on',
+      body: 'This is what a nudge feels like. You can change the tone any time.',
       url: '/',
       tag: 'cbk-test',
     }))

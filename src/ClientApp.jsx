@@ -2714,7 +2714,7 @@ function IGContent({ coachName }) {
             : <IgEmbed url={it.ig_url} />}
         </div>
       ))}
-      <a className="btn ghost" href="https://www.instagram.com/cbk_coachedbykim" target="_blank" rel="noreferrer">Follow {first} on Instagram</a>
+      {THEME.instagram && <a className="btn ghost" href={`https://www.instagram.com/${THEME.instagram}`} target="_blank" rel="noreferrer">Follow {first} on Instagram</a>}
     </div>
   )
 }

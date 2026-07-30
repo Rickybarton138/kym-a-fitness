@@ -11,6 +11,7 @@ export const BRANDS = {
     tagline: 'A fresh start. A stronger you.',
     logo: '/logo.jpg',
     mark: 'CBK',
+    instagram: 'cbk_coachedbykim',
     features: { activityFeed: true },
     trainGymName: 'South Coast Power House',
     equipment: [

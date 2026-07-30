@@ -6,7 +6,7 @@
   "description": "Kym A Fitness - AI coaching app for Kym (PT) and her clients. Vite + React + Supabase + Claude.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/brand-html.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
