@@ -12,6 +12,7 @@ import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTyp
 import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
+import { ExerciseGuide } from './ExerciseGuide.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
@@ -2058,6 +2059,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
   const [exs, setExs] = useState(() => toPlayer(plan.exercises))
   const [saving, setSaving] = useState(false)
   const [finished, setFinished] = useState(false)
+  const [guideEx, setGuideEx] = useState(null)
 
   const totalSets = exs.reduce((n, ex) => n + ex.sets.length, 0)
   const doneSets = exs.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0)
@@ -2104,7 +2106,9 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
           {sh && <p className="gw-section">{ex.section}</p>}
           <div className="card gw-ex" style={{ background: 'var(--surface-2)' }}>
             <div className="gw-ex-head">
-              <div className="ex-name">{ex.name}</div>
+              {THEME.features?.exerciseGuides
+                ? <button type="button" className="ex-name eg-tap" onClick={() => setGuideEx(ex)}>{ex.name}</button>
+                : <div className="ex-name">{ex.name}</div>}
               {ex.video && !embed && <a className="link-btn inline" href={ex.video} target="_blank" rel="noopener noreferrer">How to</a>}
             </div>
             <div className="gw-chips">
@@ -2132,6 +2136,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
         <button className="btn primary big" disabled={saving} onClick={finish}>{saving ? 'Saving…' : 'Finish session'}</button>
         <button className="btn ghost sm" onClick={onExit}>Exit</button>
       </div>
+      {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
     </div>
   )
 }
@@ -2142,6 +2147,7 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
   const [playing, setPlaying] = useState(false)
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
+  const [guideEx, setGuideEx] = useState(null)
   const exs = plan.exercises || []
   // A squad-session plan is the coach's floor record — read-only here so the
   // athlete can't overwrite logged actuals by re-finishing it.
@@ -2180,7 +2186,9 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
                 <li className="ex" key={i}>
                   <span className="ex-n">{i + 1}</span>
                   <div className="ex-body">
-                    <div className="ex-name">{ex.name}</div>
+                    {THEME.features?.exerciseGuides
+                      ? <button type="button" className="ex-name eg-tap" onClick={() => setGuideEx(ex)}>{ex.name}</button>
+                      : <div className="ex-name">{ex.name}</div>}
                     <ExSets ex={ex} />
                     {ex.cue && <div className="ex-cue">{ex.cue}</div>}
                   </div>
@@ -2212,6 +2220,7 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
           </div>
         </div>
       )}
+      {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
     </div>
   )
 }

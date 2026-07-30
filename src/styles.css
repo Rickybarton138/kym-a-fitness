@@ -493,6 +493,18 @@ input { font-family: inherit; }
 .task-row .task-cad { flex: 0 0 116px; }
 .task-row select:disabled { opacity: 0.5; }
 
+/* Exercise how-to sheet */
+.eg-tap { background: none; border: 0; padding: 0; color: var(--text); font: inherit; font-weight: 650; text-align: left; cursor: pointer; border-bottom: 1px dotted var(--muted); }
+.sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: flex-end; justify-content: center; z-index: 50; padding: 0; }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 18px 18px 0 0; width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; padding: 18px; }
+@media (min-width: 560px) { .sheet-overlay { align-items: center; } .sheet { border-radius: 18px; } }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 17px; }
+.eg-images { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.eg-images img { width: 100%; border-radius: 10px; background: #fff; }
+.eg-howto { margin-top: 12px; line-height: 1.5; }
+.eg-cues { margin: 10px 0 0; padding-left: 18px; }
+.eg-cues li { margin-bottom: 5px; color: var(--muted); }
+
 /* ---- Injury / rehab / return-to-play ---- */
 .avail-badge { flex: 0 0 auto; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
 .avail-badge.green { color: #0a1f14; background: #57b98a; }
