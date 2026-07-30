@@ -1154,6 +1154,34 @@ function CoachRecipes({ coachId }) {
     setItems((i) => i.filter((x) => x.id !== id))
   }
 
+  // AI batch generator — draft a library fast, keep the ones you like.
+  const [genCat, setGenCat] = useState('High-protein breakfasts')
+  const [genCount, setGenCount] = useState(6)
+  const [genBusy, setGenBusy] = useState(false)
+  const [gen, setGen] = useState(null) // { recipes, sel:Set }
+  const [genErr, setGenErr] = useState('')
+  async function generate() {
+    setGenBusy(true); setGenErr('')
+    try {
+      const res = await fetch('/.netlify/functions/recipe-generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: genCat, count: genCount }) })
+      const j = await res.json()
+      if (!j.recipes?.length) { setGenErr(j.error || 'Nothing came back — try again.') }
+      else setGen({ recipes: j.recipes, sel: new Set(j.recipes.map((_, i) => i)) })
+    } catch (e) { setGenErr(String(e.message || e)) }
+    setGenBusy(false)
+  }
+  const toggleSel = (i) => setGen((g) => { const s = new Set(g.sel); s.has(i) ? s.delete(i) : s.add(i); return { ...g, sel: s } })
+  async function saveSelected() {
+    const chosen = gen.recipes.filter((_, i) => gen.sel.has(i))
+    const rows = chosen.map((r) => ({
+      coach_id: coachId, title: r.title, description: r.method || null, ingredients: r.ingredients || [],
+      servings: r.servings, calories: r.calories, protein_g: r.protein_g, carbs_g: r.carbs_g, fat_g: r.fat_g,
+      serving_label: 'per serving', tags: [genCat.toLowerCase()],
+    }))
+    const { data } = await supabase.from('recipes').insert(rows).select()
+    setItems((i) => [...(data || []), ...i]); setGen(null)
+  }
+
   return (
     <div className="card">
       <p className="eyebrow">Recipe library</p>
@@ -1193,6 +1221,36 @@ function CoachRecipes({ coachId }) {
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>
       )}
+
+      <div style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+        <p className="eyebrow accent">Generate with AI</p>
+        <p className="muted-note">Build a recipe library fast — the AI drafts a batch with macros; keep the ones you like. They're yours.</p>
+        {!gen ? (
+          <div className="stack" style={{ marginTop: 8 }}>
+            <label className="field">Category<input value={genCat} onChange={(e) => setGenCat(e.target.value)} placeholder="e.g. High-protein breakfasts" /></label>
+            <div className="serving-chips">
+              {['High-protein breakfasts', 'Quick lunches', 'Low-carb dinners', 'Post-workout meals', 'Healthy snacks', 'Vegetarian mains'].map((c) => (
+                <button type="button" key={c} className={genCat === c ? 'on' : ''} onClick={() => setGenCat(c)}>{c}</button>
+              ))}
+            </div>
+            <label className="field">How many (max 8)<input type="number" inputMode="numeric" value={genCount} onChange={(e) => setGenCount(e.target.value)} /></label>
+            {genErr && <p className="error">{genErr}</p>}
+            <button className="btn primary" disabled={genBusy} onClick={generate}>{genBusy ? 'Generating…' : 'Generate recipes'}</button>
+          </div>
+        ) : (
+          <div className="stack" style={{ marginTop: 8 }}>
+            <p className="muted-note">{gen.sel.size} of {gen.recipes.length} selected</p>
+            {gen.recipes.map((r, i) => (
+              <label className="card" key={i} style={{ background: 'var(--surface-2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={gen.sel.has(i)} onChange={() => toggleSel(i)} style={{ marginTop: 4 }} />
+                <div><div className="session-title">{r.title}</div><div className="session-sub">{r.calories} kcal · {r.protein_g}g P · {r.carbs_g}g C · {r.fat_g}g F · {r.servings} serving{r.servings === 1 ? '' : 's'}</div></div>
+              </label>
+            ))}
+            <button className="btn primary big" disabled={!gen.sel.size} onClick={saveSelected}>Save {gen.sel.size} to library</button>
+            <button type="button" className="link-btn" onClick={() => setGen(null)}>Discard</button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
