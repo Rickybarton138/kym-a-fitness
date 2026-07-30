@@ -56,7 +56,11 @@ export const handler = async (event) => {
         { type: 'text', text: 'Read this recipe from the image. ' + INSTRUCTION },
       ]
     } else if (url) {
-      const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (recipe importer)' } })
+      const res = await fetch(url, { headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'en-GB,en;q=0.9',
+      } })
       const html = await res.text()
       image_url = extractImage(html)
       const ld = jsonLdRecipe(html)
@@ -72,6 +76,10 @@ export const handler = async (event) => {
 
     const r = await claude(content)
     const int = (v) => Math.max(0, Math.round(Number(v) || 0))
+    // Couldn't read it (blocked page / not a recipe) — steer to paste/photo.
+    if ((!Array.isArray(r.ingredients) || r.ingredients.length === 0) && int(r.calories) === 0) {
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ error: url ? "Couldn't read that page automatically — some sites block it. Try the Paste or Photo option instead." : "Couldn't read that recipe — try again or add it manually." }) }
+    }
     return {
       statusCode: 200, headers: cors,
       body: JSON.stringify({
