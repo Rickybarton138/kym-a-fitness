@@ -60,7 +60,10 @@ const HUB_CHILDREN = {
 }
 
 export default function ClientApp({ profile, onSignOut }) {
-  const [screen, setScreen] = useState('home')
+  // Persist the current screen so backgrounding the app (mobile often reloads the
+  // page on return) drops them back where they were, not on the home screen.
+  const [screen, setScreen] = useState(() => { try { return sessionStorage.getItem('cbk_screen') || 'home' } catch { return 'home' } })
+  useEffect(() => { try { sessionStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
   const [targets, setTargets] = useState(null)
   const [todayLogs, setTodayLogs] = useState([])
   const [measurements, setMeasurements] = useState([])
@@ -2104,11 +2107,23 @@ function fromPlayer(playerExs) {
   })
 }
 
+const GW_KEY = (id) => 'cbk_gw:' + id
 function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
-  const [exs, setExs] = useState(() => toPlayer(plan.exercises))
+  // Restore an in-progress session (survives app-switch / reload), so ticked sets
+  // and logged weights aren't lost until they hit Finish.
+  const [exs, setExs] = useState(() => {
+    try { const s = localStorage.getItem(GW_KEY(plan.id)); if (s) return JSON.parse(s) } catch { /* ignore */ }
+    return toPlayer(plan.exercises)
+  })
   const [saving, setSaving] = useState(false)
   const [finished, setFinished] = useState(false)
   const [guideEx, setGuideEx] = useState(null)
+
+  // Mark this session active + persist progress as they go.
+  useEffect(() => { try { sessionStorage.setItem('cbk_gw_active', plan.id) } catch { /* ignore */ } }, [])
+  useEffect(() => { try { localStorage.setItem(GW_KEY(plan.id), JSON.stringify(exs)) } catch { /* ignore */ } }, [exs])
+  const clearSaved = () => { try { localStorage.removeItem(GW_KEY(plan.id)); sessionStorage.removeItem('cbk_gw_active') } catch { /* ignore */ } }
+  const exit = () => { clearSaved(); onExit && onExit() }
 
   const totalSets = exs.reduce((n, ex) => n + ex.sets.length, 0)
   const doneSets = exs.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0)
@@ -2128,6 +2143,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
       await supabase.from('workout_completions').insert({ client_id: clientId, source: 'guided' })
     }
     setSaving(false)
+    clearSaved()
     if (data) onDone && onDone(data)
     onFinishedToday && onFinishedToday()
     setFinished(true)
@@ -2138,7 +2154,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
       <div className="stack" style={{ marginTop: 10 }}>
         <p className="logged-ok big">Session complete ✓</p>
         <p className="muted-note">Logged and saved — nice work. It’s in your weights-lifted progress.</p>
-        <button className="btn ghost sm" onClick={onExit}>Done</button>
+        <button className="btn ghost sm" onClick={exit}>Done</button>
       </div>
     )
   }
@@ -2183,7 +2199,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
       {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
       <div className="nudge-actions">
         <button className="btn primary big" disabled={saving} onClick={finish}>{saving ? 'Saving…' : 'Finish session'}</button>
-        <button className="btn ghost sm" onClick={onExit}>Exit</button>
+        <button className="btn ghost sm" onClick={exit}>Exit</button>
       </div>
       {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
     </div>
@@ -2191,9 +2207,12 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
 }
 
 function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
-  const [open, setOpen] = useState(false)
+  // If this session was mid-play when the app was backgrounded, reopen it so the
+  // player comes straight back up with their saved sets.
+  const resuming = (() => { try { return sessionStorage.getItem('cbk_gw_active') === plan.id } catch { return false } })()
+  const [open, setOpen] = useState(resuming)
   const [editing, setEditing] = useState(false)
-  const [playing, setPlaying] = useState(false)
+  const [playing, setPlaying] = useState(resuming)
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
   const [guideEx, setGuideEx] = useState(null)
