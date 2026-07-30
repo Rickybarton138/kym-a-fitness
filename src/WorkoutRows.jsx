@@ -14,9 +14,12 @@ export const SET_TYPES = [
 export const setTypeLabel = (k) => (SET_TYPES.find((t) => t.key === k) || SET_TYPES[0]).label
 export const setTypeNote = (k) => (SET_TYPES.find((t) => t.key === k) || SET_TYPES[0]).note
 
+// Common training-session sections; coaches can also type their own.
+export const SECTIONS = ['Warm-up', 'Activation', 'Strength', 'Power', 'Accessories', 'Conditioning', 'Cool-down']
+
 // A fresh exercise starts with 3 empty sets, each with its own reps + weight.
 export function newExerciseRow() {
-  return { name: '', custom: false, cue: '', set_type: 'straight', group: '', rpe: '', video: '', sets: [{ reps: '', weight: '' }, { reps: '', weight: '' }, { reps: '', weight: '' }] }
+  return { name: '', custom: false, section: '', cue: '', set_type: 'straight', group: '', rpe: '', video: '', sets: [{ reps: '', weight: '' }, { reps: '', weight: '' }, { reps: '', weight: '' }] }
 }
 
 // Shared exercise editor: pick an exercise, then log each set's reps and weight
@@ -56,6 +59,9 @@ export function ExerciseRowsEditor({ rows, setRows }) {
               <input className="ex-name-in" placeholder="Exercise name" value={r.name} onChange={(e) => update(i, 'name', e.target.value)} />
             )}
 
+            <input className="ex-name-in" list="wr-sections" placeholder="Section (optional) — e.g. Warm-up, Strength"
+              value={r.section || ''} onChange={(e) => update(i, 'section', e.target.value)} />
+
             <div className="ex-settype">
               <select className="ex-select" value={r.set_type || 'straight'} onChange={(e) => update(i, 'set_type', e.target.value)}>
                 {SET_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
@@ -74,7 +80,7 @@ export function ExerciseRowsEditor({ rows, setRows }) {
               {(r.sets || []).map((s, si) => (
                 <div className="set-row" key={si}>
                   <span className="set-n">{si + 1}</span>
-                  <input inputMode="numeric" placeholder="10" value={s.reps} onChange={(e) => updateSet(i, si, 'reps', e.target.value)} />
+                  <input placeholder="10 / AMRAP" value={s.reps} onChange={(e) => updateSet(i, si, 'reps', e.target.value)} />
                   <input inputMode="decimal" placeholder="40" value={s.weight} onChange={(e) => updateSet(i, si, 'weight', e.target.value)} />
                   <button type="button" className="set-del" onClick={() => removeSet(i, si)} aria-label="Remove set">×</button>
                 </div>
@@ -87,6 +93,7 @@ export function ExerciseRowsEditor({ rows, setRows }) {
           </div>
         ))}
       </div>
+      <datalist id="wr-sections">{SECTIONS.map((s) => <option key={s} value={s} />)}</datalist>
       <button type="button" className="btn ghost" onClick={addRow}>+ Add exercise</button>
     </>
   )
@@ -101,7 +108,7 @@ export function planToRows(exercises) {
     const sets = Array.isArray(ex.sets)
       ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? '') }))
       : Array.from({ length: Math.max(1, Number(ex.sets) || 1) }, () => ({ reps: String(ex.reps ?? ''), weight: String(ex.weight ?? '') }))
-    return { name: ex.name || '', custom: !KNOWN_NAMES.has(ex.name), cue: ex.cue || '', set_type: ex.set_type || 'straight', group: ex.group || '', rpe: ex.rpe != null ? String(ex.rpe) : '', video: ex.video || '', sets }
+    return { name: ex.name || '', custom: !KNOWN_NAMES.has(ex.name), section: ex.section || '', cue: ex.cue || '', set_type: ex.set_type || 'straight', group: ex.group || '', rpe: ex.rpe != null ? String(ex.rpe) : '', video: ex.video || '', sets }
   })
 }
 
@@ -115,10 +122,12 @@ export function rowsToExercises(rows, equipmentLabel) {
       const rpeNum = Number(r.rpe)
       const rpe = r.rpe !== '' && r.rpe != null && rpeNum >= 1 && rpeNum <= 10 ? rpeNum : undefined
       const video = (r.video || '').trim() || undefined
+      const section = (r.section || '').trim() || undefined
       return {
         name: r.name.trim(),
         equipment: equipmentLabel || 'Own choice',
         cue: (r.cue || '').trim(),
+        ...(section ? { section } : {}),
         ...(set_type ? { set_type } : {}),
         ...(group ? { group } : {}),
         ...(rpe ? { rpe } : {}),

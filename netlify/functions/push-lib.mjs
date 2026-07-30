@@ -103,6 +103,28 @@ export async function runCoachAlerts() {
   return { due: rows.length, sent, pruned }
 }
 
+// Athlete-chosen daily reminder: fires once per UK day at/after the athlete's set
+// time. Runs hourly; last_daily_on makes it fire once.
+export async function runDailyReminders() {
+  if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
+  const rows = await rpc('daily_reminders_due', { p_secret: SECRET })
+  let sent = 0, pruned = 0
+  for (const r of rows) {
+    const sub = { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }
+    try {
+      await webpush.sendNotification(sub, JSON.stringify({ title: 'Daily check-in', body: 'Time to check in — log your day and how you are feeling.', url: '/', tag: 'daily-reminder' }))
+      sent++
+      await rpc('daily_reminder_mark_sent', { p_secret: SECRET, p_client: r.client_id }).catch(() => {})
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await rpc('nudge_drop', { p_secret: SECRET, p_endpoint: r.endpoint }).catch(() => {})
+        pruned++
+      }
+    }
+  }
+  return { due: rows.length, sent, pruned }
+}
+
 export async function runNudges(kind) {
   if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
   const rows = await rpc('nudges_due', { p_secret: SECRET, p_kind: kind })

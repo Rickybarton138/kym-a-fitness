@@ -12,6 +12,7 @@ import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { SquadSession } from './SquadSession.jsx'
+import { printClientReport } from './report.js'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
@@ -275,7 +276,7 @@ function ClientDetail({ client, trainerId, onBack }) {
       <header className="topbar">
         <button className="link-btn" onClick={onBack}>‹ Clients</button>
         <span className="brand-name">{client.full_name}</span>
-        <span style={{ width: 40 }} />
+        <button className="link-btn inline" onClick={() => printClientReport(client)}>Report</button>
       </header>
       <main className="screen">
         {loading ? <p className="muted-note">Loading…</p> : (

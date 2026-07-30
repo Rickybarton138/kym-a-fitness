@@ -663,6 +663,12 @@ function NudgeSettings({ clientId, onBack }) {
       <div className="card">
         <label className="toggle-row"><span>Food reminders</span><input type="checkbox" checked={settings.food_nudges} onChange={(e) => save({ ...settings, food_nudges: e.target.checked })} /></label>
         <label className="toggle-row"><span>Workout reminders</span><input type="checkbox" checked={settings.workout_nudges} onChange={(e) => save({ ...settings, workout_nudges: e.target.checked })} /></label>
+        <label className="toggle-row"><span>Daily reminder</span><input type="checkbox" checked={!!settings.daily_reminder} onChange={(e) => save({ ...settings, daily_reminder: e.target.checked })} /></label>
+        {settings.daily_reminder && (
+          <label className="field" style={{ marginTop: 8 }}>What time?
+            <input type="time" value={(settings.reminder_time || '18:00').slice(0, 5)} onChange={(e) => save({ ...settings, reminder_time: e.target.value })} />
+          </label>
+        )}
       </div>
       {saved && <p className="logged-ok">Saved ✓</p>}
 
@@ -2060,8 +2066,11 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
       <p className="muted-note">{doneSets}/{totalSets} sets done — tick each set as you go and log what you actually lifted.</p>
       {exs.map((ex, ei) => {
         const embed = ex.video ? videoEmbed(ex.video) : null
+        const sh = ex.section && ex.section !== exs[ei - 1]?.section
         return (
-          <div className="card gw-ex" key={ei} style={{ background: 'var(--surface-2)' }}>
+          <div key={ei}>
+          {sh && <p className="gw-section">{ex.section}</p>}
+          <div className="card gw-ex" style={{ background: 'var(--surface-2)' }}>
             <div className="gw-ex-head">
               <div className="ex-name">{ex.name}</div>
               {ex.video && !embed && <a className="link-btn inline" href={ex.video} target="_blank" rel="noopener noreferrer">How to</a>}
@@ -2082,6 +2091,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
               ))}
             </div>
             {ex.cue && <p className="ex-cue">{ex.cue}</p>}
+          </div>
           </div>
         )
       })}
@@ -2131,16 +2141,20 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
       {open && !editing && !playing && (
         <>
           <ol className="ex-list">
-            {exs.map((ex, i) => (
-              <li className="ex" key={i}>
-                <span className="ex-n">{i + 1}</span>
-                <div className="ex-body">
-                  <div className="ex-name">{ex.name}</div>
-                  <ExSets ex={ex} />
-                  {ex.cue && <div className="ex-cue">{ex.cue}</div>}
-                </div>
-              </li>
-            ))}
+            {exs.map((ex, i) => {
+              const sh = ex.section && ex.section !== exs[i - 1]?.section
+              return [
+                sh && <li className="ex-section" key={'s' + i}>{ex.section}</li>,
+                <li className="ex" key={i}>
+                  <span className="ex-n">{i + 1}</span>
+                  <div className="ex-body">
+                    <div className="ex-name">{ex.name}</div>
+                    <ExSets ex={ex} />
+                    {ex.cue && <div className="ex-cue">{ex.cue}</div>}
+                  </div>
+                </li>,
+              ]
+            })}
             {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
           </ol>
           {squadLocked ? (

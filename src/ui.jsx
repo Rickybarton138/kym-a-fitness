@@ -86,7 +86,7 @@ export function ExSets({ ex }) {
         {ex.sets.map((st, i) => (
           <div className="set-line" key={i}>
             <span className="sl-n">{setWord} {i + 1}</span>
-            <span className="sl-v">{st.reps ? st.reps + ' reps' : '—'}{st.weight ? ' @ ' + st.weight + 'kg' : ''}</span>
+            <span className="sl-v">{st.reps ? (/[a-zA-Z]/.test(st.reps) ? st.reps : st.reps + ' reps') : '—'}{st.weight ? ' @ ' + st.weight + 'kg' : ''}</span>
           </div>
         ))}
         {type && setTypeNote(type) && <div className="ex-meta">{setTypeNote(type)}</div>}

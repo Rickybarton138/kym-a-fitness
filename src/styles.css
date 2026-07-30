@@ -464,6 +464,11 @@ input { font-family: inherit; }
 .act-row.flag .act-body, .act-row.flag.new .act-body { color: var(--text); }
 .act-flag { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 700; color: #e5533c; border: 1px solid rgba(229,83,60,0.4); border-radius: 999px; padding: 1px 8px; vertical-align: middle; }
 
+/* Workout section headers (Warm-up / Strength / …) */
+.ex-section { list-style: none; margin: 14px 0 2px; font-size: 11px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); }
+.ex-section:first-child { margin-top: 0; }
+.gw-section { margin: 16px 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); }
+
 /* ---- Injury / rehab / return-to-play ---- */
 .avail-badge { flex: 0 0 auto; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
 .avail-badge.green { color: #0a1f14; background: #57b98a; }

@@ -56,17 +56,18 @@ actively fixing.
    names, can't mute). We have proper messaging + community + activity feed.
 
 ### QUICK-WIN — buildable on our stack in days (turn "Lumin users want this" into "we have it")
-A. **Coach alert when an athlete's availability/status changes** (injury → modified /
-   unavailable / RTP / cleared). Lumin request has 6 votes and tops one board; it's still
-   open. We already have the activity feed + digest + web push + rehab availability — this
-   is a small event wire-up that also strengthens the rehab module. **Highest-value.**
-B. **Configurable check-in reminder time** per athlete (app-store request). We already
-   have per-client reminders — just expose the time.
-C. **Session section headers** (Warm Up / Strength / Accessories) + **AMAP/ALAP rep type**
-   in the workout builder. Matches a 10-vote programming request. Tiny.
-D. **Automatic welcome/onboarding message** on athlete join (we have seed_welcome_message).
-   Make it fire automatically. Small.
-E. **Athlete/squad report → PDF export.** We have PDF generation. Medium effort, nice-to-have.
+All five BUILT + verified (2026-07-29):
+A. **[DONE] Coach red-flag alert** — athlete severe soreness / low readiness surfaces in the
+   coach activity feed (red "Needs attention") + web push (`push-coach-alerts` cron). Verified
+   end-to-end, idempotent.
+B. **[DONE] Athlete-chosen daily reminder time** — opt-in toggle + time picker;
+   `push-daily-reminder` hourly cron fires once/day at their time. Verified via `daily_reminders_due`.
+C. **[DONE] Session section headers** (Warm-up / Strength / …, datalist + free text) +
+   **AMRAP/range reps** in the builder; grouped headers render in the session list + guided player.
+D. **[DONE] Auto welcome message at signup** — now seeded server-side in `handle_new_user`
+   (guaranteed), client-side call kept as idempotent fallback. Verified via a throwaway signup.
+E. **[DONE] Client progress report** — coach "Report" button → print-optimised HTML
+   (targets, body, strength PRs, tests) → browser Save-as-PDF. No new deps (`src/report.js`).
 
 ### ROADMAP — where Lumin is genuinely stronger (be honest; don't fight here)
 - **Wearable / GPS / force-plate integrations** (Catapult, VALD, Hawkin, Polar, Garmin).
