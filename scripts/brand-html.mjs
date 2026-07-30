@@ -24,6 +24,12 @@ const BRANDS = {
     theme: '#0a0a0a', bg: '#0a0a0a', url: 'https://the-physical-performance-hub.netlify.app',
     icon192: '/pph-logo.png', icon512: '/pph-logo.png', og: '/pph-logo.png',
   },
+  elev8: {
+    name: 'Elev8', short: 'Elev8',
+    description: 'Hyrox and functional-fitness coaching from Elev8 — training, testing, nutrition and an AI coach.',
+    theme: '#0b0d0a', bg: '#0b0d0a', url: 'https://elev8-hyrox.netlify.app',
+    icon192: '/brands/elev8/icon-192.png', icon512: '/brands/elev8/icon-512.png', og: '/brands/elev8/og.png',
+  },
 }
 
 const brand = (process.env.BRAND || process.env.VITE_BRAND || 'kim').toLowerCase()

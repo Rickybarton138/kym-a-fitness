@@ -125,6 +125,41 @@ export const BRANDS = {
     },
   },
 
+  // Elev8 (Bournemouth) — Hyrox / functional-fitness gym. Bold, high-energy.
+  // Near-black + electric lime. Placeholder look until Elev8's real logo/colours.
+  elev8: {
+    slug: 'elev8',
+    name: 'Elev8',
+    tagline: 'Train. Race. Elevate.',
+    logo: '/brands/elev8/logo.png',
+    mark: 'E8',
+    scheme: 'dark',
+    features: { testing: true, squads: true, squadMode: true, monitoring: true, nutritionExpert: true, activityFeed: true, exerciseGuides: true },
+    trainGymName: 'Elev8',
+    equipment: [
+      'Sled track — push & pull',
+      'SkiErg & Concept2 rowers',
+      'Wall-ball targets & med balls',
+      'Sandbags, kettlebells & farmers handles',
+      'Assault bikes',
+      'Running lanes',
+    ],
+    vars: {
+      '--bg': '#0b0d0a',
+      '--surface': '#14170f',
+      '--surface-2': '#1e2217',
+      '--line': '#2c3323',
+      '--text': '#f2f5ec',
+      '--muted': '#9aa48f',
+      '--accent': '#c2f542',
+      '--accent-hi': '#d4ff5e',
+      '--on-accent': '#0b0d0a',
+      '--gold': '#c2f542',
+      '--ring-track': '#2c3323',
+      '--radius': '12px',
+    },
+  },
+
   // BBL Gym (Poole) — black & gold, luxury/serious commercial gym. Member app.
   bbl: {
     slug: 'bbl',
