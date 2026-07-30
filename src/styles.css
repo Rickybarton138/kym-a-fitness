@@ -469,6 +469,23 @@ input { font-family: inherit; }
 .ex-section:first-child { margin-top: 0; }
 .gw-section { margin: 16px 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); }
 
+/* VALD integration */
+.vald-dot { margin-left: auto; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.vald-dot.on { color: #3ad598; border: 1px solid rgba(58,213,152,.4); }
+.vald-dot.off { color: var(--muted); border: 1px solid var(--line); }
+.vald-status { margin: 8px 0; }
+.vald-link-in { width: 150px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; color: var(--text); font-size: 13px; }
+.vald-sys { border-top: 1px solid var(--line); padding: 10px 0; }
+.vald-sys:first-of-type { border-top: 0; }
+.vald-sys-head { font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+.vald-test-title { font-weight: 600; display: flex; justify-content: space-between; font-size: 13.5px; }
+.vald-when { color: var(--muted); font-size: 12px; font-weight: 400; }
+.vald-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 8px; }
+.vald-metric { display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.vald-mk { color: var(--muted); }
+.vald-mv { font-weight: 700; font-variant-numeric: tabular-nums; }
+.vald-mv.flag { color: #e5533c; }
+
 /* ---- Injury / rehab / return-to-play ---- */
 .avail-badge { flex: 0 0 auto; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
 .avail-badge.green { color: #0a1f14; background: #57b98a; }

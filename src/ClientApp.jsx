@@ -11,6 +11,7 @@ import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel } from './WorkoutRows.jsx'
 import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
+import { ValdTests } from './VALD.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
@@ -1220,6 +1221,7 @@ function Monitoring({ clientId, onBack }) {
             <p className="rd-flag"><span className={'rd-light ' + flag.color} /> {flag.label}</p>
             <p className="muted-note">Acute:chronic workload ratio. Around 0.8–1.3 is the sweet spot; sharp spikes raise injury risk.</p>
           </div>
+          {THEME.features?.vald && <ValdTests clientId={clientId} title="Your force & speed testing" />}
         </div>
       )}
 

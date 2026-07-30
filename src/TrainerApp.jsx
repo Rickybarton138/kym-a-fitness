@@ -13,6 +13,7 @@ import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { SquadSession } from './SquadSession.jsx'
 import { printClientReport } from './report.js'
+import { CoachVald, ValdTests } from './VALD.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
@@ -115,6 +116,8 @@ export default function TrainerApp({ profile, onSignOut }) {
         {THEME.features?.squads && (
           <SquadList squads={squads} coachId={profile.id} onOpen={setSelectedSquad} onCreated={(s) => setSquads((xs) => [...xs, s])} />
         )}
+
+        {THEME.features?.vald && <CoachVald coachId={profile.id} clients={clients} />}
 
         {THEME.features?.templates && <CoachTemplates coachId={profile.id} />}
         {THEME.features?.programs && <CoachPrograms coachId={profile.id} />}
@@ -335,6 +338,8 @@ function ClientDetail({ client, trainerId, onBack }) {
             </div>
 
             {THEME.features?.monitoring && <CoachMonitoring clientId={client.id} />}
+
+            {THEME.features?.vald && <ValdTests clientId={client.id} />}
 
             {THEME.features?.rehab && <RehabCoach clientId={client.id} coachId={trainerId} />}
 

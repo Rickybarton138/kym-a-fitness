@@ -96,7 +96,7 @@ export const BRANDS = {
     logo: '/pph-logo.png',
     mark: 'PPH',
     scheme: 'dark',
-    features: { testing: true, squads: true, squadMode: true, nutritionExpert: true, monitoring: true, growth: true, rehab: true, activityFeed: true },
+    features: { testing: true, squads: true, squadMode: true, nutritionExpert: true, monitoring: true, growth: true, rehab: true, activityFeed: true, vald: true },
     heroImages: ['/pph/hero1.jpg', '/pph/hero2.jpg'],
     trainGymName: 'The Physical Performance Hub',
     equipment: [
