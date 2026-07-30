@@ -2101,6 +2101,9 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
   const exs = plan.exercises || []
+  // A squad-session plan is the coach's floor record — read-only here so the
+  // athlete can't overwrite logged actuals by re-finishing it.
+  const squadLocked = !!plan.squad_session_id
 
   function startEdit() {
     setRows(planToRows(exs))
@@ -2121,7 +2124,7 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
       <button type="button" className="session-head" onClick={() => setOpen((o) => !o)}>
         <div>
           <div className="session-title">{plan.title}</div>
-          <div className="session-sub">{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'}{plan.assigned_by ? ' · From your coach' : ''}</div>
+          <div className="session-sub">{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'}{squadLocked ? ' · Squad session, logged with your coach' : plan.assigned_by ? ' · From your coach' : ''}</div>
         </div>
         <span className="chev">{open ? '−' : '+'}</span>
       </button>
@@ -2140,13 +2143,17 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
             ))}
             {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
           </ol>
-          <div className="nudge-actions">
-            <button type="button" className="btn primary sm" onClick={() => { setPlaying(true); setOpen(true) }}>Start session</button>
-            <button type="button" className="btn ghost sm" onClick={startEdit}>Edit / add weights</button>
-          </div>
+          {squadLocked ? (
+            <p className="muted-note">Logged live with your coach — this is your record of the session.</p>
+          ) : (
+            <div className="nudge-actions">
+              <button type="button" className="btn primary sm" onClick={() => { setPlaying(true); setOpen(true) }}>Start session</button>
+              <button type="button" className="btn ghost sm" onClick={startEdit}>Edit / add weights</button>
+            </div>
+          )}
         </>
       )}
-      {open && playing && (
+      {open && playing && !squadLocked && (
         <GuidedWorkout plan={plan} clientId={clientId} onDone={onUpdate} onFinishedToday={onWorkoutDone} onExit={() => setPlaying(false)} />
       )}
       {open && editing && (

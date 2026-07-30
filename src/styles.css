@@ -493,3 +493,19 @@ input { font-family: inherit; }
 
 /* ---- Strava connect ---- */
 .strava-btn { background: #fc4c02; color: #fff; }
+
+/* ---- Squad weight-room mode ---- */
+.sq-attend { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.sq-attend:last-child { border-bottom: 0; }
+.sq-attend input { width: 20px; height: 20px; }
+.sq-saved { min-width: 40px; font-size: 12px; color: var(--muted); text-align: right; }
+.sq-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 6px; }
+.sq-tab { flex: 0 0 auto; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); padding: 8px 14px; border-radius: 999px; font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+.sq-tab.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.sq-station-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.sq-station-name { flex: 0 0 74px; font-weight: 700; font-size: 13px; padding-top: 10px; }
+.sq-station-sets { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.sq-station-sets .gw-set { gap: 6px; padding: 6px 8px; }
+.sq-station-sets .gw-in { width: 56px; }
+.sq-rpe-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-weight: 600; }
+.sq-rpe-row .gw-in { width: 72px; }

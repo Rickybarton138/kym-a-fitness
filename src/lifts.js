@@ -17,6 +17,27 @@ export function topWeight(ex) {
   return parseWeight(ex.weight)
 }
 
+// Build a { exercise-name -> latest top weight } map from a client's past plans.
+// Used to pre-seed the squad board so the coach edits deltas, not every number.
+export function latestByName(plans) {
+  const map = {}
+  for (const l of aggregateLifts(plans)) map[l.name.toLowerCase()] = l.latest
+  return map
+}
+
+// Pre-fill each set's weight from the athlete's last logged value for that lift,
+// unless the prescription already specifies a weight. Returns new exercises.
+export function seedWeights(exercises, latestMap) {
+  return (exercises || []).map((ex) => {
+    const seed = latestMap[(ex.name || '').trim().toLowerCase()]
+    if (seed == null) return ex
+    const sets = Array.isArray(ex.sets)
+      ? ex.sets.map((s) => ({ ...s, weight: (s.weight ?? '') === '' ? String(seed) : s.weight }))
+      : ex.sets
+    return { ...ex, sets, weight: (ex.weight ?? '') === '' ? String(seed) : ex.weight }
+  })
+}
+
 export function aggregateLifts(plans) {
   const byName = {}
   for (const p of plans || []) {

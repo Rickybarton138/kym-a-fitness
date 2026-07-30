@@ -11,6 +11,7 @@ import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
+import { SquadSession } from './SquadSession.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
@@ -512,6 +513,7 @@ function SquadDetail({ squad, clients, onBack }) {
   const [activity, setActivity] = useState({})
   const [addId, setAddId] = useState('')
   const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState(false)
 
   const nameOf = (cid) => (clients.find((c) => c.id === cid)?.full_name) || 'Athlete'
   const memberIds = members.map((m) => m.client_id)
@@ -578,6 +580,17 @@ function SquadDetail({ squad, clients, onBack }) {
   const available = clients.filter((c) => !memberIds.includes(c.id))
   const t = TEST_BY_KEY[testKey]
 
+  if (running) {
+    return (
+      <SquadSession
+        squad={squad}
+        members={members.map((m) => ({ client_id: m.client_id, name: nameOf(m.client_id) }))}
+        coachId={squad.coach_id}
+        onExit={() => { setRunning(false); loadMembers() }}
+      />
+    )
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -627,6 +640,14 @@ function SquadDetail({ squad, clients, onBack }) {
               </div>
             ))}
           </div>
+
+          {THEME.features?.squadMode && (
+            <div className="card">
+              <p className="eyebrow">Live weight-room</p>
+              <p className="muted-note">Run the whole squad through one session on a tablet on the gym floor — weights pre-seeded from each athlete's last lift.</p>
+              <button className="btn primary" disabled={members.length === 0} onClick={() => setRunning(true)}>Run session</button>
+            </div>
+          )}
 
           <SquadAssign squad={squad} memberIds={memberIds} count={members.length} />
         </div>
