@@ -204,10 +204,11 @@ function CoachActivity({ profile, clients, onOpenClient }) {
       <div className="stack" style={{ marginTop: 6, gap: 0 }}>
         {items.map((a, i) => {
           const isNew = new Date(a.at).getTime() > seenT
+          const flag = a.kind === 'flag'
           return (
-            <button type="button" key={i} className={'act-row' + (isNew ? ' new' : '')} onClick={() => openClient(a.client_id)}>
+            <button type="button" key={i} className={'act-row' + (isNew ? ' new' : '') + (flag ? ' flag' : '')} onClick={() => openClient(a.client_id)}>
               <span className="act-dot" aria-hidden="true" />
-              <span className="act-body"><b>{(a.client_name || 'Client').split(' ')[0]}</b> {a.detail}</span>
+              <span className="act-body"><b>{(a.client_name || 'Client').split(' ')[0]}</b> {a.detail}{flag && <span className="act-flag">Needs attention</span>}</span>
               <span className="act-time">{timeAgo(a.at)}</span>
             </button>
           )

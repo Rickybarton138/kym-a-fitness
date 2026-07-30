@@ -80,6 +80,29 @@ export async function runReminders() {
   return { due: rows.length, sent, pruned }
 }
 
+// Athlete red-flag alerts to coaches: when an athlete self-reports severe soreness
+// or a low readiness score, push the coach once. Runs on a short cron so it's near
+// real-time; alerted_at on the source row makes each flag fire only once.
+export async function runCoachAlerts() {
+  if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
+  const rows = await rpc('coach_alerts_due', { p_secret: SECRET })
+  let sent = 0, pruned = 0
+  for (const r of rows) {
+    const sub = { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }
+    try {
+      await webpush.sendNotification(sub, JSON.stringify({ title: 'Athlete needs attention', body: r.message, url: '/', tag: `alert-${r.kind}-${r.flag_id}` }))
+      sent++
+      await rpc('coach_alert_mark_sent', { p_secret: SECRET, p_kind: r.kind, p_id: r.flag_id }).catch(() => {})
+    } catch (e) {
+      if (e.statusCode === 404 || e.statusCode === 410) {
+        await rpc('nudge_drop', { p_secret: SECRET, p_endpoint: r.endpoint }).catch(() => {})
+        pruned++
+      }
+    }
+  }
+  return { due: rows.length, sent, pruned }
+}
+
 export async function runNudges(kind) {
   if (!SECRET) return { error: 'NUDGE_CRON_SECRET not set' }
   const rows = await rpc('nudges_due', { p_secret: SECRET, p_kind: kind })
