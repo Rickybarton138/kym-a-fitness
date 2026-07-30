@@ -2715,6 +2715,7 @@ function IGContent({ coachName }) {
         </div>
       ))}
       {THEME.instagram && <a className="btn ghost" href={`https://www.instagram.com/${THEME.instagram}`} target="_blank" rel="noreferrer">Follow {first} on Instagram</a>}
+      {THEME.tiktok && <a className="btn ghost" href={`https://www.tiktok.com/@${THEME.tiktok}`} target="_blank" rel="noreferrer">Follow {first} on TikTok</a>}
     </div>
   )
 }

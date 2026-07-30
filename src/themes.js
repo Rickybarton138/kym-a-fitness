@@ -45,6 +45,8 @@ export const BRANDS = {
     tagline: 'The time to redefine is now.',
     logo: '/brands/paul/logo.png', // Paul's real ReDefine logo
     mark: 'RD',
+    instagram: 'paulandrewspt',
+    tiktok: 'paulandrewspt',
     scheme: 'dark',
     features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true },
     // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout). Ids map to
