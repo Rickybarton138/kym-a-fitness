@@ -1417,25 +1417,48 @@ function ClientReminders({ clientId, coachId }) {
 // The client's daily agenda names that day's session and starts it. dow uses JS
 // getDay() (0=Sun..6=Sat); rendered Mon-first.
 const SCHED_DOW = [[1, 'Monday'], [2, 'Tuesday'], [3, 'Wednesday'], [4, 'Thursday'], [5, 'Friday'], [6, 'Saturday'], [0, 'Sunday']]
+const CLIENT_TASK_KINDS = [
+  ['checkin', 'Check-in form'],
+  ['measurements', 'Measurements'],
+  ['weight', 'Weight'],
+  ['photos', 'Progress photos'],
+]
+const TASK_CADENCES = [['weekly', 'Weekly'], ['fortnightly', 'Fortnightly'], ['monthly', 'Monthly']]
 function WeeklySchedule({ clientId, coachId }) {
   const [templates, setTemplates] = useState([])
   const [sched, setSched] = useState({})
+  const [tasks, setTasks] = useState({})   // kind -> { dow, cadence }
   const [saved, setSaved] = useState(false)
 
   async function load() {
-    const [{ data: t }, { data: s }] = await Promise.all([
+    const [{ data: t }, { data: s }, { data: ct }] = await Promise.all([
       supabase.from('workout_templates').select('id, title').eq('coach_id', coachId).order('created_at', { ascending: false }),
       supabase.from('client_schedule').select('dow, template_id').eq('client_id', clientId),
+      supabase.from('client_tasks').select('kind, dow, cadence').eq('client_id', clientId),
     ])
     setTemplates(t || [])
     const map = {}; (s || []).forEach((r) => { map[r.dow] = r.template_id || '' }); setSched(map)
+    const tm = {}; (ct || []).forEach((r) => { tm[r.kind] = { dow: r.dow, cadence: r.cadence } }); setTasks(tm)
   }
   useEffect(() => { load() }, [])
+
+  const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 1000) }
 
   async function setDay(dow, template_id) {
     setSched((m) => ({ ...m, [dow]: template_id }))
     await supabase.from('client_schedule').upsert({ coach_id: coachId, client_id: clientId, dow, template_id: template_id || null, updated_at: new Date().toISOString() }, { onConflict: 'client_id,dow' })
-    setSaved(true); setTimeout(() => setSaved(false), 1000)
+    flash()
+  }
+
+  async function setTask(kind, dow, cadence) {
+    if (dow === '') {   // "Off" — remove the task
+      setTasks((m) => { const n = { ...m }; delete n[kind]; return n })
+      await supabase.from('client_tasks').delete().eq('client_id', clientId).eq('kind', kind)
+    } else {
+      setTasks((m) => ({ ...m, [kind]: { dow: Number(dow), cadence } }))
+      await supabase.from('client_tasks').upsert({ coach_id: coachId, client_id: clientId, kind, dow: Number(dow), cadence, updated_at: new Date().toISOString() }, { onConflict: 'client_id,kind' })
+    }
+    flash()
   }
 
   return (
@@ -1452,6 +1475,26 @@ function WeeklySchedule({ clientId, coachId }) {
             </select>
           </label>
         ))}
+      </div>
+
+      <p className="eyebrow" style={{ marginTop: 16 }}>Check-ins &amp; recurring tasks</p>
+      <p className="muted-note">Pick a day and how often for each. These sit alongside the day's session — a day can have both.</p>
+      <div className="stack" style={{ marginTop: 8 }}>
+        {CLIENT_TASK_KINDS.map(([kind, label]) => {
+          const cur = tasks[kind]
+          return (
+            <div className="task-row" key={kind}>
+              <span className="task-label">{label}</span>
+              <select className="ex-select task-day" value={cur ? cur.dow : ''} onChange={(e) => setTask(kind, e.target.value, cur?.cadence || 'weekly')}>
+                <option value="">Off</option>
+                {SCHED_DOW.map(([dow, l]) => <option key={dow} value={dow}>{l}</option>)}
+              </select>
+              <select className="ex-select task-cad" value={cur?.cadence || 'weekly'} disabled={!cur} onChange={(e) => setTask(kind, cur.dow, e.target.value)}>
+                {TASK_CADENCES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+          )
+        })}
       </div>
       {saved && <p className="logged-ok">Saved ✓</p>}
     </div>

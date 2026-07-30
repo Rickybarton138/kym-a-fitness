@@ -442,6 +442,22 @@ function AgendaItem({ done, label, sub, children }) {
   )
 }
 
+// A recurring client task (check-in / measurements / weight / photos) is due today
+// when the weekday matches and the cadence lands on this week or month.
+function taskDueToday(task, date = new Date()) {
+  if (date.getDay() !== task.dow) return false
+  if (task.cadence === 'monthly') return date.getDate() <= 7 // first matching weekday of the month
+  if (task.cadence === 'fortnightly') {
+    const wk = Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(2024, 0, 1)) / (7 * 86400000))
+    return wk % 2 === 0
+  }
+  return true // weekly
+}
+const TASK_META = {
+  measurements: { label: 'Take your measurements', go: 'body' },
+  weight: { label: 'Log your weight', go: 'body' },
+  photos: { label: 'Add progress photos', go: 'body' },
+}
 function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) {
   const coach = coachName?.split(' ')[0] || 'your coach'
   // One client-side date basis for the whole card (matches AccountabilityCard).
@@ -456,22 +472,25 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   const [todaySession, setTodaySession] = useState(null) // scheduled session for today (6C)
   const [reminders, setReminders] = useState([])         // coach's custom reminders
   const [remDone, setRemDone] = useState(() => new Set())
+  const [tasks, setTasks] = useState([])                 // coach-scheduled recurring tasks
 
   async function load() {
     const dow = new Date().getDay()
-    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }, { data: rem }, { data: rd }] = await Promise.all([
+    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }, { data: rem }, { data: rd }, { data: ct }] = await Promise.all([
       supabase.from('daily_steps').select('*').eq('client_id', profile.id).eq('day', today).maybeSingle(),
       supabase.from('workout_completions').select('id').eq('client_id', profile.id).eq('completed_on', today),
       supabase.from(THEME.features?.checkinForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
       supabase.from('client_schedule').select('template_id').eq('client_id', profile.id).eq('dow', dow).maybeSingle(),
       supabase.from('client_reminders').select('*').eq('client_id', profile.id).order('at_time', { ascending: true }),
       supabase.from('reminder_done').select('reminder_id').eq('client_id', profile.id).eq('done_on', today),
+      supabase.from('client_tasks').select('kind, dow, cadence').eq('client_id', profile.id),
     ])
     setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
     setTrainedToday((comps || []).length > 0)
     setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
     setReminders(rem || [])
     setRemDone(new Set((rd || []).map((x) => x.reminder_id)))
+    setTasks(ct || [])
     if (sc?.template_id) {
       const { data: tpl } = await supabase.from('workout_templates').select('*').eq('id', sc.template_id).maybeSingle()
       setTodaySession(tpl || null)
@@ -512,10 +531,12 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
 
   const stepsVal = steps?.steps || 0
   const checkedInToday = lastCheckin ? lastCheckin.slice(0, 10) === today : false
-  const isMonday = new Date().getDay() === 1
   const daysSince = lastCheckin ? (Date.now() - new Date(lastCheckin).getTime()) / 86400000 : 999
-  const checkinDue = isMonday || daysSince >= 7
+  // If the coach scheduled the check-in onto a day, honour that; else weekly/Monday default.
+  const checkinTask = tasks.find((t) => t.kind === 'checkin')
+  const checkinDue = checkinTask ? taskDueToday(checkinTask) : (new Date().getDay() === 1 || daysSince >= 7)
   const showCheckin = lastCheckin !== undefined && (checkedInToday || checkinDue)
+  const dueTasks = tasks.filter((t) => t.kind !== 'checkin' && taskDueToday(t))
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -554,6 +575,15 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
             {!checkedInToday && <button className="btn ghost sm" onClick={() => onGo('checkin')}>Open</button>}
           </AgendaItem>
         )}
+
+        {dueTasks.map((t) => {
+          const meta = TASK_META[t.kind]
+          return meta ? (
+            <AgendaItem key={t.kind} label={meta.label} sub={`From ${coach} · due today`}>
+              <button className="btn ghost sm" onClick={() => onGo(meta.go)}>Open</button>
+            </AgendaItem>
+          ) : null
+        })}
 
         {reminders.map((r) => {
           const done = remDone.has(r.id)
