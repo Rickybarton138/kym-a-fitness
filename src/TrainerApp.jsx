@@ -6,7 +6,7 @@ import { TrendChart, ExSets } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises } from './WorkoutRows.jsx'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
-import { readinessScore, readinessLight, loadMetrics, acwrFlag } from './monitoring.js'
+import { readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
@@ -762,14 +762,17 @@ function CoachGrowth({ clientId }) {
 function CoachMonitoring({ clientId }) {
   const [checkins, setCheckins] = useState([])
   const [loads, setLoads] = useState([])
+  const [soreness, setSoreness] = useState([])
   useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10)
     supabase.from('readiness_checkins').select('*').eq('client_id', clientId).order('checked_on', { ascending: true }).limit(60).then(({ data }) => setCheckins(data || []))
     supabase.from('session_loads').select('*').eq('client_id', clientId).order('session_on', { ascending: true }).limit(120).then(({ data }) => setLoads(data || []))
+    supabase.from('soreness_logs').select('pain').eq('client_id', clientId).eq('logged_on', today).then(({ data }) => setSoreness(data || []))
   }, [])
-  if (checkins.length === 0 && loads.length === 0) return null
+  if (checkins.length === 0 && loads.length === 0 && soreness.length === 0) return null
   const latest = checkins[checkins.length - 1]
   const score = readinessScore(latest)
-  const light = readinessLight(score)
+  const light = combinedReadiness(readinessLight(score), soreness)
   const metrics = loadMetrics(loads)
   const flag = acwrFlag(metrics.acwr)
   const trend = checkins.map((c) => ({ score: readinessScore(c) })).filter((x) => x.score != null)

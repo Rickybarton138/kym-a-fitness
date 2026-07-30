@@ -5,7 +5,7 @@ import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, 
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
-import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag } from './monitoring.js'
+import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel } from './WorkoutRows.jsx'
@@ -1137,6 +1137,7 @@ function Growth({ clientId, onBack }) {
 function Monitoring({ clientId, onBack }) {
   const [checkins, setCheckins] = useState([])
   const [loads, setLoads] = useState([])
+  const [soreness, setSoreness] = useState([])
   const [tab, setTab] = useState('status')
   const [w, setW] = useState({ sleep: 3, energy: 3, freshness: 3, mood: 3, motivation: 3 })
   const [savingC, setSavingC] = useState(false)
@@ -1147,11 +1148,13 @@ function Monitoring({ clientId, onBack }) {
   const [savedS, setSavedS] = useState(false)
 
   async function load() {
-    const [{ data: c }, { data: l }] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10)
+    const [{ data: c }, { data: l }, { data: sr }] = await Promise.all([
       supabase.from('readiness_checkins').select('*').eq('client_id', clientId).order('checked_on', { ascending: true }).limit(60),
       supabase.from('session_loads').select('*').eq('client_id', clientId).order('session_on', { ascending: true }).limit(120),
+      supabase.from('soreness_logs').select('pain').eq('client_id', clientId).eq('logged_on', today),
     ])
-    setCheckins(c || []); setLoads(l || [])
+    setCheckins(c || []); setLoads(l || []); setSoreness(sr || [])
   }
   useEffect(() => { load() }, [])
 
@@ -1172,7 +1175,8 @@ function Monitoring({ clientId, onBack }) {
   const todayStr = new Date().toISOString().slice(0, 10)
   const todayCheckin = checkins.filter((c) => c.checked_on === todayStr).slice(-1)[0]
   const score = readinessScore(todayCheckin)
-  const light = readinessLight(todayCheckin ? score : null)
+  // Soreness (rehab layer) can only pull today's readiness light down.
+  const light = combinedReadiness(readinessLight(todayCheckin ? score : null), soreness)
   const metrics = loadMetrics(loads)
   const flag = acwrFlag(metrics.acwr)
   const readinessTrend = checkins.map((c) => ({ score: readinessScore(c) })).filter((x) => x.score != null)
@@ -1684,25 +1688,37 @@ function Rehab({ clientId, coachName, onBack }) {
   const [sore, setSore] = useState({ body_region: BODY_REGIONS[0], pain: '' })
   const [saved, setSaved] = useState('')
 
+  const [error, setError] = useState('')
   async function load() {
-    const [{ data: inj }, { data: it }] = await Promise.all([
-      supabase.from('injuries').select('*').eq('client_id', clientId).neq('status', 'resolved').order('created_at', { ascending: false }),
-      supabase.from('rehab_protocol_items').select('*').eq('client_id', clientId).order('position', { ascending: true }),
-    ])
-    setInjuries(inj || []); setItems(it || [])
+    const { data: inj } = await supabase.from('injuries').select('*').eq('client_id', clientId).neq('status', 'resolved').order('created_at', { ascending: false })
+    setInjuries(inj || [])
+    // Only the drills for the athlete's active injuries.
+    const injIds = (inj || []).map((i) => i.id)
+    let its = []
+    if (injIds.length) {
+      const { data: prots } = await supabase.from('rehab_protocols').select('id').eq('client_id', clientId).in('injury_id', injIds)
+      const pIds = (prots || []).map((p) => p.id)
+      if (pIds.length) {
+        const { data } = await supabase.from('rehab_protocol_items').select('*').in('protocol_id', pIds).order('position', { ascending: true })
+        its = data || []
+      }
+    }
+    setItems(its)
   }
   useEffect(() => { load() }, [])
 
   const num = (v) => (v === '' ? null : Number(v))
   async function logSession(e) {
-    e.preventDefault()
-    await supabase.from('rehab_sessions').insert({ client_id: clientId, pain_before: num(sess.pain_before), pain_during: num(sess.pain_during), pain_after: num(sess.pain_after), rpe: num(sess.rpe), note: sess.note.trim() || null })
+    e.preventDefault(); setError('')
+    const { error: err } = await supabase.from('rehab_sessions').insert({ client_id: clientId, pain_before: num(sess.pain_before), pain_during: num(sess.pain_during), pain_after: num(sess.pain_after), rpe: num(sess.rpe), note: sess.note.trim() || null })
+    if (err) { setError(err.message); return }
     setSess({ pain_before: '', pain_during: '', pain_after: '', rpe: '', note: '' }); setSaved('Session logged ✓'); setTimeout(() => setSaved(''), 2000)
   }
   async function logSoreness(e) {
-    e.preventDefault()
+    e.preventDefault(); setError('')
     if (sore.pain === '') return
-    await supabase.from('soreness_logs').insert({ client_id: clientId, body_region: sore.body_region, pain: Number(sore.pain), note: null })
+    const { error: err } = await supabase.from('soreness_logs').insert({ client_id: clientId, body_region: sore.body_region, pain: Number(sore.pain), note: null })
+    if (err) { setError(err.message); return }
     setSore({ body_region: BODY_REGIONS[0], pain: '' }); setSaved('Soreness logged ✓'); setTimeout(() => setSaved(''), 2000)
   }
 
@@ -1717,6 +1733,7 @@ function Rehab({ clientId, coachName, onBack }) {
         <button type="button" className={tab === 'soreness' ? 'on' : ''} onClick={() => setTab('soreness')}>Soreness</button>
       </div>
       {saved && <p className="logged-ok">{saved}</p>}
+      {error && <p className="error">{error}</p>}
 
       {tab === 'plan' && (
         <div className="stack">
