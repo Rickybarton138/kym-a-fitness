@@ -11,10 +11,14 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [gymActive, setGymActive] = useState(true) // admin kill switch
+  const [recovery, setRecovery] = useState(false)  // arrived via a password-reset link
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true)
+      setSession(s)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 
@@ -51,6 +55,7 @@ export default function App() {
   }
 
   if (session === undefined) return <FullScreen>Loading…</FullScreen>
+  if (recovery) return <ResetPassword onDone={() => setRecovery(false)} />
   if (!session) return <AuthScreen />
   if (loadingProfile || !profile) return <FullScreen>Setting up your account…</FullScreen>
 
@@ -63,6 +68,49 @@ export default function App() {
   }
 
   return <ClientApp profile={profile} onSignOut={signOut} />
+}
+
+// Shown after a user clicks their password-reset email link. Supabase has already
+// put them in a temporary recovery session; they just set a new password here.
+function ResetPassword({ onDone }) {
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [ok, setOk] = useState(false)
+
+  async function save(e) {
+    e.preventDefault()
+    if (pw.length < 6) { setError('Use at least 6 characters.'); return }
+    if (pw !== pw2) { setError('The two passwords don’t match.'); return }
+    setBusy(true); setError('')
+    const { error } = await supabase.auth.updateUser({ password: pw })
+    setBusy(false)
+    if (error) { setError(error.message || 'Could not update your password.'); return }
+    setOk(true)
+    // Clean the recovery token out of the URL, then continue into the app.
+    try { window.history.replaceState(null, '', window.location.pathname) } catch { /* ignore */ }
+    setTimeout(onDone, 1200)
+  }
+
+  return (
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <div className="auth-brand">
+          {THEME.logo ? <img className="brand-logo" src={THEME.logo} alt={THEME.name} /> : <span className="brand-logo-badge">{THEME.mark}</span>}
+          <h1>{THEME.name}</h1>
+          <p className="muted">Set a new password</p>
+        </div>
+        <form className="auth-form" onSubmit={save}>
+          <label>New password<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={6} autoComplete="new-password" /></label>
+          <label>Confirm password<input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={6} autoComplete="new-password" /></label>
+          {error && <p className="error">{error}</p>}
+          {ok && <p className="notice">Password updated — signing you in…</p>}
+          <button className="btn primary big" disabled={busy || ok} type="submit">{busy ? 'Saving…' : 'Save new password'}</button>
+        </form>
+      </div>
+    </div>
+  )
 }
 
 function Suspended({ onSignOut }) {

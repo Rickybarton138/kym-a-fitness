@@ -2,8 +2,21 @@ import React, { useState, useEffect, useRef } from 'react'
 import { searchFoods } from './foods.js'
 import { mealByHour, MEALS } from './lib.js'
 
+// Local YYYY-MM-DD for today, and a noon-of-day ISO so a chosen day lands cleanly
+// on that date regardless of timezone.
+const todayStr = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const dayISO = (s) => new Date(s + 'T12:00:00').toISOString()
+const dayLabel = (s) => {
+  if (s === todayStr()) return 'today'
+  try { return new Date(s + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) } catch { return s }
+}
+
 // Type-search a food/drink (built-in list + live database), pick a portion, log
-// the macros. Or add anything manually if it isn't found.
+// the macros. Or add anything manually if it isn't found. Logs to today by default
+// but the day picker lets a client back-fill or pre-log a meal on any date.
 export function FoodSearch({ onLog, defaultMeal }) {
   const [q, setQ] = useState('')
   const [api, setApi] = useState([])
@@ -13,6 +26,7 @@ export function FoodSearch({ onLog, defaultMeal }) {
   const [logged, setLogged] = useState('')
   const [manual, setManual] = useState(false)
   const [meal, setMeal] = useState(defaultMeal || mealByHour())
+  const [day, setDay] = useState(todayStr())
   const timer = useRef(null)
 
   const local = searchFoods(q)
@@ -48,6 +62,7 @@ export function FoodSearch({ onLog, defaultMeal }) {
       fat_g: Math.round((selected.f || 0) * factor),
       fibre_g: Math.round((selected.fb || 0) * factor),
       meal_type: meal,
+      logged_at: dayISO(day),
     })
     setLogged(selected.n); setSelected(null); setQ(''); setApi([]); setGrams('')
     setTimeout(() => setLogged(''), 2200)
@@ -74,8 +89,11 @@ export function FoodSearch({ onLog, defaultMeal }) {
           <span><b>{Math.round((selected.f || 0) * factor)}g</b> fat</span>
           <span className="kcal"><b>{Math.round(selected.k * factor)}</b> kcal</span>
         </div>
-        <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-        <button className="btn primary" disabled={!g} onClick={logSelected}>Add to today</button>
+        <div className="grid-2">
+          <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+          <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
+        </div>
+        <button className="btn primary" disabled={!g} onClick={logSelected}>Add food{day !== todayStr() ? ` · ${dayLabel(day)}` : ''}</button>
       </div>
     )
   }
@@ -100,13 +118,16 @@ export function FoodSearch({ onLog, defaultMeal }) {
 
       {!manual
         ? <button className="btn ghost" onClick={() => setManual(true)}>Can’t find it? Add manually</button>
-        : <><label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-          <ManualFood onLog={(m) => { onLog({ ...m, meal_type: meal }); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} /></>}
+        : <><div className="grid-2">
+            <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+            <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
+          </div>
+          <ManualFood dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { onLog({ ...m, meal_type: meal, logged_at: dayISO(day) }); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} /></>}
     </div>
   )
 }
 
-function ManualFood({ onLog, onCancel }) {
+function ManualFood({ onLog, onCancel, dayLabel }) {
   const [name, setName] = useState('')
   const [kcal, setKcal] = useState('')
   const [p, setP] = useState('')
@@ -129,7 +150,7 @@ function ManualFood({ onLog, onCancel }) {
         <label className="field">Fibre (g)<input type="number" inputMode="decimal" value={fb} onChange={(e) => setFb(e.target.value)} /></label>
       </div>
       <div className="nudge-actions">
-        <button className="btn primary sm" disabled={!name.trim() || !kcal} onClick={add}>Add to today</button>
+        <button className="btn primary sm" disabled={!name.trim() || !kcal} onClick={add}>Add food{dayLabel ? ` · ${dayLabel}` : ''}</button>
         <button className="btn ghost sm" onClick={onCancel}>Cancel</button>
       </div>
     </div>

@@ -13,6 +13,20 @@ export default function AuthScreen() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  async function sendReset(e) {
+    e.preventDefault()
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin })
+      if (error) throw error
+      setNotice('If that email has an account, a reset link is on its way. Check your inbox (and spam).')
+    } catch (err) {
+      setError(err.message || 'Could not send the reset email.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function submit(e) {
     e.preventDefault()
     setBusy(true)
@@ -57,11 +71,26 @@ export default function AuthScreen() {
           <p className="muted">{THEME.tagline}</p>
         </div>
 
-        <div className="seg">
-          <button className={mode === 'signin' ? 'on' : ''} onClick={() => setMode('signin')} type="button">Sign in</button>
-          <button className={mode === 'signup' ? 'on' : ''} onClick={() => setMode('signup')} type="button">Create account</button>
-        </div>
+        {mode !== 'forgot' && (
+          <div className="seg">
+            <button className={mode === 'signin' ? 'on' : ''} onClick={() => setMode('signin')} type="button">Sign in</button>
+            <button className={mode === 'signup' ? 'on' : ''} onClick={() => setMode('signup')} type="button">Create account</button>
+          </div>
+        )}
 
+        {mode === 'forgot' ? (
+          <form className="auth-form" onSubmit={sendReset}>
+            <p className="muted" style={{ marginBottom: 4 }}>Enter your email and we’ll send you a link to set a new password.</p>
+            <label>
+              Email
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+            </label>
+            {error && <p className="error">{error}</p>}
+            {notice && <p className="notice">{notice}</p>}
+            <button className="btn primary big" disabled={busy} type="submit">{busy ? 'Sending…' : 'Send reset link'}</button>
+            <button type="button" className="link-btn" style={{ marginTop: 8 }} onClick={() => { setMode('signin'); setError(''); setNotice('') }}>Back to sign in</button>
+          </form>
+        ) : (
         <form className="auth-form" onSubmit={submit}>
           {mode === 'signup' && (
             <>
@@ -96,7 +125,11 @@ export default function AuthScreen() {
           <button className="btn primary big" disabled={busy} type="submit">
             {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </button>
+          {mode === 'signin' && (
+            <button type="button" className="link-btn" style={{ marginTop: 10 }} onClick={() => { setMode('forgot'); setError(''); setNotice('') }}>Forgot password?</button>
+          )}
         </form>
+        )}
       </div>
     </div>
   )

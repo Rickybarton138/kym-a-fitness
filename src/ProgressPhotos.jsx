@@ -5,10 +5,12 @@ import { supabase } from './supabaseClient.js'
 // and the coach's client detail — both just pass a clientId; RLS scopes access
 // (client sees own body_scans; coach sees their clients'). Signed URLs come from
 // the private body-photos bucket.
+const POSE_FILTERS = [['front', 'Front'], ['side', 'Side'], ['back', 'Back'], ['', 'All']]
 export function ProgressPhotos({ clientId }) {
   const [scans, setScans] = useState(null)
   const [urls, setUrls] = useState({})   // scan id -> signed url
   const [sel, setSel] = useState([])     // up to 2 selected ids to compare
+  const [poseF, setPoseF] = useState('front') // filter so front compares to front
 
   useEffect(() => {
     let alive = true
@@ -32,8 +34,14 @@ export function ProgressPhotos({ clientId }) {
   if (scans.length === 0) return <p className="muted-note">No progress photos yet — add one from the Body scan tab.</p>
 
   const scanById = (id) => scans.find((s) => s.id === id)
+  // Filter by pose (older no-pose scans count as "front"); comparing within one
+  // angle is the point — front vs front, not front vs side.
+  const shown = scans.filter((s) => poseF === '' || (s.pose || 'front') === poseF)
   return (
     <div className="stack">
+      <div className="seg four">
+        {POSE_FILTERS.map(([v, l]) => <button type="button" key={v || 'all'} className={poseF === v ? 'on' : ''} onClick={() => { setPoseF(v); setSel([]) }}>{l}</button>)}
+      </div>
       {sel.length === 2 && (
         <div className="card">
           <p className="eyebrow accent">Side by side</p>
@@ -51,8 +59,9 @@ export function ProgressPhotos({ clientId }) {
         </div>
       )}
       <p className="muted-note">{sel.length === 2 ? 'Comparing two — tap another photo to swap.' : 'Tap two photos to compare them side by side.'}</p>
+      {shown.length === 0 && <p className="muted-note">No {(POSE_FILTERS.find((p) => p[0] === poseF) || [])[1]?.toLowerCase()} photos yet.</p>}
       <div className="photo-grid">
-        {scans.map((s) => (
+        {shown.map((s) => (
           <button type="button" key={s.id} className={'photo-cell' + (sel.includes(s.id) ? ' on' : '')} onClick={() => toggle(s.id)}>
             {urls[s.id] ? <img src={urls[s.id]} alt="Progress" /> : <span className="muted-note">…</span>}
             <span className="photo-date">{(s.created_at || '').slice(0, 10)}</span>

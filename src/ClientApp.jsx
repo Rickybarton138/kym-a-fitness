@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, mealByHour, MEALS } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, mealByHour, MEALS } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -18,10 +18,15 @@ import { FoodDiary } from './FoodDiary.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
+import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
 import { formatAnswer } from './checkinForms.js'
 import { RTP_LADDER, BODY_REGIONS, availabilityOf, statusLabel } from './rehab.js'
 import { FoodSearch } from './FoodSearch.jsx'
+import { MealPlanBuilder } from './MealPlan.jsx'
+import { ClientMealPlan } from './MealPlans.jsx'
+import { ClientLifeCard, CycleTracker } from './LifeEvents.jsx'
+import { activeHoliday } from './lifeEvents.js'
 import { MuscleTargeter } from './MuscleTargeter.jsx'
 import { StravaConnect } from './StravaConnect.jsx'
 import { Classes } from './Classes.jsx'
@@ -67,6 +72,7 @@ export default function ClientApp({ profile, onSignOut }) {
   const [targets, setTargets] = useState(null)
   const [todayLogs, setTodayLogs] = useState([])
   const [measurements, setMeasurements] = useState([])
+  const [events, setEvents] = useState([])
   const [coachName, setCoachName] = useState('')
   const [heroImages, setHeroImages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -74,6 +80,7 @@ export default function ClientApp({ profile, onSignOut }) {
 
   async function loadAll() {
     setNutritionStyle(profile.nutrition_style)
+    setRecovery({ on: profile.nutrition_sensitive, note: profile.nutrition_sensitive_note })
     const [t, logs, meas] = await Promise.all([
       supabase.from('macro_targets').select('*').eq('client_id', profile.id).maybeSingle(),
       supabase.from('nutrition_logs').select('*').eq('client_id', profile.id).gte('logged_at', startOfTodayISO()).order('logged_at', { ascending: false }),
@@ -82,6 +89,10 @@ export default function ClientApp({ profile, onSignOut }) {
     setTargets(t.data || { protein_g: 150, carbs_g: 200, fat_g: 65, calories: 2200 })
     setTodayLogs(logs.data || [])
     setMeasurements(meas.data || [])
+    if (THEME.features?.events) {
+      const { data: ev } = await supabase.from('client_events').select('*').eq('client_id', profile.id).order('start_date', { ascending: true })
+      setEvents(ev || [])
+    }
     if (profile.trainer_id) {
       const { data } = await supabase.from('profiles').select('full_name').eq('id', profile.trainer_id).maybeSingle()
       setCoachName(data?.full_name || 'your coach')
@@ -121,13 +132,20 @@ export default function ClientApp({ profile, onSignOut }) {
     ? screen
     : (nav.find((n) => HUB_CHILDREN[n.id]?.includes(screen))?.id || screen)
 
-  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type }, source) {
+  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type, logged_at }, source) {
     const row = {
       client_id: profile.id, source, name: name || null, meal_type: meal_type || mealByHour(),
       protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, fibre_g: fibre_g || 0, calories: calories || 0,
+      ...(logged_at ? { logged_at } : {}),
     }
     const { data } = await supabase.from('nutrition_logs').insert(row).select().single()
-    if (data) setTodayLogs((l) => [data, ...l])
+    // Only reflect on the home "today" total if it's genuinely today — a meal
+    // logged for another day still shows on that day in the food diary.
+    if (data) {
+      const startToday = startOfTodayISO()
+      const startTomorrow = new Date(new Date(startToday).getTime() + 86400000).toISOString()
+      if (data.logged_at >= startToday && data.logged_at < startTomorrow) setTodayLogs((l) => [data, ...l])
+    }
   }
 
   async function saveTargets(next) {
@@ -155,7 +173,7 @@ export default function ClientApp({ profile, onSignOut }) {
       </header>
 
       <main className="screen">
-        {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} onGo={setScreen} onSaveTargets={saveTargets} />}
+        {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
@@ -176,7 +194,10 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'classes' && <Classes profile={profile} onBack={() => setScreen('home')} />}
         {screen === 'programs' && <ProgramLibrary clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'recipes' && <RecipeLibrary profile={profile} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
+        {screen === 'mealplan' && <MealPlanBuilder targets={targets} coachName={coachName} onLog={(m) => logFood(m, 'manual')} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'myplan' && <ClientMealPlan clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'cycle' && <CycleTracker clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'supplements' && <LinkList kind="supplement" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'podcasts' && <LinkList kind="podcast" coachName={coachName} onBack={() => setScreen('home')} />}
@@ -251,7 +272,7 @@ function HeroCarousel({ images }) {
   )
 }
 
-function Home({ profile, name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, workoutTick, onGo, onSaveTargets }) {
+function Home({ profile, name, coachName, heroImages, targets, consumed, remaining, foodLoggedToday, clientId, workoutTick, events, onGo, onSaveTargets }) {
   const [editing, setEditing] = useState(false)
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const pct = targets?.calories ? consumed.calories / targets.calories : 0
@@ -262,7 +283,8 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
       <h1 className="h1">Hi {name?.split(' ')[0] || 'there'} — let’s hit your numbers.</h1>
       {coachName && <p className="lead">Coached by {coachName}.</p>}
 
-      {THEME.features?.agenda && <AgendaCard profile={profile} coachName={coachName} foodLoggedToday={foodLoggedToday} workoutTick={workoutTick} onGo={onGo} />}
+      {THEME.features?.events && <ClientLifeCard profile={profile} events={events} coachName={coachName} />}
+      {THEME.features?.agenda && <AgendaCard profile={profile} coachName={coachName} foodLoggedToday={foodLoggedToday} workoutTick={workoutTick} events={events} onGo={onGo} />}
       <AccountabilityCard clientId={clientId} coachName={coachName} foodLoggedToday={foodLoggedToday} workoutTick={workoutTick} onGo={onGo} />
 
       <div className="card ring-card">
@@ -285,141 +307,79 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
 
       {editing && <TargetEditor targets={targets} onSave={(t) => { onSaveTargets(t); setEditing(false) }} />}
 
-      <div className="tiles">
-        <button className="tile tile-hero" onClick={() => onGo('fridge')}>
-          <IconFridge />
-          <div><b>Fridge-to-Plate</b><span>Snap your fridge, get a meal that fits your macros</span></div>
-        </button>
-        {THEME.features?.booking && (
-          <button className="tile tile-hero" onClick={() => onGo('classes')}>
-            <IconTrain />
-            <div><b>Book a class</b><span>See the timetable & book your spot</span></div>
-          </button>
-        )}
-        <button className="tile" onClick={() => onGo('train')}>
-          <IconTrain />
-          <div><b>Today’s session</b><span>A plan built for your gym’s kit</span></div>
-        </button>
-        {THEME.features?.programs && (
-          <button className="tile tile-hero" onClick={() => onGo('programs')}>
-            <IconTrain />
-            <div><b>Program library</b><span>Follow a full plan built by {coachFirst}</span></div>
-          </button>
-        )}
-        <button className="tile" onClick={() => onGo('muscles')}>
-          <IconTrain />
-          <div><b>Muscle targeter</b><span>Tap a muscle, get exercises to train it</span></div>
-        </button>
-        <button className="tile" onClick={() => onGo('meal')}>
-          <IconMeal />
-          <div><b>Scan a meal</b><span>Photo → calories & macros</span></div>
-        </button>
-        <button className="tile" onClick={() => onGo('food')}>
-          <IconMeal />
-          <div><b>Log food</b><span>Search foods & drinks, add your portion</span></div>
-        </button>
-        {THEME.features?.barcode && (
-          <button className="tile" onClick={() => onGo('barcode')}>
-            <IconMeal />
-            <div><b>Barcode scan</b><span>Scan a product, log it in a tap</span></div>
-          </button>
-        )}
-        {THEME.features?.recipes && (
-          <button className="tile" onClick={() => onGo('recipes')}>
-            <IconMeal />
-            <div><b>Recipes</b><span>{coachFirst}’s go-to meals, log in one tap</span></div>
-          </button>
-        )}
-        {THEME.features?.videos && (
-          <button className="tile" onClick={() => onGo('videos')}>
-            <IconForm />
-            <div><b>Video library</b><span>Technique & mindset clips from {coachFirst}</span></div>
-          </button>
-        )}
-        <button className="tile" onClick={() => onGo('body')}>
-          <IconBody />
-          <div><b>Body scan</b><span>Track your progress</span></div>
-        </button>
-        <button className="tile tile-hero" onClick={() => onGo('ask')}>
-          <IconAsk />
-          <div><b>Ask {coachFirst}</b><span>Get an answer in {coachFirst}’s method, any time</span></div>
-        </button>
-        <button className="tile" onClick={() => onGo('form')}>
-          <IconForm />
-          <div><b>Form check</b><span>Upload a clip — AI + {coachFirst} check your form</span></div>
-        </button>
-        <button className="tile" onClick={() => onGo('content')}>
-          <IconContent />
-          <div><b>From {coachFirst}</b><span>{coachFirst}’s latest posts & inspiration</span></div>
-        </button>
-        <button className="tile" onClick={() => onGo('community')}>
-          <IconCommunity />
-          <div><b>Community</b><span>Share wins & cheer each other on</span></div>
-        </button>
-        {THEME.features?.supplements && (
-          <button className="tile" onClick={() => onGo('supplements')}>
-            <IconMeal />
-            <div><b>Supplements</b><span>Trusted brands & your discount code</span></div>
-          </button>
-        )}
-        {THEME.features?.shop && (
-          <button className="tile" onClick={() => onGo('shop')}>
-            <IconContent />
-            <div><b>Shop</b><span>{coachFirst}’s book, merch &amp; gear</span></div>
-          </button>
-        )}
-        {THEME.features?.podcasts && (
-          <button className="tile" onClick={() => onGo('podcasts')}>
-            <IconContent />
-            <div><b>Podcasts</b><span>Listen to {coachFirst}’s episodes</span></div>
-          </button>
-        )}
-        {THEME.features?.files && (
-          <button className="tile" onClick={() => onGo('files')}>
-            <IconForm />
-            <div><b>Files</b><span>{coachFirst}’s guides &amp; resources</span></div>
-          </button>
-        )}
-        <button className="tile tile-hero" onClick={() => onGo('checkin')}>
-          <IconAsk />
-          <div><b>Weekly check-in</b><span>Send {coachFirst} your progress & how the week went</span></div>
-        </button>
-        <button className="tile" onClick={() => onGo('strava')}>
-          <IconBody />
-          <div><b>Connect Strava</b><span>Pull your runs, rides & workouts into the app</span></div>
-        </button>
-        {THEME.features?.testing && (
-          <button className="tile" onClick={() => onGo('testing')}>
-            <IconTest />
-            <div><b>Performance testing</b><span>Log your tests & track your PBs</span></div>
-          </button>
-        )}
-        {THEME.features?.nutritionExpert && (
-          <button className="tile tile-hero" onClick={() => onGo('expert')}>
-            <IconMeal />
-            <div><b>Nutrition Expert</b><span>Evidence-based sports nutrition, any time</span></div>
-          </button>
-        )}
-        {THEME.features?.monitoring && (
-          <button className="tile" onClick={() => onGo('monitoring')}>
-            <IconBody />
-            <div><b>Readiness &amp; load</b><span>Daily check-in & training-load tracking</span></div>
-          </button>
-        )}
-        {THEME.features?.rehab && (
-          <button className="tile" onClick={() => onGo('rehab')}>
-            <IconBody />
-            <div><b>My rehab</b><span>Your rehab plan, return-to-play & soreness</span></div>
-          </button>
-        )}
-        {THEME.features?.growth && (
-          <button className="tile" onClick={() => onGo('growth')}>
-            <IconTest />
-            <div><b>Growth tracker</b><span>Your height, growth & maturation</span></div>
-          </button>
-        )}
-      </div>
+      <HomeTiles coachFirst={coachFirst} onGo={onGo} />
     </div>
+  )
+}
+
+// Every Home tile, in the original flat order, tagged with the group it
+// belongs to. Brands without `features.groupedHome` render this flat (same
+// order/output as before — Kim/PPH/BBL/Elev8 untouched); Paul renders it
+// chunked under section headers instead (his ask: "group things into sections
+// or widgets", his Home tab was one 25-tile wall).
+function homeTileDefs(coachFirst) {
+  return [
+    { id: 'fridge', group: 'Nutrition', hero: true, show: true, Icon: IconFridge, title: 'Fridge-to-Plate', sub: 'Snap your fridge, get a meal that fits your macros' },
+    { id: 'classes', group: 'Training', hero: true, show: THEME.features?.booking, Icon: IconTrain, title: 'Book a class', sub: 'See the timetable & book your spot' },
+    { id: 'train', group: 'Training', show: true, Icon: IconTrain, title: 'Today’s session', sub: 'A plan built for your gym’s kit' },
+    { id: 'programs', group: 'Training', hero: true, show: THEME.features?.programs, Icon: IconTrain, title: 'Program library', sub: `Follow a full plan built by ${coachFirst}` },
+    { id: 'muscles', group: 'Training', show: true, Icon: IconTrain, title: 'Muscle targeter', sub: 'Tap a muscle, get exercises to train it' },
+    { id: 'meal', group: 'Nutrition', show: true, Icon: IconMeal, title: 'Scan a meal', sub: 'Photo → calories & macros' },
+    { id: 'food', group: 'Nutrition', show: true, Icon: IconMeal, title: 'Log food', sub: 'Search foods & drinks, add your portion' },
+    { id: 'barcode', group: 'Nutrition', show: THEME.features?.barcode, Icon: IconMeal, title: 'Barcode scan', sub: 'Scan a product, log it in a tap' },
+    { id: 'recipes', group: 'Nutrition', show: THEME.features?.recipes, Icon: IconMeal, title: 'Recipes', sub: `${coachFirst}’s go-to meals, log in one tap` },
+    { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'Build a day around your targets' },
+    { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
+    { id: 'videos', group: 'Training', show: THEME.features?.videos, Icon: IconForm, title: 'Video library', sub: `Technique & mindset clips from ${coachFirst}` },
+    { id: 'body', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Body scan', sub: 'Track your progress' },
+    { id: 'cycle', group: 'Progress & Body', show: THEME.features?.cycle, Icon: IconBody, title: 'Cycle', sub: 'Log your period, train with your body' },
+    { id: 'ask', group: 'Coach & Community', hero: true, show: true, Icon: IconAsk, title: `Ask ${coachFirst}`, sub: `Get an answer in ${coachFirst}’s method, any time` },
+    { id: 'form', group: 'Coach & Community', show: true, Icon: IconForm, title: 'Form check', sub: `Upload a clip — AI + ${coachFirst} check your form` },
+    { id: 'content', group: 'Coach & Community', show: true, Icon: IconContent, title: `From ${coachFirst}`, sub: `${coachFirst}’s latest posts & inspiration` },
+    { id: 'community', group: 'Coach & Community', show: true, Icon: IconCommunity, title: 'Community', sub: 'Share wins & cheer each other on' },
+    { id: 'supplements', group: 'Coach & Community', show: THEME.features?.supplements, Icon: IconMeal, title: 'Supplements', sub: 'Trusted brands & your discount code' },
+    { id: 'shop', group: 'Coach & Community', show: THEME.features?.shop, Icon: IconContent, title: 'Shop', sub: `${coachFirst}’s book, merch & gear` },
+    { id: 'podcasts', group: 'Coach & Community', show: THEME.features?.podcasts, Icon: IconContent, title: 'Podcasts', sub: `Listen to ${coachFirst}’s episodes` },
+    { id: 'files', group: 'Coach & Community', show: THEME.features?.files, Icon: IconForm, title: 'Files', sub: `${coachFirst}’s guides & resources` },
+    { id: 'checkin', group: 'Progress & Body', hero: true, show: true, Icon: IconAsk, title: 'Weekly check-in', sub: `Send ${coachFirst} your progress & how the week went` },
+    { id: 'strava', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
+    { id: 'testing', group: 'Training', show: THEME.features?.testing, Icon: IconTest, title: 'Performance testing', sub: 'Log your tests & track your PBs' },
+    { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
+    { id: 'monitoring', group: 'Progress & Body', show: THEME.features?.monitoring, Icon: IconBody, title: 'Readiness & load', sub: 'Daily check-in & training-load tracking' },
+    { id: 'rehab', group: 'Progress & Body', show: THEME.features?.rehab, Icon: IconBody, title: 'My rehab', sub: 'Your rehab plan, return-to-play & soreness' },
+    { id: 'growth', group: 'Progress & Body', show: THEME.features?.growth, Icon: IconTest, title: 'Growth tracker', sub: 'Your height, growth & maturation' },
+  ]
+}
+const HOME_GROUPS = ['Nutrition', 'Training', 'Progress & Body', 'Coach & Community']
+
+function HomeTile({ t, onGo }) {
+  const Icon = t.Icon
+  return (
+    <button className={'tile' + (t.hero ? ' tile-hero' : '')} onClick={() => onGo(t.id)}>
+      <Icon />
+      <div><b>{t.title}</b><span>{t.sub}</span></div>
+    </button>
+  )
+}
+
+function HomeTiles({ coachFirst, onGo }) {
+  const tiles = homeTileDefs(coachFirst).filter((t) => t.show)
+  if (!THEME.features?.groupedHome) {
+    return <div className="tiles">{tiles.map((t) => <HomeTile key={t.id} t={t} onGo={onGo} />)}</div>
+  }
+  return (
+    <>
+      {HOME_GROUPS.map((g) => {
+        const group = tiles.filter((t) => t.group === g)
+        if (!group.length) return null
+        return (
+          <div className="tile-group" key={g}>
+            <p className="tile-group-title">{g}</p>
+            <div className="tiles">{group.map((t) => <HomeTile key={t.id} t={t} onGo={onGo} />)}</div>
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -465,8 +425,9 @@ const TASK_META = {
   measurements: { label: 'Take your measurements', go: 'body' },
   weight: { label: 'Log your weight', go: 'body' },
   photos: { label: 'Add progress photos', go: 'body' },
+  payment: { label: 'Membership payment due', go: null },
 }
-function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) {
+function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, onGo }) {
   const coach = coachName?.split(' ')[0] || 'your coach'
   // One client-side date basis for the whole card (matches AccountabilityCard).
   const today = new Date().toISOString().slice(0, 10)
@@ -478,13 +439,15 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   const [marking, setMarking] = useState(false)
   const [lastCheckin, setLastCheckin] = useState(undefined)
   const [todaySession, setTodaySession] = useState(null) // scheduled session for today (6C)
+  const [scheduledPlan, setScheduledPlan] = useState(null) // client self-scheduled a library session for today
+  const [programToday, setProgramToday] = useState(null)   // today's session from an assigned multi-week programme
   const [reminders, setReminders] = useState([])         // coach's custom reminders
   const [remDone, setRemDone] = useState(() => new Set())
   const [tasks, setTasks] = useState([])                 // coach-scheduled recurring tasks
 
   async function load() {
     const dow = new Date().getDay()
-    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }, { data: rem }, { data: rd }, { data: ct }] = await Promise.all([
+    const [{ data: ds }, { data: comps }, { data: ci }, { data: sc }, { data: rem }, { data: rd }, { data: ct }, { data: sp }] = await Promise.all([
       supabase.from('daily_steps').select('*').eq('client_id', profile.id).eq('day', today).maybeSingle(),
       supabase.from('workout_completions').select('id').eq('client_id', profile.id).eq('completed_on', today),
       supabase.from(THEME.features?.checkinForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', profile.id).order('created_at', { ascending: false }).limit(1),
@@ -492,7 +455,34 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
       supabase.from('client_reminders').select('*').eq('client_id', profile.id).order('at_time', { ascending: true }),
       supabase.from('reminder_done').select('reminder_id').eq('client_id', profile.id).eq('done_on', today),
       supabase.from('client_tasks').select('kind, dow, cadence').eq('client_id', profile.id),
+      supabase.from('workout_plans').select('id, title').eq('client_id', profile.id).eq('scheduled_for', today).order('created_at', { ascending: false }).limit(1),
     ])
+    setScheduledPlan((sp && sp[0]) || null)
+
+    // Active multi-week programme → compute which session lands today (advances by
+    // week from the start date; wraps if set to repeat).
+    let progToday = null
+    const { data: cp } = await supabase.from('client_programs')
+      .select('program_id, start_date, repeat, workout_programs(title)')
+      .eq('client_id', profile.id).eq('active', true).order('created_at', { ascending: false }).limit(1)
+    if (cp && cp[0]) {
+      const asg = cp[0]
+      const { data: psess } = await supabase.from('program_sessions').select('week, dow, title, focus, exercises, finisher').eq('program_id', asg.program_id)
+      const list = psess || []
+      const cycleWeeks = list.reduce((mx, s) => Math.max(mx, s.week || 1), 1)
+      const startMid = new Date(asg.start_date + 'T00:00:00')
+      const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
+      const diffDays = Math.floor((todayMid - startMid) / 86400000)
+      if (diffDays >= 0) {
+        let weekNum = Math.floor(diffDays / 7) + 1
+        if (weekNum > cycleWeeks) weekNum = asg.repeat ? ((weekNum - 1) % cycleWeeks) + 1 : null
+        if (weekNum) {
+          const sess = list.find((s) => (s.week || 1) === weekNum && s.dow === new Date().getDay())
+          if (sess) progToday = { sess, weekNum, title: asg.workout_programs?.title || 'Your program' }
+        }
+      }
+    }
+    setProgramToday(progToday)
     setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
     setTrainedToday((comps || []).length > 0)
     setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
@@ -507,10 +497,12 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   useEffect(() => { load() }, [foodLoggedToday, workoutTick])
 
   async function startTodaySession() {
-    if (!todaySession) return
+    // Prefer the assigned programme's session for today, else the weekly-scheduled template.
+    const src = programToday?.sess || todaySession
+    if (!src) { onGo(THEME.nav ? 'trainhub' : 'train'); return }
     await supabase.from('workout_plans').insert({
-      client_id: profile.id, title: todaySession.title, focus: todaySession.focus || 'Session',
-      exercises: todaySession.exercises || [], finisher: todaySession.finisher || null, assigned_by: null,
+      client_id: profile.id, title: src.title, focus: src.focus || 'Session',
+      exercises: src.exercises || [], finisher: src.finisher || null, assigned_by: null,
     })
     onGo('train')
   }
@@ -543,8 +535,11 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
   // If the coach scheduled the check-in onto a day, honour that; else weekly/Monday default.
   const checkinTask = tasks.find((t) => t.kind === 'checkin')
   const checkinDue = checkinTask ? taskDueToday(checkinTask) : (new Date().getDay() === 1 || daysSince >= 7)
-  const showCheckin = lastCheckin !== undefined && (checkedInToday || checkinDue)
-  const dueTasks = tasks.filter((t) => t.kind !== 'checkin' && taskDueToday(t))
+  // Holiday mode: while a client is away, pause accountability prompts (check-in,
+  // measurements, weight, photos) but keep payment reminders — money's still due.
+  const onHoliday = activeHoliday(events)
+  const showCheckin = !onHoliday && lastCheckin !== undefined && (checkedInToday || checkinDue)
+  const dueTasks = tasks.filter((t) => t.kind !== 'checkin' && taskDueToday(t) && !(onHoliday && t.kind !== 'payment'))
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
@@ -567,12 +562,15 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
 
         <AgendaItem
           done={trainedToday}
-          label={!trainedToday && todaySession ? `Today: ${todaySession.title}` : 'Train'}
-          sub={trainedToday ? 'Session done — great work' : (todaySession ? 'Your planned session is ready' : 'Rest day — add a session if you fancy it')}
+          label={!trainedToday && (programToday || todaySession || scheduledPlan) ? `Today: ${(programToday?.sess || todaySession || scheduledPlan).title}` : 'Train'}
+          sub={trainedToday ? 'Session done — great work'
+            : programToday ? `Week ${programToday.weekNum} · ${programToday.title}`
+            : (todaySession || scheduledPlan) ? 'Your planned session is ready'
+            : 'Rest day — add a session if you fancy it'}
         >
           {!trainedToday && (
             <span className="agenda-steps">
-              <button className="btn primary sm" onClick={todaySession ? startTodaySession : () => onGo(THEME.nav ? 'trainhub' : 'train')}>Start</button>
+              <button className="btn primary sm" onClick={(programToday || todaySession) ? startTodaySession : () => onGo(THEME.nav ? 'trainhub' : 'train')}>Start</button>
               <button className="btn ghost sm" disabled={marking} onClick={markTrained}>Done</button>
             </span>
           )}
@@ -588,7 +586,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, onGo }) 
           const meta = TASK_META[t.kind]
           return meta ? (
             <AgendaItem key={t.kind} label={meta.label} sub={`From ${coach} · due today`}>
-              <button className="btn ghost sm" onClick={() => onGo(meta.go)}>Open</button>
+              {meta.go && <button className="btn ghost sm" onClick={() => onGo(meta.go)}>Open</button>}
             </AgendaItem>
           ) : null
         })}
@@ -1412,11 +1410,20 @@ function AiPlan({ clientId, onSaved }) {
   const [goal, setGoal] = useState('Push')
   const [state, setState] = useState('idle')
   const [error, setError] = useState('')
+  const [equip, setEquip] = useState(null) // { data, preview } — optional photo of available kit
+  const equipRef = useRef(null)
+
+  async function pickEquip(e) {
+    const file = e.target.files?.[0]; if (!file) return
+    setError('')
+    try { const data = await scaleImageToBase64(file, 1000); setEquip({ data, preview: URL.createObjectURL(file) }) }
+    catch { setError('Could not read that photo — try another.') }
+  }
 
   async function generate() {
     setState('loading'); setError('')
     try {
-      const json = await analyze({ mode: 'workout', goal, equipment: THEME.equipment, gymName: THEME.trainGymName })
+      const json = await analyze({ mode: 'workout', goal, equipment: THEME.equipment, gymName: THEME.trainGymName, ...(equip ? { image: equip.data, mediaType: 'image/jpeg' } : {}) })
       const { data } = await supabase.from('workout_plans').insert({
         client_id: clientId, title: json.title, focus: json.focus,
         exercises: json.exercises || [], finisher: json.finisher || null,
@@ -1431,12 +1438,16 @@ function AiPlan({ clientId, onSaved }) {
 
   return (
     <div className="stack">
-      <p className="lead">Pick a focus and the AI writes a session using only the kit at {THEME.trainGymName}.</p>
+      <p className="lead">Pick a focus and the AI writes a session using {equip ? 'the equipment in your photo' : `only the kit at ${THEME.trainGymName}`}.</p>
       <div className="focus-row">
         {FOCUS_OPTIONS.map((f) => (
           <button key={f} className={'focus-chip' + (goal === f ? ' on' : '')} onClick={() => setGoal(f)}>{f}</button>
         ))}
       </div>
+      <input ref={equipRef} type="file" accept="image/*" capture="environment" hidden onChange={pickEquip} />
+      {!equip
+        ? <button type="button" className="btn ghost sm" onClick={() => equipRef.current?.click()}>Training somewhere else? Snap the equipment you’ve got</button>
+        : <div className="stack"><div className="shot"><img src={equip.preview} alt="Your equipment" /></div><button type="button" className="link-btn inline" onClick={() => equipRef.current?.click()}>Retake</button>{' · '}<button type="button" className="link-btn inline" onClick={() => setEquip(null)}>Use my usual gym</button></div>}
       {state !== 'loading' && <button className="btn primary big" onClick={generate}>Generate a session</button>}
       {state === 'loading' && <Loader text="Writing your session…" />}
       {state === 'done' && <p className="logged-ok">Added to your sessions ✓</p>}
@@ -1494,6 +1505,8 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
   const [sessions, setSessions] = useState({})
   const [startedId, setStartedId] = useState(null)
   const [filters, setFilters] = useState({})
+  const [schedDay, setSchedDay] = useState({})
+  const todayLocal = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
 
   useEffect(() => {
     supabase.from('workout_programs').select('*').order('created_at', { ascending: false })
@@ -1513,11 +1526,13 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
 
   async function startSession(ps) {
     setStartedId(ps.id)
+    const when = schedDay[ps.id] || todayLocal
     await supabase.from('workout_plans').insert({
       client_id: clientId, title: ps.title, focus: ps.focus || 'Session',
       exercises: ps.exercises || [], finisher: ps.finisher || null, assigned_by: null,
+      scheduled_for: when,
     })
-    setTimeout(() => setStartedId(null), 2500)
+    setTimeout(() => setStartedId(null), 2800)
   }
 
   return (
@@ -1525,7 +1540,7 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
       <button className="link-btn" onClick={onBack}>‹ Back</button>
       <p className="eyebrow accent">Program library</p>
       <h1 className="h1">Follow a plan.</h1>
-      <p className="muted-note">Structured programs built by {coachFirst}. Open one and start any session — it drops into your sessions to log.</p>
+      <p className="muted-note">Structured programs built by {coachFirst}. Open one, pick a session and add it to your plan on a day — it shows on your agenda, ready to start.</p>
 
       {programs === null && <Loader text="Loading programs…" />}
       {programs !== null && programs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs yet — {coachFirst} will add them here.</p>}
@@ -1568,9 +1583,15 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
                       ))}
                       {ps.finisher && <p className="finisher"><b>Finisher:</b> {ps.finisher}</p>}
                     </ol>
-                    <button type="button" className="btn primary sm" onClick={() => startSession(ps)}>
-                      {startedId === ps.id ? 'Added to your sessions ✓' : 'Start this session'}
-                    </button>
+                    <div className="grid-2" style={{ marginTop: 4 }}>
+                      <label className="field">Add to day
+                        <input type="date" value={schedDay[ps.id] || todayLocal} min={todayLocal}
+                          onChange={(e) => setSchedDay((m) => ({ ...m, [ps.id]: e.target.value || todayLocal }))} />
+                      </label>
+                      <button type="button" className="btn primary sm" style={{ alignSelf: 'end' }} onClick={() => startSession(ps)}>
+                        {startedId === ps.id ? 'Added to your plan ✓' : 'Add to my plan'}
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {sessions[pr.id] && sessions[pr.id].length === 0 && <p className="muted-note">Sessions coming soon.</p>}
@@ -1590,6 +1611,8 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
   const [loggedId, setLoggedId] = useState(null)
   const [copiedId, setCopiedId] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [q, setQ] = useState('')
+  const [tag, setTag] = useState('')
   const clientId = profile?.id
 
   async function load() {
@@ -1597,6 +1620,14 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
     setRecipes(data || [])
   }
   useEffect(() => { load() }, [])
+
+  const allTags = Array.from(new Set((recipes || []).flatMap((r) => r.tags || []).map((t) => String(t).trim()).filter(Boolean))).sort()
+  const shown = (recipes || []).filter((r) => {
+    const okTag = !tag || (r.tags || []).includes(tag)
+    const hay = (r.title + ' ' + (r.tags || []).join(' ') + ' ' + (r.description || '')).toLowerCase()
+    const okQ = !q.trim() || hay.includes(q.trim().toLowerCase())
+    return okTag && okQ
+  })
 
   function log(r) {
     onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, fibre_g: r.fibre_g || 0, calories: r.calories || 0 })
@@ -1616,13 +1647,30 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
       {clientId && <button className="btn ghost" style={{ marginTop: 12 }} onClick={() => setCreating(true)}>+ Create a recipe</button>}
       {recipes === null && <Loader text="Loading recipes…" />}
       {recipes !== null && recipes.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No recipes yet — add your own or {coachFirst} will add some.</p>}
+      {recipes !== null && recipes.length > 0 && (
+        <>
+          <input className="food-input" style={{ marginTop: 12 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search recipes — e.g. high protein, lunch…" />
+          {allTags.length > 0 && (
+            <div className="serving-chips" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+              <button type="button" className={tag === '' ? 'on' : ''} onClick={() => setTag('')}>All</button>
+              {allTags.map((t) => <button type="button" key={t} className={tag === t ? 'on' : ''} onClick={() => setTag(tag === t ? '' : t)}>{t}</button>)}
+            </div>
+          )}
+        </>
+      )}
+      {recipes !== null && recipes.length > 0 && shown.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No recipes match — try another search or tag.</p>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {(recipes || []).map((r) => (
+        {shown.map((r) => (
           <div className="card" key={r.id}>
-            {r.image_url && <img className="link-img" src={r.image_url} alt={r.title} loading="lazy" />}
+            {(r.image_path || r.image_url) && <img className="link-img" src={r.image_path ? supabase.storage.from('content-images').getPublicUrl(r.image_path).data.publicUrl : r.image_url} alt={r.title} loading="lazy" />}
             <div className="session-title">{r.title}{r.client_id ? <span className="muted-note"> · yours</span> : ''}</div>
             <div className="session-sub">{[r.calories ? r.calories + ' kcal' : null, r.protein_g ? r.protein_g + 'g P' : null, r.carbs_g ? r.carbs_g + 'g C' : null, r.fat_g ? r.fat_g + 'g F' : null].filter(Boolean).join(' · ')}{r.serving_label ? ' · ' + r.serving_label : ''}</div>
             {r.description && <p className="muted-note" style={{ marginTop: 6 }}>{r.description}</p>}
+            {(r.tags || []).length > 0 && (
+              <div className="serving-chips" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                {(r.tags || []).map((t) => <button type="button" key={t} className={tag === t ? 'on' : ''} onClick={() => setTag(tag === t ? '' : t)}>{t}</button>)}
+              </div>
+            )}
             <div className="nudge-actions">
               <button className="btn primary sm" onClick={() => log(r)}>{loggedId === r.id ? 'Added to today ✓' : 'Log this meal'}</button>
               {(r.ingredients || []).length > 0 && <button className="btn ghost sm" onClick={() => copyShopping(r)}>{copiedId === r.id ? 'Copied ✓' : 'Shopping list'}</button>}
@@ -2235,6 +2283,36 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
     if (data) { onUpdate && onUpdate(data); setEditing(false) }
   }
 
+  // Flag an exercise you can't do (injury / no kit) and let the AI swap in an
+  // alternative, keeping the same sets. Persists to this plan.
+  const [swapFor, setSwapFor] = useState(null)
+  const [swapReason, setSwapReason] = useState('')
+  const [swapBusy, setSwapBusy] = useState(false)
+  const [swapSug, setSwapSug] = useState(null)
+  const [swapErr, setSwapErr] = useState('')
+  const [swapImg, setSwapImg] = useState(null)
+  const [showSwapCam, setShowSwapCam] = useState(false)
+  function openSwap(i) { setSwapFor(i); setSwapReason(''); setSwapSug(null); setSwapErr(''); setSwapImg(null) }
+  async function pickSwapImg(file) {
+    if (!file) return
+    try { setSwapImg(await scaleImageToBase64(file, 1000)) } catch { setSwapErr('Could not read that photo.') }
+  }
+  async function findAlt(i) {
+    setSwapBusy(true); setSwapSug(null); setSwapErr('')
+    try {
+      const res = await fetch('/.netlify/functions/exercise-swap', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: exs[i].name, reason: swapReason, ...(swapImg ? { image: swapImg, mediaType: 'image/jpeg' } : {}) }) })
+      const j = await res.json()
+      if (j.name) setSwapSug(j); else setSwapErr(j.error || 'No suggestion — try again.')
+    } catch { setSwapErr('Could not get a suggestion.') }
+    setSwapBusy(false)
+  }
+  async function applySwap(i) {
+    if (!swapSug?.name) return
+    const next = exs.map((ex, j) => (j === i ? { ...ex, name: swapSug.name, cue: swapSug.cue ? `Swapped in — ${swapSug.cue}` : ex.cue } : ex))
+    const { data } = await supabase.from('workout_plans').update({ exercises: next }).eq('id', plan.id).select().single()
+    if (data) { onUpdate && onUpdate(data); setSwapFor(null); setSwapSug(null); setSwapReason('') }
+  }
+
   return (
     <div className="card session-card">
       <button type="button" className="session-head" onClick={() => setOpen((o) => !o)}>
@@ -2259,6 +2337,30 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
                       : <div className="ex-name">{ex.name}</div>}
                     <ExSets ex={ex} />
                     {ex.cue && <div className="ex-cue">{ex.cue}</div>}
+                    {!squadLocked && (swapFor === i ? (
+                      <div className="swap-panel" style={{ marginTop: 6 }}>
+                        <input className="food-input" value={swapReason} onChange={(e) => setSwapReason(e.target.value)} placeholder="Why can't you do it? e.g. sore knee, no cable machine" />
+                        <button type="button" className="link-btn inline" style={{ marginTop: 6 }} onClick={() => setShowSwapCam(true)}>{swapImg ? 'Equipment photo added ✓ — retake' : 'Snap what you’ve got (optional)'}</button>
+                        {swapErr && <p className="error" style={{ marginTop: 4 }}>{swapErr}</p>}
+                        {swapSug && (
+                          <div className="card" style={{ background: 'var(--surface-2)', marginTop: 6 }}>
+                            <div className="ex-name">{swapSug.name}</div>
+                            {swapSug.cue && <div className="ex-cue">{swapSug.cue}</div>}
+                          </div>
+                        )}
+                        <div className="nudge-actions" style={{ marginTop: 6 }}>
+                          {!swapSug
+                            ? <button type="button" className="btn primary sm" disabled={swapBusy} onClick={() => findAlt(i)}>{swapBusy ? 'Finding…' : 'Find alternative'}</button>
+                            : <>
+                              <button type="button" className="btn primary sm" onClick={() => applySwap(i)}>Use this swap</button>
+                              <button type="button" className="btn ghost sm" disabled={swapBusy} onClick={() => findAlt(i)}>{swapBusy ? 'Finding…' : 'Try another'}</button>
+                            </>}
+                          <button type="button" className="btn ghost sm" onClick={() => setSwapFor(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" className="link-btn inline" style={{ marginTop: 4 }} onClick={() => openSwap(i)}>Can’t do this? Swap it</button>
+                    ))}
                   </div>
                 </li>,
               ]
@@ -2289,6 +2391,7 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
         </div>
       )}
       {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
+      {showSwapCam && <CameraCapture onCapture={(file) => { setShowSwapCam(false); pickSwapImg(file) }} onClose={() => setShowSwapCam(false)} />}
     </div>
   )
 }
@@ -2300,14 +2403,14 @@ function FridgeScan({ remaining, onLog }) {
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
   const [logged, setLogged] = useState(false)
-  const inputRef = useRef(null)
+  const [showCam, setShowCam] = useState(false)
 
-  async function onPick(e) {
-    const file = e.target.files?.[0]; if (!file) return
+  async function handleFile(file) {
+    if (!file) return
     setLogged(false); setPreview(URL.createObjectURL(file)); setState('loading'); setError('')
     try {
-      const { mediaType, data } = await fileToBase64(file)
-      const json = await analyze({ mode: 'fridge', image: data, mediaType, remaining })
+      const data = await scaleImageToBase64(file, 900)
+      const json = await analyze({ mode: 'fridge', image: data, mediaType: 'image/jpeg', remaining })
       setResult(json); setState('done')
     } catch (err) { setError(err.message); setState('error') }
   }
@@ -2317,11 +2420,10 @@ function FridgeScan({ remaining, onLog }) {
       <p className="eyebrow">Fridge-to-Plate</p>
       <h1 className="h1">What’s in the fridge?</h1>
       <p className="lead">Photograph your fridge or cupboard. The AI builds a meal that fits your <b>{remaining.calories} kcal</b> and <b>{remaining.protein_g}g protein</b> left today.</p>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPick} />
       {preview && <div className="shot"><img src={preview} alt="Your fridge" /></div>}
-      {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Scan my fridge</button>}
+      {state === 'idle' && <button className="btn primary big" onClick={() => setShowCam(true)}>Scan my fridge</button>}
       {state === 'loading' && <Loader text="Reading your ingredients…" />}
-      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => inputRef.current?.click()}>Try another photo</button></div>}
+      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => setShowCam(true)}>Try another photo</button></div>}
       {state === 'done' && result && (
         <div className="stack">
           <div className="chips">{result.ingredients?.map((ing, i) => <span className="chip" key={i}>{ing}</span>)}</div>
@@ -2333,9 +2435,10 @@ function FridgeScan({ remaining, onLog }) {
             <p className="fit-note">{result.meal?.fit_note}</p>
             {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog(result.meal); setLogged(true) }}>Log this meal</button>}
           </div>
-          <button className="btn ghost" onClick={() => inputRef.current?.click()}>Scan again</button>
+          <button className="btn ghost" onClick={() => setShowCam(true)}>Scan again</button>
         </div>
       )}
+      {showCam && <CameraCapture onCapture={(file) => { setShowCam(false); handleFile(file) }} onClose={() => setShowCam(false)} />}
     </div>
   )
 }
@@ -2349,14 +2452,14 @@ function MealScan({ onLog }) {
   const [logged, setLogged] = useState(false)
   const [cooking, setCooking] = useState('')
   const [meal, setMeal] = useState(mealByHour())
-  const inputRef = useRef(null)
+  const [showCam, setShowCam] = useState(false)
 
-  async function onPick(e) {
-    const file = e.target.files?.[0]; if (!file) return
+  async function handleFile(file) {
+    if (!file) return
     setLogged(false); setPreview(URL.createObjectURL(file)); setState('loading'); setError('')
     try {
-      const { mediaType, data } = await fileToBase64(file)
-      const json = await analyze({ mode: 'meal', image: data, mediaType, extras: cooking.trim() || undefined })
+      const data = await scaleImageToBase64(file, 900)
+      const json = await analyze({ mode: 'meal', image: data, mediaType: 'image/jpeg', extras: cooking.trim() || undefined })
       setResult(json); setState('done')
     } catch (err) { setError(err.message); setState('error') }
   }
@@ -2366,16 +2469,15 @@ function MealScan({ onLog }) {
       <p className="eyebrow">Meal scan</p>
       <h1 className="h1">Snap your plate.</h1>
       <p className="lead">Photograph any meal and the AI logs the calories and macros — no manual food diary.</p>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPick} />
       {state === 'idle' && (
         <label className="field">Cooked with any oil, butter, dressing or sauce? (optional — improves accuracy)
           <input value={cooking} onChange={(e) => setCooking(e.target.value)} placeholder="e.g. 1 tbsp olive oil, a spoon of mayo" />
         </label>
       )}
       {preview && <div className="shot"><img src={preview} alt="Your meal" /></div>}
-      {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Scan my meal</button>}
+      {state === 'idle' && <button className="btn primary big" onClick={() => setShowCam(true)}>Scan my meal</button>}
       {state === 'loading' && <Loader text="Identifying your meal…" />}
-      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => inputRef.current?.click()}>Try another photo</button></div>}
+      {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => setShowCam(true)}>Try another photo</button></div>}
       {state === 'done' && result && (
         <div className="stack">
           <div className="card meal-card">
@@ -2386,9 +2488,10 @@ function MealScan({ onLog }) {
             <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
             {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog({ ...result, name: result.food_name, meal_type: meal }); setLogged(true) }}>Add to today</button>}
           </div>
-          <button className="btn ghost" onClick={() => inputRef.current?.click()}>Scan again</button>
+          <button className="btn ghost" onClick={() => setShowCam(true)}>Scan again</button>
         </div>
       )}
+      {showCam && <CameraCapture onCapture={(file) => { setShowCam(false); handleFile(file) }} onClose={() => setShowCam(false)} />}
     </div>
   )
 }
@@ -2443,13 +2546,15 @@ function Body({ measurements, onAdd, clientId, coachName }) {
   )
 }
 
+const BODY_POSES = [['front', 'Front'], ['side', 'Side'], ['back', 'Back']]
 function BodyScan({ clientId, coachName }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [scans, setScans] = useState([])
   const [state, setState] = useState('idle') // idle | scanning | done | error
   const [summary, setSummary] = useState('')
   const [error, setError] = useState('')
-  const inputRef = useRef(null)
+  const [pose, setPose] = useState('front')
+  const [showCam, setShowCam] = useState(false)
 
   async function load() {
     const { data } = await supabase.from('body_scans').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(20)
@@ -2457,14 +2562,16 @@ function BodyScan({ clientId, coachName }) {
   }
   useEffect(() => { load() }, [])
 
-  async function onPick(e) {
-    const file = e.target.files?.[0]; if (!file) return
+  async function handleFile(file) {
+    if (!file) return
     setError(''); setSummary(''); setState('scanning')
     try {
       const current = await scaleImageToBase64(file, 800)
-      // Include the most recent prior scan photo so the AI can compare change.
+      // Compare against the most recent prior photo of the SAME pose (front vs
+      // front), so the AI reads real change not a change of angle. Older scans
+      // with no pose count as "front" for back-compatibility.
       let frames = [current]
-      const prev = scans[0]
+      const prev = scans.find((s) => (s.pose || 'front') === pose) || null
       if (prev) {
         try {
           const { data: signed } = await supabase.storage.from('body-photos').createSignedUrl(prev.photo_path, 300)
@@ -2478,24 +2585,29 @@ function BodyScan({ clientId, coachName }) {
       if (s) setSummary(s)
       const up = await uploadPromise
       if (up.error) throw new Error(up.error.message)
-      const { data } = await supabase.from('body_scans').insert({ client_id: clientId, photo_path: path, summary: s || null }).select().single()
+      const { data } = await supabase.from('body_scans').insert({ client_id: clientId, photo_path: path, summary: s || null, pose }).select().single()
       if (data) setScans((c) => [data, ...c])
       setState('done')
     } catch (err) { setError(err.message); setState('error') }
   }
 
   const first = scans.length === 0
+  const poseLabel = (BODY_POSES.find((p) => p[0] === pose) || [])[1] || 'Front'
   return (
     <div className="stack">
       <p className="lead">{first
-        ? 'Take a full-body progress photo — this becomes your baseline. Next time, the AI compares and shows what’s changed.'
-        : 'Take a new full-body photo and the AI compares it to your last scan to show what’s changed.'}</p>
-      <input ref={inputRef} type="file" accept="image/*" hidden onChange={onPick} />
-      {state !== 'scanning' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>{first ? 'Add my first scan' : 'Add a new scan'}</button>}
+        ? 'Take front, side and back photos — these become your baseline. Each time, the AI compares the same angle so you see real change.'
+        : 'Add a front, side or back photo and the AI compares it to your last one of that angle.'}</p>
+      <p className="eyebrow">Angle</p>
+      <div className="seg" style={{ marginBottom: 4 }}>
+        {BODY_POSES.map(([v, l]) => <button type="button" key={v} className={pose === v ? 'on' : ''} onClick={() => setPose(v)}>{l}</button>)}
+      </div>
+      {state !== 'scanning' && <button className="btn primary big" onClick={() => setShowCam(true)}>Add {poseLabel.toLowerCase()} photo</button>}
       {state === 'scanning' && <Loader text="Scanning your progress…" />}
       {summary && <div className="card"><div className="fc-block"><b>{first ? 'Your baseline' : 'Since your last scan'}</b><p>{summary}</p></div></div>}
       {state === 'error' && <p className="error">{error}</p>}
       <p className="disclaimer-note">Photos are private to you and {coachFirst}. AI reads visible change only — it can’t measure exact inches or body-fat, so treat figures as estimates.</p>
+      {showCam && <CameraCapture onCapture={(file) => { setShowCam(false); handleFile(file) }} onClose={() => setShowCam(false)} />}
       {scans.map((sc) => <BodyScanCard key={sc.id} scan={sc} />)}
     </div>
   )
@@ -2507,9 +2619,10 @@ function BodyScanCard({ scan }) {
     supabase.storage.from('body-photos').createSignedUrl(scan.photo_path, 3600).then(({ data }) => setUrl(data?.signedUrl || null))
   }, [])
   const when = (scan.created_at || '').slice(0, 10)
+  const poseLbl = scan.pose ? scan.pose[0].toUpperCase() + scan.pose.slice(1) : null
   return (
     <div className="card">
-      <p className="eyebrow accent">Scan · {when}</p>
+      <p className="eyebrow accent">{poseLbl ? poseLbl + ' · ' : 'Scan · '}{when}</p>
       {url ? <div className="shot"><img src={url} alt="Progress scan" /></div> : <p className="muted-note">Loading photo…</p>}
       {scan.summary && <div className="fc-block"><p>{scan.summary}</p></div>}
     </div>
@@ -2890,6 +3003,12 @@ function NutritionHub({ profile, coachName, onGo }) {
           <button className="tile" onClick={() => onGo('recipes')}>
             <IconMeal />
             <div><b>Recipes</b><span>{coachFirst}’s go-to meals, log in one tap</span></div>
+          </button>
+        )}
+        {THEME.features?.mealPlans && (
+          <button className="tile tile-hero" onClick={() => onGo('mealplan')}>
+            <IconMeal />
+            <div><b>Meal plan</b><span>Build a day around your targets</span></div>
           </button>
         )}
         <button className="tile" onClick={() => onGo('calc')}>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './supabaseClient.js'
-import { fileToBase64 } from './lib.js'
+import { scaleImageToBase64 } from './lib.js'
 
 // Create a recipe three ways: import from a link, build your own (ingredients +
 // servings -> per-portion macros), or paste text / snap a screenshot (great for
@@ -65,8 +65,8 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
   const importPaste = () => paste.trim() && callAI({ text: paste.trim() })
   async function importPhoto(e) {
     const file = e.target.files?.[0]; if (!file) return
-    const { mediaType, data } = await fileToBase64(file)
-    callAI({ image: data, mediaType })
+    const data = await scaleImageToBase64(file, 900)
+    callAI({ image: data, mediaType: 'image/jpeg' })
   }
 
   function buildDraft() {

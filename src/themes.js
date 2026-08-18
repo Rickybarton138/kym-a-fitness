@@ -12,7 +12,7 @@ export const BRANDS = {
     logo: '/logo.jpg',
     mark: 'CBK',
     instagram: 'cbk_coachedbykim',
-    features: { activityFeed: true },
+    features: { activityFeed: true, videos: true, coachMealPlans: true, progressHub: true, agenda: true, events: true, cycle: true },
     trainGymName: 'South Coast Power House',
     equipment: [
       'Squat racks & Olympic benches',
@@ -48,7 +48,7 @@ export const BRANDS = {
     instagram: 'paulandrewspt',
     tiktok: 'paulandrewspt',
     scheme: 'dark',
-    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true },
+    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true, nutritionSupport: true, groupedHome: true },
     // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout). Ids map to
     // screens/hubs in ClientApp; label overrides the per-id default. Brands
     // without a `nav` keep the default six-tab bar, so Kim/PPH/BBL are untouched.
@@ -125,17 +125,18 @@ export const BRANDS = {
     },
   },
 
-  // Elev8 (Bournemouth) — Hyrox / functional-fitness gym. Bold, high-energy.
-  // Near-black + electric lime. Placeholder look until Elev8's real logo/colours.
+  // Elev8u (Bournemouth) — Hyrox / functional-fitness gym. Matches their REAL
+  // brand exactly: green circle "E" mark (#45b263) + navy wordmark on white.
+  // Light scheme so their navy logo + clean white identity carry through — no
+  // re-brand. Green is the accent; button text is dark-green for AA contrast.
   elev8: {
     slug: 'elev8',
-    name: 'Elev8',
+    name: 'Elev8u',
     tagline: 'Train. Race. Elevate.',
     logo: '/brands/elev8/logo.png',
-    mark: 'E8',
-    scheme: 'dark',
+    mark: 'E',
     features: { testing: true, squads: true, squadMode: true, monitoring: true, nutritionExpert: true, activityFeed: true, exerciseGuides: true },
-    trainGymName: 'Elev8',
+    trainGymName: 'Elev8u',
     equipment: [
       'Sled track — push & pull',
       'SkiErg & Concept2 rowers',
@@ -145,17 +146,17 @@ export const BRANDS = {
       'Running lanes',
     ],
     vars: {
-      '--bg': '#0b0d0a',
-      '--surface': '#14170f',
-      '--surface-2': '#1e2217',
-      '--line': '#2c3323',
-      '--text': '#f2f5ec',
-      '--muted': '#9aa48f',
-      '--accent': '#c2f542',
-      '--accent-hi': '#d4ff5e',
-      '--on-accent': '#0b0d0a',
-      '--gold': '#c2f542',
-      '--ring-track': '#2c3323',
+      '--bg': '#f4f7f9',
+      '--surface': '#ffffff',
+      '--surface-2': '#eaeff3',
+      '--line': '#d9e1e8',
+      '--text': '#161f2e',
+      '--muted': '#64748b',
+      '--accent': '#45b263',
+      '--accent-hi': '#379a52',
+      '--on-accent': '#ffffff',
+      '--gold': '#45b263',
+      '--ring-track': '#e0e7ec',
       '--radius': '12px',
     },
   },
@@ -205,6 +206,7 @@ const HOST_BRAND = {
   'www.redefineacademy.com': 'paul',
   'coached-by-kim.netlify.app': 'kim',
   'the-physical-performance-hub.netlify.app': 'pph',
+  'elev8-hyrox.netlify.app': 'elev8',
 }
 
 function resolveBrandSlug() {

@@ -24,11 +24,19 @@ export function setPersona(p) { activePersona = p }
 let activeNutritionStyle = null
 export function setNutritionStyle(s) { activeNutritionStyle = s || null }
 
+// Recovery-aware nutrition mode (set from the client's profile after login). When
+// on, it's attached to every AI call so nutrition guidance is gentle and never
+// pushes restriction/deficit. { on, note } — note = what they find hard.
+let activeRecovery = null
+export function setRecovery(r) { activeRecovery = r && r.on ? { on: true, note: r.note || '' } : null }
+export function getRecovery() { return activeRecovery }
+
 // Call the serverless Claude proxy.
 export async function analyze(payload) {
   let body = payload
   if (activePersona && !body.persona) body = { ...body, persona: activePersona }
   if (activeNutritionStyle && !body.nutritionStyle) body = { ...body, nutritionStyle: activeNutritionStyle }
+  if (activeRecovery && !body.recovery) body = { ...body, recovery: activeRecovery }
   const res = await fetch('/.netlify/functions/analyze', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -104,11 +112,31 @@ export async function scaleImageToBase64(file, max = 800) {
     canvas.width = Math.round(bmp.width * scale)
     canvas.height = Math.round(bmp.height * scale)
     canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height)
-    const b64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1]
+    bmp.close?.() // free the decoded full-res bitmap immediately (iOS memory)
+    const b64 = canvas.toDataURL('image/jpeg', 0.82).split(',')[1]
+    canvas.width = canvas.height = 0 // release the canvas buffer too
     if (b64) return b64
   } catch { /* fall through to raw read */ }
   const { data } = await fileToBase64(file)
   return data
+}
+
+// Downscale a picked image to a JPEG Blob for upload to Storage (keeps files
+// small + converts iOS HEIC to JPEG so every browser can render it).
+export async function scaleImageToBlob(file, max = 1000) {
+  try {
+    const bmp = await createImageBitmap(file)
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bmp.width * scale)
+    canvas.height = Math.round(bmp.height * scale)
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height)
+    bmp.close?.()
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.82))
+    canvas.width = canvas.height = 0
+    if (blob) return blob
+  } catch { /* fall through */ }
+  return file // last resort: upload the raw file
 }
 
 // Fetch an image URL (e.g. a signed Storage URL) and return scaled base64 JPEG.

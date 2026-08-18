@@ -17,6 +17,7 @@ export const EXERCISE_GROUPS = [
       'Barbell Bench Press', 'Incline Barbell Press', 'Dumbbell Bench Press',
       'Incline Dumbbell Press', 'Chest Press (Hammer Strength)', 'Pec Deck / Chest Fly',
       'Cable Chest Fly', 'Overhead Press (barbell)', 'Dumbbell Shoulder Press',
+      'Landmine Press', 'Arnold Press',
       'Shoulder Press (machine)', 'Dumbbell Lateral Raise', 'Cable Lateral Raise',
       'Triceps Pushdown (cable)', 'Overhead Triceps Extension', 'Dip',
     ],
@@ -25,7 +26,8 @@ export const EXERCISE_GROUPS = [
     label: 'Back & Biceps',
     options: [
       'Lat Pulldown (cable)', 'Seated Cable Row', 'Bent-over Barbell Row',
-      'Single-arm Dumbbell Row', 'Chest-Supported Row (machine)', 'Pull-up / Assisted Pull-up',
+      'T-Bar Row', 'Landmine Row', 'Single-arm Dumbbell Row', 'Meadows Row',
+      'Chest-Supported Row (machine)', 'Pull-up / Assisted Pull-up', 'Chin-up',
       'Face Pull (cable)', 'Barbell Curl', 'Dumbbell Curl', 'Hammer Curl',
       'Cable Curl', 'Preacher Curl',
     ],

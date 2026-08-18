@@ -4,7 +4,7 @@
 // workout_programs; location/equipment/audience were added by migration.
 export const PROGRAM_DIMS = [
   { key: 'location',  label: 'Location',  options: [['gym', 'Gym'], ['home', 'Home'], ['both', 'Home or gym']] },
-  { key: 'equipment', label: 'Equipment', options: [['full', 'Full kit'], ['minimal', 'Minimal kit'], ['bodyweight', 'Bodyweight']] },
+  { key: 'equipment', label: 'Equipment', options: [['full', 'Full kit'], ['minimal', 'Minimal kit'], ['bodyweight', 'Bodyweight'], ['barbell', 'Barbell only'], ['dumbbell', 'Dumbbell only'], ['trx', 'TRX']] },
   { key: 'audience',  label: 'For',       options: [['all', 'Everyone'], ['women', 'Women'], ['men', 'Men']] },
   { key: 'goal',      label: 'Goal',      options: [['lose', 'Fat loss'], ['maintain', 'Maintain'], ['gain', 'Build muscle'], ['performance', 'Performance']] },
 ]

@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona } from './lib.js'
+import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob } from './lib.js'
 import { TrendChart, ExSets } from './ui.jsx'
-import { ExerciseRowsEditor, newExerciseRow, rowsToExercises } from './WorkoutRows.jsx'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm } from './WorkoutRows.jsx'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
@@ -16,6 +16,8 @@ import { printClientReport } from './report.js'
 import { CoachVald, ValdTests } from './VALD.jsx'
 import { FoodDiary } from './FoodDiary.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
+import { CoachMealPlans, ClientMealPlanPanel } from './MealPlans.jsx'
+import { ClientEventsCoach, ClientDob, CoachCycle, TodayCelebrations } from './LifeEvents.jsx'
 import { PROGRAM_DIMS, programTagLabel } from './programMeta.js'
 import { FIELD_TYPES, newField, paulTemplate, formatAnswer } from './checkinForms.js'
 import { pushSupported, pushStatus, enablePush, disablePush, isIOS, isStandalone } from './push.js'
@@ -44,6 +46,27 @@ export default function TrainerApp({ profile, onSignOut }) {
     setSquads(data || [])
   }
   useEffect(() => { loadClients(); if (THEME.features?.squads) loadSquads() }, [])
+
+  // Keep the coach where they were: a phone app-switch reloads the PWA and would
+  // otherwise drop them back on the dashboard. Persist the open client/squad and
+  // restore it once the lists have loaded.
+  useEffect(() => {
+    if (loading) return
+    if (!selected) {
+      const id = sessionStorage.getItem('cbk_coach_sel')
+      if (id) { const c = clients.find((x) => x.id === id); if (c) setSelected(c) }
+    }
+    if (!selectedSquad) {
+      const id = sessionStorage.getItem('cbk_coach_squad')
+      if (id) { const s = squads.find((x) => x.id === id); if (s) setSelectedSquad(s) }
+    }
+  }, [loading, clients, squads])
+  useEffect(() => {
+    try { selected ? sessionStorage.setItem('cbk_coach_sel', selected.id) : sessionStorage.removeItem('cbk_coach_sel') } catch { /* ignore */ }
+  }, [selected])
+  useEffect(() => {
+    try { selectedSquad ? sessionStorage.setItem('cbk_coach_squad', selectedSquad.id) : sessionStorage.removeItem('cbk_coach_squad') } catch { /* ignore */ }
+  }, [selectedSquad])
 
   function copyCode() {
     navigator.clipboard?.writeText(profile.trainer_code || '')
@@ -93,6 +116,8 @@ export default function TrainerApp({ profile, onSignOut }) {
 
         <HeroImageSetting profile={profile} />
 
+        {THEME.features?.events && <TodayCelebrations clients={clients} />}
+
         {THEME.features?.crm ? (
           <CoachMembers clients={clients} loading={loading} onOpen={setSelected} />
         ) : (
@@ -123,6 +148,7 @@ export default function TrainerApp({ profile, onSignOut }) {
         {THEME.features?.templates && <CoachTemplates coachId={profile.id} />}
         {THEME.features?.programs && <CoachPrograms coachId={profile.id} />}
         {THEME.features?.recipes && <CoachRecipes coachId={profile.id} />}
+        {THEME.features?.coachMealPlans && <CoachMealPlans coachId={profile.id} clients={clients} />}
         {THEME.features?.videos && <CoachVideos coachId={profile.id} />}
         {(THEME.features?.supplements || THEME.features?.shop || THEME.features?.podcasts) && <CoachLinks coachId={profile.id} />}
         {THEME.features?.checkinForms && <CheckinFormBuilder coachId={profile.id} />}
@@ -223,6 +249,90 @@ function CoachActivity({ profile, clients, onOpenClient }) {
   )
 }
 
+// Quick adherence read for a client: sessions completed, days food logged, and how
+// recently they checked in / took measurements. Coach reads via is_my_client RLS.
+function ClientAdherence({ clientId }) {
+  const [a, setA] = useState(null)
+  useEffect(() => {
+    (async () => {
+      const now = Date.now()
+      const d7 = new Date(now - 7 * 86400000).toISOString().slice(0, 10)
+      const iso7 = new Date(now - 7 * 86400000).toISOString()
+      const d30 = new Date(now - 30 * 86400000).toISOString().slice(0, 10)
+      const useForms = THEME.features?.checkinForms
+      const [comp7, comp30, food, ci, meas] = await Promise.all([
+        supabase.from('workout_completions').select('completed_on').eq('client_id', clientId).gte('completed_on', d7),
+        supabase.from('workout_completions').select('id').eq('client_id', clientId).gte('completed_on', d30),
+        supabase.from('nutrition_logs').select('logged_at, calories').eq('client_id', clientId).gte('logged_at', iso7),
+        supabase.from(useForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
+        supabase.from('body_measurements').select('weight_kg, measured_at').eq('client_id', clientId).order('measured_at', { ascending: false }).limit(30),
+      ])
+      const days = new Set((food.data || []).map((r) => (r.logged_at || '').slice(0, 10))); days.delete('')
+      // Kim's "add it all up and divide by seven" — total calories over the week
+      // averaged across all 7 days (blank days count as zero, as she asked).
+      const totalCal = (food.data || []).reduce((s, r) => s + (Number(r.calories) || 0), 0)
+      const avgCal = Math.round(totalCal / 7)
+      // Lowest bodyweight of the week — only from weigh-ins in the last 7 days.
+      const wk = (meas.data || []).filter((r) => r.measured_at && r.measured_at >= d7 && r.weight_kg != null)
+      const lowW = wk.length ? Math.min(...wk.map((r) => Number(r.weight_kg))) : null
+      setA({
+        s7: (comp7.data || []).length, s30: (comp30.data || []).length, foodDays: days.size,
+        lastCi: ci.data?.[0]?.created_at || null, lastMeas: meas.data?.[0]?.measured_at || null,
+        avgCal, foodLogged: (food.data || []).length > 0, lowW,
+      })
+    })()
+  }, [clientId])
+  const ago = (d) => {
+    if (!d) return 'None yet'
+    const n = Math.floor((Date.now() - new Date(d).getTime()) / 86400000)
+    return n <= 0 ? 'Today' : n === 1 ? 'Yesterday' : `${n}d ago`
+  }
+  if (!a) return null
+  return (
+    <div className="card">
+      <p className="eyebrow">Adherence · last 7 days</p>
+      <div className="metrics-2" style={{ marginTop: 8 }}>
+        <Metric k="Sessions done" v={String(a.s7)} d={`${a.s30} in 30d`} />
+        <Metric k="Days food logged" v={`${a.foodDays} / 7`} />
+        <Metric k="Avg calories / day" v={a.foodLogged ? `${a.avgCal}` : '—'} d="week total ÷ 7" />
+        <Metric k="Lowest weight (7d)" v={a.lowW != null ? `${a.lowW} kg` : '—'} />
+        <Metric k="Last check-in" v={ago(a.lastCi)} />
+        <Metric k="Last measurement" v={ago(a.lastMeas)} />
+      </div>
+    </div>
+  )
+}
+
+// Coach control for recovery-aware nutrition. Flags a client who has struggled
+// with disordered eating (+ what they find hard) so the whole nutrition AI turns
+// gentle and never pushes restriction. Sensitive — worded with care.
+function NutritionSupport({ client }) {
+  const [on, setOn] = useState(!!client.nutrition_sensitive)
+  const [note, setNote] = useState(client.nutrition_sensitive_note || '')
+  const [saved, setSaved] = useState(false)
+  const first = (client.full_name || 'this client').split(' ')[0]
+  async function save() {
+    const { error } = await supabase.rpc('set_nutrition_support', { p_client: client.id, p_on: on, p_note: note.trim() || null })
+    if (!error) { setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  }
+  return (
+    <div className="card">
+      <p className="eyebrow">Nutrition support</p>
+      <p className="muted-note">For clients who’ve struggled with disordered eating. Turn this on and the whole nutrition side — meal ideas, the AI coach, scans — becomes gentle: it never suggests cutting calories, restricting or losing weight, and it supports eating enough. Private to you and {first}.</p>
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
+        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} style={{ width: 'auto' }} />
+        {first} has struggled with disordered eating
+      </label>
+      {on && (
+        <label className="field" style={{ marginTop: 8 }}>What do they find hardest? (optional — guides the AI)
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. increasing calories, fear foods, eating regularly" />
+        </label>
+      )}
+      <button className="btn primary" style={{ marginTop: 10 }} onClick={save}>{saved ? 'Saved ✓' : 'Save'}</button>
+    </div>
+  )
+}
+
 function ClientDetail({ client, trainerId, onBack }) {
   const [targets, setTargets] = useState(null)
   const [today, setToday] = useState({ protein_g: 0, carbs_g: 0, fat_g: 0, calories: 0 })
@@ -274,6 +384,20 @@ function ClientDetail({ client, trainerId, onBack }) {
   const set = (k) => (e) => setTargets((s) => ({ ...s, [k]: Number(e.target.value) || 0 }))
   const latest = measurements[measurements.length - 1]
   const first = measurements[0]
+  // Macro rule (Paul): fat <= 25% of calories, protein 2.0 g/kg bodyweight, carbs
+  // fill the rest. One tap snaps the targets to it; the readout flags breaches.
+  const bw = latest?.weight_kg ? Number(latest.weight_kg) : null
+  const r5 = (n) => Math.max(0, Math.round(n / 5) * 5)
+  function applyMacroRule() {
+    const cal = Number(targets?.calories) || 0
+    if (!cal || !bw) return
+    const protein_g = r5(2.0 * bw)
+    const fat_g = r5((cal * 0.25) / 9)
+    const carbs_g = r5((cal - protein_g * 4 - fat_g * 9) / 4)
+    setTargets((s) => ({ ...s, protein_g, carbs_g, fat_g }))
+  }
+  const fatPct = targets?.calories ? Math.round(((targets.fat_g * 9) / targets.calories) * 100) : null
+  const protPerKg = bw && targets?.protein_g ? (targets.protein_g / bw) : null
 
   return (
     <div className="app">
@@ -285,6 +409,8 @@ function ClientDetail({ client, trainerId, onBack }) {
       <main className="screen">
         {loading ? <p className="muted-note">Loading…</p> : (
           <div className="stack">
+            <ClientAdherence clientId={client.id} />
+
             <div className="card">
               <p className="eyebrow">Membership</p>
               <div className="seg small" style={{ marginTop: 8 }}>
@@ -299,6 +425,14 @@ function ClientDetail({ client, trainerId, onBack }) {
             </div>
 
             {THEME.features?.tags && <ClientTags clientId={client.id} coachId={trainerId} />}
+
+            {THEME.features?.events && <ClientDob client={client} />}
+
+            {THEME.features?.events && <ClientEventsCoach clientId={client.id} coachId={trainerId} />}
+
+            {THEME.features?.cycle && <CoachCycle clientId={client.id} />}
+
+            {THEME.features?.agenda && <WeekPlanner clientId={client.id} coachId={trainerId} />}
 
             {THEME.features?.agenda && <WeeklySchedule clientId={client.id} coachId={trainerId} />}
 
@@ -320,6 +454,10 @@ function ClientDetail({ client, trainerId, onBack }) {
               <MacroRowSmall m={today} target={targets} />
             </div>
 
+            {THEME.features?.nutritionSupport && <NutritionSupport client={client} />}
+
+            {THEME.features?.coachMealPlans && <ClientMealPlanPanel clientId={client.id} coachId={trainerId} />}
+
             <div className="card">
               <p className="eyebrow">Set macro targets</p>
               <div className="grid-2">
@@ -328,10 +466,26 @@ function ClientDetail({ client, trainerId, onBack }) {
                 <label className="field">Carbs (g)<input type="number" value={targets.carbs_g} onChange={set('carbs_g')} /></label>
                 <label className="field">Fat (g)<input type="number" value={targets.fat_g} onChange={set('fat_g')} /></label>
               </div>
-              <button className="btn primary" onClick={saveTargets}>{saved ? 'Saved ✓' : 'Save targets'}</button>
+              {(fatPct != null || protPerKg != null) && (
+                <p className="muted-note" style={{ marginTop: 4 }}>
+                  {fatPct != null && <span style={{ color: fatPct > 25 ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>Fat {fatPct}% of calories{fatPct > 25 ? ' — over the 25% cap' : ''}</span>}
+                  {protPerKg != null && <span style={{ color: (protPerKg < 1.5 || protPerKg > 2.2) ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>{'  ·  '}Protein {protPerKg.toFixed(1)} g/kg{(protPerKg < 1.5 || protPerKg > 2.2) ? ' — outside 1.5–2.2' : ''}</span>}
+                </p>
+              )}
+              <div className="nudge-actions">
+                <button className="btn primary sm" onClick={saveTargets}>{saved ? 'Saved ✓' : 'Save targets'}</button>
+                {bw && <button type="button" className="btn ghost sm" onClick={applyMacroRule} title="Protein 2g/kg, fat 25% of calories, carbs fill the rest">Apply the rule</button>}
+              </div>
+              {!bw && <p className="muted-note" style={{ marginTop: 6 }}>Add a bodyweight in their measurements to auto-apply the protein rule.</p>}
             </div>
 
             <AssignWorkout clientId={client.id} trainerId={trainerId} onAssigned={(p) => setPlans((pl) => [p, ...pl])} />
+
+            {THEME.features?.programs && <CoachPrograms coachId={trainerId} clientId={client.id} clientName={client.full_name} />}
+
+            {THEME.features?.programs && <AssignProgram clientId={client.id} coachId={trainerId} clientName={client.full_name} />}
+
+            {THEME.features?.programs && <ApplyProgramSchedule clientId={client.id} coachId={trainerId} />}
 
             <div className="card">
               <p className="eyebrow">Messages</p>
@@ -383,7 +537,7 @@ function ClientDetail({ client, trainerId, onBack }) {
               <p className="eyebrow">Their sessions</p>
               <p className="muted-note">Tap a session to see the exercises, sets, reps and weights they’ve logged.</p>
               {plans.length === 0 && <p className="muted-note">No sessions yet.</p>}
-              {plans.map((p) => <CoachSessionCard key={p.id} plan={p} trainerId={trainerId} />)}
+              {plans.map((p) => <CoachSessionCard key={p.id} plan={p} trainerId={trainerId} onUpdated={(np) => setPlans((pl) => pl.map((x) => (x.id === np.id ? np : x)))} />)}
             </div>
           </div>
         )}
@@ -1068,7 +1222,7 @@ function CoachScanCard({ scan }) {
   }, [])
   return (
     <div className="fc-block">
-      <b>Scan · {(scan.created_at || '').slice(0, 10)}</b>
+      <b>{scan.pose ? scan.pose[0].toUpperCase() + scan.pose.slice(1) : 'Scan'} · {(scan.created_at || '').slice(0, 10)}</b>
       {url ? <div className="shot"><img src={url} alt="Progress scan" /></div> : <p className="muted-note">Loading photo…</p>}
       {scan.summary && <p>{scan.summary}</p>}
     </div>
@@ -1077,8 +1231,9 @@ function CoachScanCard({ scan }) {
 
 // Expandable session card so Kim can review the full workout a client built or
 // that she assigned — every exercise, sets × reps, weight and cue.
-function CoachSessionCard({ plan, trainerId }) {
+function CoachSessionCard({ plan, trainerId, onUpdated }) {
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
   const exs = plan.exercises || []
   const mine = plan.assigned_by === trainerId
   const source = mine ? 'Assigned by you' : 'Built by client'
@@ -1091,7 +1246,7 @@ function CoachSessionCard({ plan, trainerId }) {
         </div>
         <span className="chev">{open ? '−' : '+'}</span>
       </button>
-      {open && (
+      {open && !editing && (
         <ol className="ex-list">
           {exs.map((ex, i) => (
             <li className="ex" key={i}>
@@ -1104,7 +1259,21 @@ function CoachSessionCard({ plan, trainerId }) {
             </li>
           ))}
           {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
+          {mine && <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setEditing(true)}>Edit workout</button>}
         </ol>
+      )}
+      {open && editing && (
+        <WorkoutEditForm
+          initial={{ title: plan.title, focus: plan.focus, exercises: exs }}
+          onCancel={() => setEditing(false)}
+          onSave={async ({ title, focus, exercises }) => {
+            const { data, error } = await supabase.from('workout_plans')
+              .update({ title: title || 'Assigned session', focus: focus || 'Coach plan', exercises })
+              .eq('id', plan.id).select().single()
+            if (error) throw error
+            onUpdated(data); setEditing(false)
+          }}
+        />
       )}
     </div>
   )
@@ -1116,6 +1285,7 @@ function CoachRecipes({ coachId }) {
   const [items, setItems] = useState([])
   const [open, setOpen] = useState(false)
   const [f, setF] = useState({ title: '', description: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', fibre_g: '', serving_label: '', tags: '' })
+  const [imgFile, setImgFile] = useState(null)
   const [error, setError] = useState('')
 
   async function load() {
@@ -1125,21 +1295,38 @@ function CoachRecipes({ coachId }) {
   useEffect(() => { load() }, [])
 
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+  // Upload a recipe photo to the public content-images bucket, return its path.
+  async function uploadRecipeImage(file) {
+    const blob = await scaleImageToBlob(file, 1000)
+    const path = `recipes/${coachId}/${crypto.randomUUID()}.jpg`
+    const up = await supabase.storage.from('content-images').upload(path, blob, { contentType: 'image/jpeg', upsert: false })
+    return up.error ? null : path
+  }
+  const imgUrl = (p) => p ? supabase.storage.from('content-images').getPublicUrl(p).data.publicUrl : null
+  // Add / change a photo on an existing recipe (covers AI-generated ones too).
+  async function setPhoto(id, file) {
+    const path = await uploadRecipeImage(file)
+    if (!path) return
+    const { data } = await supabase.from('recipes').update({ image_path: path }).eq('id', id).select().single()
+    if (data) setItems((i) => i.map((x) => (x.id === id ? data : x)))
+  }
 
   async function save() {
     if (!f.title.trim()) { setError('Give the recipe a name.'); return }
+    const image_path = imgFile ? await uploadRecipeImage(imgFile) : null
     const row = {
       coach_id: coachId, title: f.title.trim(), description: f.description.trim() || null,
       calories: Number(f.calories) || null, protein_g: Number(f.protein_g) || null,
       carbs_g: Number(f.carbs_g) || null, fat_g: Number(f.fat_g) || null, fibre_g: Number(f.fibre_g) || null,
       serving_label: f.serving_label.trim() || 'per serving',
       tags: f.tags.trim() ? f.tags.split(',').map((t) => t.trim()).filter(Boolean) : null,
+      image_path,
     }
     const { data, error: err } = await supabase.from('recipes').insert(row).select().single()
     if (err) { setError(err.message); return }
     setItems((i) => [data, ...i])
     setF({ title: '', description: '', calories: '', protein_g: '', carbs_g: '', fat_g: '', fibre_g: '', serving_label: '', tags: '' })
-    setOpen(false); setError('')
+    setImgFile(null); setOpen(false); setError('')
   }
   async function del(id) {
     await supabase.from('recipes').delete().eq('id', id)
@@ -1168,7 +1355,9 @@ function CoachRecipes({ coachId }) {
     const rows = chosen.map((r) => ({
       coach_id: coachId, title: r.title, description: r.method || null, ingredients: r.ingredients || [],
       servings: r.servings, calories: r.calories, protein_g: r.protein_g, carbs_g: r.carbs_g, fat_g: r.fat_g, fibre_g: r.fibre_g,
-      serving_label: 'per serving', tags: [genCat.toLowerCase()],
+      serving_label: 'per serving',
+      // AI-suggested filter tags (high-protein, lunch, …) plus the category, deduped.
+      tags: Array.from(new Set([...(Array.isArray(r.tags) ? r.tags : []), genCat.toLowerCase()].map((t) => String(t).toLowerCase().trim()).filter(Boolean))),
     }))
     const { data } = await supabase.from('recipes').insert(rows).select()
     setItems((i) => [...(data || []), ...i]); setGen(null)
@@ -1183,10 +1372,16 @@ function CoachRecipes({ coachId }) {
         <div className="stack" style={{ marginTop: 12 }}>
           {items.map((r) => (
             <div className="card" key={r.id} style={{ background: 'var(--surface-2)' }}>
+              {r.image_path && <div className="shot" style={{ marginBottom: 8 }}><img src={imgUrl(r.image_path)} alt={r.title} /></div>}
               <div className="session-title">{r.title}</div>
               <div className="session-sub">{[r.calories ? r.calories + ' kcal' : null, r.protein_g ? r.protein_g + 'g P' : null, r.serving_label].filter(Boolean).join(' · ')}</div>
               {r.description && <p className="muted-note" style={{ marginTop: 6 }}>{r.description}</p>}
-              <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => del(r.id)}>Delete</button>
+              <div className="nudge-actions" style={{ marginTop: 8 }}>
+                <label className="btn ghost sm" style={{ cursor: 'pointer' }}>{r.image_path ? 'Change photo' : 'Add photo'}
+                  <input type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) setPhoto(r.id, file) }} />
+                </label>
+                <button type="button" className="btn ghost sm" onClick={() => del(r.id)}>Delete</button>
+              </div>
             </div>
           ))}
         </div>
@@ -1199,6 +1394,7 @@ function CoachRecipes({ coachId }) {
         <div className="stack" style={{ marginTop: 12 }}>
           <label className="field">Recipe name<input value={f.title} onChange={set('title')} placeholder="e.g. High-protein overnight oats" /></label>
           <label className="field">Method / notes<textarea rows={3} value={f.description} onChange={set('description')} placeholder="How to make it — kept short" /></label>
+          <label className="field">Photo (optional)<input type="file" accept="image/*" onChange={(e) => setImgFile(e.target.files?.[0] || null)} />{imgFile && <span className="muted-note">{imgFile.name}</span>}</label>
           <div className="grid-2">
             <label className="field">Calories<input type="number" value={f.calories} onChange={set('calories')} placeholder="kcal" /></label>
             <label className="field">Protein (g)<input type="number" value={f.protein_g} onChange={set('protein_g')} /></label>
@@ -1469,13 +1665,127 @@ function ClientReminders({ clientId, coachId }) {
 // The client's daily agenda names that day's session and starts it. dow uses JS
 // getDay() (0=Sun..6=Sat); rendered Mon-first.
 const SCHED_DOW = [[1, 'Monday'], [2, 'Tuesday'], [3, 'Wednesday'], [4, 'Thursday'], [5, 'Friday'], [6, 'Saturday'], [0, 'Sunday']]
+const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// Default training days for an N-day week, spread Mon-outwards (0=Sun..6=Sat).
+// Used when the AI builder expands a base week across the whole programme; the
+// coach can drag any session to a different day per week afterwards (shift work).
+const DOW_SPREAD = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 4, 5], 6: [1, 2, 3, 4, 5, 6] }
+const daySpread = (n) => DOW_SPREAD[Math.min(Math.max(n, 1), 6)] || DOW_SPREAD[3]
+// Progressive overload applied when a base week is cloned across a programme:
+// RPE ramps up through each 4-week block, then every 4th week is a deload
+// (a set dropped, RPE eased back). Reps/exercise selection are left untouched.
+function progressExercises(list, week, deload) {
+  const blockWk = (week - 1) % 4 // 0..3 within the current 4-week block
+  return (list || []).map((e) => {
+    const sets = e.sets || 3
+    const out = { name: e.name, sets, reps: e.reps }
+    if (deload) {
+      out.sets = Math.max(2, sets - 1)
+      if (e.rpe) out.rpe = Math.max(6, e.rpe - 2)
+    } else if (e.rpe) {
+      out.rpe = Math.min(10, e.rpe + blockWk)
+    }
+    return out
+  })
+}
 const CLIENT_TASK_KINDS = [
   ['checkin', 'Check-in form'],
   ['measurements', 'Measurements'],
   ['weight', 'Weight'],
   ['photos', 'Progress photos'],
+  ['payment', 'Payment due'],
 ]
 const TASK_CADENCES = [['weekly', 'Weekly'], ['fortnightly', 'Fortnightly'], ['monthly', 'Monthly']]
+const TASK_SHORT = { checkin: 'Check-in', measurements: 'Measurements', weight: 'Weight', photos: 'Photos', payment: 'Payment' }
+// Does a recurring task land on this date? Mirrors the client's taskDueToday.
+function taskLandsOn(task, date) {
+  if (date.getDay() !== task.dow) return false
+  if (task.cadence === 'monthly') return date.getDate() <= 7
+  if (task.cadence === 'fortnightly') {
+    const wk = Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(2024, 0, 1)) / (7 * 86400000))
+    return wk % 2 === 0
+  }
+  return true
+}
+const ymdLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+function mondayOf(weekOffset) {
+  const d = new Date(); d.setHours(0, 0, 0, 0)
+  const day = d.getDay()
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day) + weekOffset * 7)
+  return d
+}
+
+// Visual week calendar: what each day holds — the scheduled session, any one-off
+// assigned workouts, and the reminders (photos/measurements/payment…) that land
+// that day. Read-only overview; Kim edits days in the Weekly schedule below.
+function WeekPlanner({ clientId, coachId }) {
+  const [offset, setOffset] = useState(0)
+  const [templates, setTemplates] = useState({})   // id -> title
+  const [schedule, setSchedule] = useState({})      // dow -> template_id
+  const [tasks, setTasks] = useState([])
+  const [plans, setPlans] = useState([])            // one-off assigned workouts in the week
+
+  const monday = mondayOf(offset)
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d })
+  const weekStart = ymdLocal(days[0]); const weekEnd = ymdLocal(days[6])
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: t }, { data: s }, { data: ct }, { data: wp }] = await Promise.all([
+        supabase.from('workout_templates').select('id, title').eq('coach_id', coachId),
+        supabase.from('client_schedule').select('dow, template_id').eq('client_id', clientId),
+        supabase.from('client_tasks').select('kind, dow, cadence').eq('client_id', clientId),
+        supabase.from('workout_plans').select('title, scheduled_for').eq('client_id', clientId).gte('scheduled_for', weekStart).lte('scheduled_for', weekEnd),
+      ])
+      const tm = {}; (t || []).forEach((r) => { tm[r.id] = r.title }); setTemplates(tm)
+      const sm = {}; (s || []).forEach((r) => { sm[r.dow] = r.template_id }); setSchedule(sm)
+      setTasks(ct || []); setPlans(wp || [])
+    })()
+  }, [clientId, coachId, offset]) // eslint-disable-line
+
+  const monthLabel = `${days[0].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${days[6].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+  const todayIso = ymdLocal(new Date())
+
+  return (
+    <div className="card">
+      <div className="nudge-actions" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <p className="eyebrow" style={{ margin: 0 }}>Week planner</p>
+        <div className="nudge-actions" style={{ gap: 6 }}>
+          <button type="button" className="btn ghost sm" onClick={() => setOffset((o) => o - 1)}>‹</button>
+          <button type="button" className="btn ghost sm" onClick={() => setOffset(0)}>{offset === 0 ? 'This week' : monthLabel}</button>
+          <button type="button" className="btn ghost sm" onClick={() => setOffset((o) => o + 1)}>›</button>
+        </div>
+      </div>
+      <p className="muted-note" style={{ marginBottom: 8 }}>Their week at a glance — sessions and reminders. Set days in the Weekly schedule below.</p>
+      <div className="stack" style={{ marginTop: 6 }}>
+        {days.map((d) => {
+          const iso = ymdLocal(d)
+          const sessTitle = schedule[d.getDay()] ? templates[schedule[d.getDay()]] : null
+          const oneOffs = plans.filter((p) => p.scheduled_for === iso).map((p) => p.title)
+          const reminders = tasks.filter((t) => taskLandsOn(t, d)).map((t) => TASK_SHORT[t.kind] || t.kind)
+          const isToday = iso === todayIso
+          const empty = !sessTitle && oneOffs.length === 0 && reminders.length === 0
+          return (
+            <div key={iso} className="card" style={{ background: isToday ? 'var(--surface-2)' : 'transparent', borderColor: isToday ? 'var(--accent)' : 'var(--line)', padding: '10px 12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <b>{d.toLocaleDateString(undefined, { weekday: 'short' })}</b>
+                <span className="muted-note">{d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
+              </div>
+              {sessTitle && <div className="session-sub" style={{ marginTop: 4 }}><b style={{ color: 'var(--accent)' }}>Session:</b> {sessTitle}</div>}
+              {oneOffs.map((t, i) => <div key={i} className="session-sub" style={{ marginTop: 4 }}>{t}</div>)}
+              {reminders.length > 0 && (
+                <div className="tag-row" style={{ marginTop: 6 }}>
+                  {reminders.map((r, i) => <span key={i} className="tag-pill">{r}</span>)}
+                </div>
+              )}
+              {empty && <div className="muted-note" style={{ marginTop: 4 }}>Rest day</div>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 function WeeklySchedule({ clientId, coachId }) {
   const [templates, setTemplates] = useState([])
   const [sched, setSched] = useState({})
@@ -1857,10 +2167,207 @@ function ClientTags({ clientId, coachId }) {
 
 const PROGRAM_LEVELS = ['Beginner', 'Intermediate', 'Advanced']
 
+// The accountability a programme dictates — check-in / measurements / weight / photos,
+// each on a day + cadence. Stored on the programme (schedule_tasks). Applying the
+// programme to a client seeds these into their client_tasks so they show on the
+// client's daily plan automatically. Reuses the same kinds/days/cadences as the
+// per-client Weekly schedule.
+// Edit a saved programme's details + visibility (level, weeks, the library filter
+// dimensions and the "only show to tag"). Paul's ask: he couldn't add/change tags
+// after creating a programme. Mirrors the create form's fields.
+function AssignProgram({ clientId, coachId, clientName }) {
+  const [programs, setPrograms] = useState([])
+  const [current, setCurrent] = useState(null)
+  const [pick, setPick] = useState('')
+  const [start, setStart] = useState(() => new Date().toISOString().slice(0, 10))
+  const [repeat, setRepeat] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  async function load() {
+    const [{ data: progs }, { data: cur }] = await Promise.all([
+      supabase.from('workout_programs').select('id, title, weeks, client_id').eq('coach_id', coachId).or(`client_id.is.null,client_id.eq.${clientId}`).order('created_at', { ascending: false }),
+      supabase.from('client_programs').select('id, program_id, start_date, repeat, workout_programs(title)').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1),
+    ])
+    setPrograms(progs || [])
+    setCurrent(cur?.[0] || null)
+  }
+  useEffect(() => { load() }, [])
+  async function assign() {
+    if (!pick) return
+    setBusy(true); setMsg('')
+    await supabase.from('client_programs').update({ active: false }).eq('client_id', clientId).eq('active', true)
+    const { data, error } = await supabase.from('client_programs')
+      .insert({ client_id: clientId, coach_id: coachId, program_id: pick, start_date: start, repeat, active: true })
+      .select('id, program_id, start_date, repeat, workout_programs(title)').single()
+    setBusy(false)
+    if (error) { setMsg('Could not assign: ' + error.message); return }
+    setCurrent(data); setPick(''); setMsg('Program assigned ✓')
+  }
+  async function stop() {
+    setBusy(true)
+    await supabase.from('client_programs').update({ active: false }).eq('client_id', clientId).eq('active', true)
+    setBusy(false); setCurrent(null); setMsg('Program stopped.')
+  }
+  if (!programs.length) return null
+  return (
+    <div className="card">
+      <p className="eyebrow">Assign a program</p>
+      <p className="muted-note">Put this client on a multi-week program from a start date — their daily plan follows it automatically, week to week.</p>
+      {current && (
+        <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
+          <div className="session-title">On: {current.workout_programs?.title || 'Program'}</div>
+          <div className="session-sub">From {current.start_date}{current.repeat ? ' · repeats' : ''}</div>
+          <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} disabled={busy} onClick={stop}>Stop program</button>
+        </div>
+      )}
+      <label className="field" style={{ marginTop: 10 }}>Program
+        <select className="ex-select" value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">Choose a program…</option>
+          {programs.map((p) => <option key={p.id} value={p.id}>{p.title}{p.weeks ? ` · ${p.weeks}wk` : ''}{p.client_id ? ' · 1-2-1' : ''}</option>)}
+        </select>
+      </label>
+      <div className="grid-2">
+        <label className="field">Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22 }}><input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} style={{ width: 'auto' }} /> Repeat when it ends</label>
+      </div>
+      <button type="button" className="btn primary" disabled={!pick || busy} onClick={assign}>{busy ? '…' : (current ? 'Replace with this' : 'Assign program')}</button>
+      {msg && <p className="logged-ok">{msg}</p>}
+    </div>
+  )
+}
+
+function ProgramMetaEditor({ program, onSaved }) {
+  const [meta, setMeta] = useState({
+    level: program.level || 'Beginner', weeks: program.weeks != null ? String(program.weeks) : '',
+    location: program.location || '', equipment: program.equipment || '',
+    audience: program.audience || '', goal: program.goal || '', audience_tag: program.audience_tag || '',
+  })
+  const [saved, setSaved] = useState(false)
+  const set = (k, v) => setMeta((m) => ({ ...m, [k]: v }))
+  async function save() {
+    const patch = {
+      level: meta.level || null, weeks: Number(meta.weeks) || null,
+      location: meta.location || null, equipment: meta.equipment || null,
+      audience: meta.audience || null, goal: meta.goal || null,
+      audience_tag: (meta.audience_tag || '').trim().toLowerCase() || null,
+    }
+    const { data, error } = await supabase.from('workout_programs').update(patch).eq('id', program.id).select().single()
+    if (!error && data) { setSaved(true); setTimeout(() => setSaved(false), 1200); onSaved?.(data) }
+  }
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+      <p className="eyebrow">Details &amp; visibility</p>
+      <div className="grid-2">
+        <label className="field">Level
+          <select className="ex-select" value={meta.level} onChange={(e) => set('level', e.target.value)}>
+            {PROGRAM_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </label>
+        <label className="field">Weeks<input type="number" inputMode="numeric" value={meta.weeks} onChange={(e) => set('weeks', e.target.value)} /></label>
+        {PROGRAM_DIMS.map((d) => (
+          <label className="field" key={d.key}>{d.label}
+            <select className="ex-select" value={meta[d.key] || ''} onChange={(e) => set(d.key, e.target.value)}>
+              <option value="">Any</option>
+              {d.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+      <label className="field">Only show to tag (optional)<input value={meta.audience_tag} onChange={(e) => set('audience_tag', e.target.value)} placeholder="e.g. standard — blank shows to everyone" /></label>
+      <button type="button" className="btn ghost sm" onClick={save}>{saved ? 'Saved ✓' : 'Save details'}</button>
+    </div>
+  )
+}
+
+function ProgramSchedule({ program, onSaved }) {
+  const seed = {}; (program.schedule_tasks || []).forEach((t) => { seed[t.kind] = { dow: t.dow, cadence: t.cadence } })
+  const [tasks, setTasks] = useState(seed)
+  const [saved, setSaved] = useState(false)
+  const setTask = (kind, dow, cadence) => setTasks((m) => {
+    const n = { ...m }
+    if (dow === '') delete n[kind]
+    else n[kind] = { dow: Number(dow), cadence }
+    return n
+  })
+  async function save() {
+    const arr = Object.entries(tasks).map(([kind, v]) => ({ kind, dow: v.dow, cadence: v.cadence }))
+    const { data, error } = await supabase.from('workout_programs').update({ schedule_tasks: arr }).eq('id', program.id).select().single()
+    if (!error && data) { setSaved(true); setTimeout(() => setSaved(false), 1200); onSaved?.(data) }
+  }
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+      <p className="eyebrow">Built-in check-ins &amp; measurements</p>
+      <p className="muted-note">Set the accountability this plan dictates. Apply it to a client from their page and it drops onto their daily plan automatically.</p>
+      <div className="stack" style={{ marginTop: 8 }}>
+        {CLIENT_TASK_KINDS.map(([kind, label]) => {
+          const cur = tasks[kind]
+          return (
+            <div className="task-row" key={kind}>
+              <span className="task-label">{label}</span>
+              <select className="ex-select task-day" value={cur ? cur.dow : ''} onChange={(e) => setTask(kind, e.target.value, cur?.cadence || 'weekly')}>
+                <option value="">Off</option>
+                {SCHED_DOW.map(([dow, l]) => <option key={dow} value={dow}>{l}</option>)}
+              </select>
+              {cur && (
+                <select className="ex-select task-cadence" value={cur.cadence} onChange={(e) => setTask(kind, cur.dow, e.target.value)}>
+                  {TASK_CADENCES.map(([c, l]) => <option key={c} value={c}>{l}</option>)}
+                </select>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={save}>{saved ? 'Saved ✓' : 'Save schedule'}</button>
+    </div>
+  )
+}
+
+// On a client's page: drop a programme's built-in check-ins & measurements straight
+// onto this client's daily plan (seeds client_tasks, upsert per kind). Only shows
+// programmes that actually carry a schedule.
+function ApplyProgramSchedule({ clientId, coachId }) {
+  const [programs, setPrograms] = useState([])
+  const [pick, setPick] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState('')
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('workout_programs').select('id, title, schedule_tasks').eq('coach_id', coachId).order('created_at', { ascending: false })
+      setPrograms((data || []).filter((p) => (p.schedule_tasks || []).length))
+    })()
+  }, [])
+  async function apply() {
+    const prog = programs.find((p) => p.id === pick)
+    if (!prog) return
+    setBusy(true); setDone('')
+    const rows = (prog.schedule_tasks || []).map((t) => ({ coach_id: coachId, client_id: clientId, kind: t.kind, dow: t.dow, cadence: t.cadence, updated_at: new Date().toISOString() }))
+    const { error } = await supabase.from('client_tasks').upsert(rows, { onConflict: 'client_id,kind' })
+    setBusy(false)
+    setDone(error ? ('Could not apply: ' + error.message) : `Applied ${rows.length} to their daily plan ✓`)
+  }
+  if (programs.length === 0) return null
+  return (
+    <div className="card">
+      <p className="eyebrow">Copy check-in reminders from a program</p>
+      <p className="muted-note">Different from “Assign a program” above (which sets their workouts). This only copies a program’s built-in check-in &amp; measurement reminders onto this client — leave it alone if you don’t use those.</p>
+      <label className="field" style={{ marginTop: 8 }}>Program
+        <select className="ex-select" value={pick} onChange={(e) => { setPick(e.target.value); setDone('') }}>
+          <option value="">Choose a program…</option>
+          {programs.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+        </select>
+      </label>
+      <button type="button" className="btn ghost" disabled={!pick || busy} onClick={apply}>{busy ? 'Applying…' : 'Apply to this client'}</button>
+      {done && <p className="logged-ok">{done}</p>}
+    </div>
+  )
+}
+
 // Multi-session programmes built from the coach's templates. Each programme session
 // snapshots a template (title/focus/exercises/finisher) so later template edits
 // don't rewrite a published programme. Clients browse these in "Program library".
-function CoachPrograms({ coachId }) {
+function CoachPrograms({ coachId, clientId = null, clientName }) {
+  const personal = !!clientId // scoped to one client's private 1-2-1 programmes
+  const clientFirst = (clientName || 'this client').split(' ')[0]
   const [programs, setPrograms] = useState([])
   const [templates, setTemplates] = useState([])
   const [sessions, setSessions] = useState({}) // program_id -> rows
@@ -1875,19 +2382,34 @@ function CoachPrograms({ coachId }) {
   const [addFor, setAddFor] = useState(null) // program_id we're adding a session to
   const [pickTpl, setPickTpl] = useState('')
   const [dayLabel, setDayLabel] = useState('')
+  const [pickWeek, setPickWeek] = useState(1)
+  const [pickDow, setPickDow] = useState('')
+  const [editSess, setEditSess] = useState(null) // program_session id being edited
+  // AI whole-programme edit: one instruction rewrites all sessions.
+  const [aiEditFor, setAiEditFor] = useState(null) // programme id in AI-edit mode
+  const [aiInstr, setAiInstr] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiErr, setAiErr] = useState('')
+  const [aiDraft, setAiDraft] = useState(null) // { programId, sessions: revised[] }
+  const [buildingOut, setBuildingOut] = useState(null) // programme id being expanded to all weeks
 
   async function load() {
+    // Library view shows only shared programmes (client_id null); the client-page
+    // view shows only that client's private 1-2-1 programmes.
+    let pq = supabase.from('workout_programs').select('*').eq('coach_id', coachId)
+    pq = personal ? pq.eq('client_id', clientId) : pq.is('client_id', null)
     const [p, t] = await Promise.all([
-      supabase.from('workout_programs').select('*').eq('coach_id', coachId).order('created_at', { ascending: false }),
+      pq.order('created_at', { ascending: false }),
       supabase.from('workout_templates').select('*').eq('coach_id', coachId).order('created_at', { ascending: false }),
     ])
     setPrograms(p.data || [])
     setTemplates(t.data || [])
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [clientId])
 
   async function loadSessions(programId) {
-    const { data } = await supabase.from('program_sessions').select('*').eq('program_id', programId).order('position', { ascending: true })
+    const { data } = await supabase.from('program_sessions').select('*').eq('program_id', programId)
+      .order('week', { ascending: true }).order('dow', { ascending: true, nullsFirst: false }).order('position', { ascending: true })
     setSessions((s) => ({ ...s, [programId]: data || [] }))
   }
   function toggle(programId) {
@@ -1898,11 +2420,11 @@ function CoachPrograms({ coachId }) {
   async function createProgram() {
     if (!title.trim()) { setError('Give the program a name.'); return }
     const { data, error: err } = await supabase.from('workout_programs').insert({
-      coach_id: coachId, title: title.trim(), description: desc.trim() || null,
+      coach_id: coachId, client_id: clientId, title: title.trim(), description: desc.trim() || null,
       weeks: Number(weeks) || null, level,
       location: meta.location || null, equipment: meta.equipment || null,
       audience: meta.audience || null, goal: meta.goal || null,
-      audience_tag: meta.audience_tag?.trim() || null,
+      audience_tag: personal ? null : (meta.audience_tag?.trim().toLowerCase() || null),
     }).select().single()
     if (err) { setError(err.message); return }
     setPrograms((p) => [data, ...p])
@@ -1916,11 +2438,16 @@ function CoachPrograms({ coachId }) {
     const pos = (sessions[programId] || []).length
     const { data, error: err } = await supabase.from('program_sessions').insert({
       program_id: programId, position: pos, label: dayLabel.trim() || null,
+      week: Number(pickWeek) || 1, dow: pickDow === '' ? null : Number(pickDow),
       title: tpl.title, focus: tpl.focus, exercises: tpl.exercises || [], finisher: tpl.finisher || null,
     }).select().single()
     if (err) { setError(err.message); return }
-    setSessions((s) => ({ ...s, [programId]: [...(s[programId] || []), data] }))
-    setPickTpl(''); setDayLabel(''); setError('')
+    setSessions((s) => {
+      const next = [...(s[programId] || []), data]
+      next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
+      return { ...s, [programId]: next }
+    })
+    setPickTpl(''); setDayLabel(''); setPickDow(''); setError('')
   }
 
   async function delSession(programId, id) {
@@ -1951,17 +2478,95 @@ function CoachPrograms({ coachId }) {
   }
   async function saveGenerated() {
     const d = genDraft
-    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, title: d.title, description: d.description || null, weeks: d.weeks || null, level: g.level, audience_tag: g.audience_tag?.trim() || null }).select().single()
+    const weeksN = Math.min(Math.max(Number(d.weeks) || 4, 1), 16)
+    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, client_id: clientId, title: d.title, description: d.description || null, weeks: weeksN, level: g.level, audience_tag: personal ? null : (g.audience_tag?.trim().toLowerCase() || null) }).select().single()
     if (err || !prog) { setGenErr(err?.message || 'Save failed.'); return }
-    const rows = d.sessions.map((s, i) => ({ program_id: prog.id, position: i, label: s.label, title: s.title, focus: s.focus, exercises: s.exercises, finisher: s.finisher }))
+    // Clone the AI's base week across every week of the programme, tagging each
+    // session with its week + a default training day, and progressing the load
+    // week to week (with a deload every 4th). No more empty weeks 2..N.
+    const base = d.sessions || []
+    const dow = daySpread(base.length)
+    const rows = []
+    let pos = 0
+    for (let wk = 1; wk <= weeksN; wk++) {
+      const deload = weeksN >= 4 && wk % 4 === 0
+      base.forEach((s, i) => {
+        rows.push({
+          program_id: prog.id, position: pos++, week: wk, dow: dow[i] ?? null,
+          label: `Week ${wk}`,
+          title: s.title,
+          focus: deload ? `Deload — ${s.focus || 'recovery'}` : s.focus,
+          exercises: progressExercises(s.exercises, wk, deload),
+          finisher: deload ? null : (s.finisher || null),
+        })
+      })
+    }
     await supabase.from('program_sessions').insert(rows)
     setPrograms((p) => [prog, ...p]); setGenDraft(null); setGenOn(false)
   }
 
+  // AI whole-programme edit: send all sessions + one instruction, preview the
+  // revised set, then replace the programme's sessions on apply.
+  async function runProgramEdit(pr) {
+    const cur = sessions[pr.id] || []
+    if (!cur.length || !aiInstr.trim()) { setAiErr('Add some sessions and an instruction first.'); return }
+    setAiBusy(true); setAiErr('')
+    try {
+      const res = await fetch('/.netlify/functions/program-edit', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ instruction: aiInstr.trim(), title: pr.title, level: pr.level, weeks: pr.weeks, sessions: cur }),
+      })
+      const j = await res.json()
+      if (!j.sessions?.length) setAiErr(j.error || 'Nothing came back — try again.')
+      else setAiDraft({ programId: pr.id, sessions: j.sessions })
+    } catch (e) { setAiErr(String(e.message || e)) }
+    setAiBusy(false)
+  }
+  async function applyAiEdit() {
+    const { programId, sessions: revised } = aiDraft
+    await supabase.from('program_sessions').delete().eq('program_id', programId)
+    const rows = revised.map((s, i) => ({ program_id: programId, position: s.position ?? i, week: s.week ?? 1, dow: s.dow ?? null, label: s.label || null, title: s.title, focus: s.focus, exercises: s.exercises, finisher: s.finisher }))
+    await supabase.from('program_sessions').insert(rows)
+    await loadSessions(programId)
+    setAiDraft(null); setAiEditFor(null); setAiInstr('')
+  }
+
+  // Expand an older single-week programme across its full week count, cloning
+  // week 1 with progressive overload (deload every 4th) and keeping each
+  // session's training day. For programmes built before the multi-week feature.
+  async function buildOutWeeks(pr) {
+    const base = (sessions[pr.id] || []).filter((s) => (s.week || 1) === 1)
+    const weeksN = Number(pr.weeks) || 0
+    if (!base.length || weeksN < 2) return
+    setBuildingOut(pr.id)
+    const fallback = daySpread(base.length)
+    const rows = []
+    let pos = 0
+    for (let wk = 1; wk <= weeksN; wk++) {
+      const deload = weeksN >= 4 && wk % 4 === 0
+      base.forEach((s, i) => {
+        rows.push({
+          program_id: pr.id, position: pos++, week: wk, dow: s.dow ?? fallback[i] ?? null,
+          label: `Week ${wk}`,
+          title: s.title,
+          focus: deload ? `Deload — ${s.focus || 'recovery'}` : s.focus,
+          exercises: progressExercises(s.exercises, wk, deload),
+          finisher: deload ? null : (s.finisher || null),
+        })
+      })
+    }
+    await supabase.from('program_sessions').delete().eq('program_id', pr.id)
+    await supabase.from('program_sessions').insert(rows)
+    await loadSessions(pr.id)
+    setBuildingOut(null)
+  }
+
   return (
     <div className="card">
-      <p className="eyebrow">Program library</p>
-      <p className="muted-note">Bundle your templates into a plan clients can follow — they’ll browse these in “Program library”.</p>
+      <p className="eyebrow">{personal ? `${clientFirst}’s programs` : 'Program library'}</p>
+      <p className="muted-note">{personal
+        ? `Private 1-2-1 programs, built just for ${clientFirst}. Only they see these — never the shared library other members browse. Assign one below to put it on their plan.`
+        : 'Bundle your templates into a plan clients can follow — they’ll browse these in “Program library”.'}</p>
 
       <div style={{ margin: '10px 0 14px', paddingBottom: 12, borderBottom: '1px solid var(--line)' }}>
         {!genOn && !genDraft && <button type="button" className="btn ghost" onClick={() => setGenOn(true)}>Generate a programme with AI</button>}
@@ -1977,7 +2582,7 @@ function CoachPrograms({ coachId }) {
               <select value={g.level} onChange={gset('level')}>{PROGRAM_LEVELS.map((l) => <option key={l}>{l}</option>)}</select>
             </label>
             <label className="field">Equipment<input value={g.equipment} onChange={gset('equipment')} placeholder="e.g. Barbell, dumbbells, machines" /></label>
-            <label className="field">Only show to tag (optional)<input value={g.audience_tag || ''} onChange={gset('audience_tag')} placeholder="e.g. standard — blank = everyone" /></label>
+            {!personal && <label className="field">Only show to tag (optional)<input value={g.audience_tag || ''} onChange={gset('audience_tag')} placeholder="e.g. standard — blank = everyone" /></label>}
             {genErr && <p className="error">{genErr}</p>}
             <div className="nudge-actions">
               <button className="btn primary sm" disabled={genBusy} onClick={genProgram}>{genBusy ? 'Drafting…' : 'Draft it'}</button>
@@ -1990,6 +2595,7 @@ function CoachPrograms({ coachId }) {
             <p className="eyebrow accent">Draft — review &amp; publish</p>
             <div className="session-title">{genDraft.title}</div>
             <p className="muted-note">{genDraft.description} · {genDraft.weeks} weeks</p>
+            <p className="muted-note" style={{ marginTop: 2 }}>Below is week 1. Publishing builds all {genDraft.weeks} weeks — progressive overload each week, a deload every 4th — on {(daySpread((genDraft.sessions || []).length)).map((n) => DOW_SHORT[n]).join('/')}. Edit any week or move sessions to other days after publishing.</p>
             {genDraft.sessions.map((s, i) => (
               <div className="card" key={i} style={{ background: 'var(--surface-2)' }}>
                 <div className="session-title">{s.label} · {s.title}</div>
@@ -2019,18 +2625,81 @@ function CoachPrograms({ coachId }) {
               {openId === pr.id && (
                 <div className="stack" style={{ marginTop: 8 }}>
                   {pr.description && <p className="muted-note">{pr.description}</p>}
+
+                  {/* AI whole-programme edit */}
+                  {aiEditFor !== pr.id && !aiDraft && (
+                    <button type="button" className="btn ghost sm" onClick={() => { setAiEditFor(pr.id); setAiInstr(''); setAiErr('') }}>Edit with AI</button>
+                  )}
+                  {/* Older single-week programmes: expand to the full week count */}
+                  {aiEditFor !== pr.id && !aiDraft && Number(pr.weeks) > 1 && (sessions[pr.id] || []).length > 0 && (sessions[pr.id] || []).every((s) => (s.week || 1) === 1) && (
+                    <div className="card" style={{ background: 'var(--surface-2)' }}>
+                      <p className="muted-note" style={{ marginBottom: 8 }}>This program is set to {pr.weeks} weeks but only week 1 is built. Build out all {pr.weeks} weeks from week 1, with progressive overload and a deload every 4th week (you can edit any week after).</p>
+                      <button type="button" className="btn primary sm" disabled={buildingOut === pr.id} onClick={() => buildOutWeeks(pr)}>{buildingOut === pr.id ? 'Building…' : `Build out all ${pr.weeks} weeks`}</button>
+                    </div>
+                  )}
+                  {aiEditFor === pr.id && !aiDraft && (
+                    <div className="card" style={{ background: 'var(--surface-2)' }}>
+                      <p className="eyebrow accent">Edit the whole program with AI</p>
+                      <p className="muted-note" style={{ marginBottom: 8 }}>Describe the change and the AI rewrites every session — keeping the weeks &amp; days.</p>
+                      <label className="field"><textarea rows={2} value={aiInstr} onChange={(e) => setAiInstr(e.target.value)} placeholder="e.g. more hypertrophy focus · swap dumbbell work to barbell · make weeks 5-8 harder" /></label>
+                      {aiErr && <p className="error">{aiErr}</p>}
+                      <div className="nudge-actions">
+                        <button type="button" className="btn primary sm" disabled={aiBusy || !aiInstr.trim()} onClick={() => runProgramEdit(pr)}>{aiBusy ? 'Rewriting…' : 'Rewrite it'}</button>
+                        <button type="button" className="btn ghost sm" onClick={() => { setAiEditFor(null); setAiErr('') }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {aiDraft?.programId === pr.id && (
+                    <div className="card" style={{ background: 'var(--surface-2)', borderColor: 'var(--accent)' }}>
+                      <p className="eyebrow accent">Revised — review &amp; apply</p>
+                      <p className="muted-note" style={{ marginBottom: 8 }}>Applying replaces this program’s {aiDraft.sessions.length} sessions. Weeks &amp; days are kept.</p>
+                      {aiDraft.sessions.slice(0, 8).map((s, i) => (
+                        <div key={i} style={{ marginBottom: 8 }}>
+                          <div className="session-title" style={{ fontSize: 14 }}><span style={{ color: 'var(--accent)' }}>Wk{s.week || 1}{s.dow != null ? ' · ' + DOW_SHORT[s.dow] : ''}</span> · {s.title}</div>
+                          {(s.exercises || []).map((e, n) => <div className="checkin-line" key={n}>{e.name} — {e.sets}×{e.reps}{e.rpe ? ` @ RPE ${e.rpe}` : ''}</div>)}
+                        </div>
+                      ))}
+                      {aiDraft.sessions.length > 8 && <p className="muted-note">…and {aiDraft.sessions.length - 8} more.</p>}
+                      <div className="nudge-actions" style={{ marginTop: 6 }}>
+                        <button type="button" className="btn primary sm" onClick={applyAiEdit}>Apply changes</button>
+                        <button type="button" className="btn ghost sm" onClick={() => setAiDraft(null)}>Discard</button>
+                      </div>
+                    </div>
+                  )}
+
                   {(sessions[pr.id] || []).map((ps) => (
                     <div className="card" key={ps.id} style={{ background: 'var(--surface-2)' }}>
-                      <div className="session-title">{ps.label ? ps.label + ' · ' : ''}{ps.title}</div>
-                      <ol className="ex-list" style={{ marginTop: 6 }}>
-                        {(ps.exercises || []).map((ex, i) => (
-                          <li className="ex" key={i}>
-                            <span className="ex-n">{i + 1}</span>
-                            <div className="ex-body"><div className="ex-name">{ex.name}</div><ExSets ex={ex} /></div>
-                          </li>
-                        ))}
-                      </ol>
-                      <button type="button" className="btn ghost sm" onClick={() => delSession(pr.id, ps.id)}>Remove</button>
+                      <div className="session-title"><span style={{ color: 'var(--accent)' }}>Wk{ps.week || 1}{ps.dow != null ? ' · ' + DOW_SHORT[ps.dow] : ''}</span>{ps.label ? ' · ' + ps.label : ''} · {ps.title}</div>
+                      {editSess === ps.id ? (
+                        <WorkoutEditForm
+                          initial={{ title: ps.title, focus: ps.focus, exercises: ps.exercises }}
+                          saveLabel="Save session"
+                          onCancel={() => setEditSess(null)}
+                          onSave={async ({ title, focus, exercises }) => {
+                            const { data, error: err } = await supabase.from('program_sessions')
+                              .update({ title: title || ps.title, focus: focus || ps.focus, exercises })
+                              .eq('id', ps.id).select().single()
+                            if (err) throw err
+                            setSessions((s) => ({ ...s, [pr.id]: (s[pr.id] || []).map((x) => (x.id === data.id ? data : x)) }))
+                            setEditSess(null)
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <ol className="ex-list" style={{ marginTop: 6 }}>
+                            {(ps.exercises || []).map((ex, i) => (
+                              <li className="ex" key={i}>
+                                <span className="ex-n">{i + 1}</span>
+                                <div className="ex-body"><div className="ex-name">{ex.name}</div><ExSets ex={ex} /></div>
+                              </li>
+                            ))}
+                          </ol>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" className="btn ghost sm" onClick={() => setEditSess(ps.id)}>Edit</button>
+                            <button type="button" className="btn ghost sm" onClick={() => delSession(pr.id, ps.id)}>Remove</button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                   {(sessions[pr.id] || []).length === 0 && <p className="muted-note">No sessions yet — add one from your templates.</p>}
@@ -2038,17 +2707,30 @@ function CoachPrograms({ coachId }) {
                   {templates.length === 0 ? (
                     <p className="muted-note">Build a session template first (above) — programs are made from templates.</p>
                   ) : (
-                    <div className="grid-2">
-                      <label className="field">Add session
-                        <select className="ex-select" value={pickTpl} onChange={(e) => { setPickTpl(e.target.value); setAddFor(pr.id) }}>
-                          <option value="">Choose a template…</option>
-                          {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
-                        </select>
-                      </label>
-                      <label className="field">Day label<input value={addFor === pr.id ? dayLabel : ''} onChange={(e) => { setDayLabel(e.target.value); setAddFor(pr.id) }} placeholder="e.g. Day 1" /></label>
-                    </div>
+                    <>
+                      <div className="grid-2">
+                        <label className="field">Add session
+                          <select className="ex-select" value={addFor === pr.id ? pickTpl : ''} onChange={(e) => { setPickTpl(e.target.value); setAddFor(pr.id) }}>
+                            <option value="">Choose a template…</option>
+                            {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                          </select>
+                        </label>
+                        <label className="field">Week<input type="number" min="1" inputMode="numeric" value={addFor === pr.id ? pickWeek : 1} onChange={(e) => { setPickWeek(e.target.value); setAddFor(pr.id) }} /></label>
+                      </div>
+                      <div className="grid-2">
+                        <label className="field">Day
+                          <select className="ex-select" value={addFor === pr.id ? pickDow : ''} onChange={(e) => { setPickDow(e.target.value); setAddFor(pr.id) }}>
+                            <option value="">Any day</option>
+                            {SCHED_DOW.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+                          </select>
+                        </label>
+                        <label className="field">Label (optional)<input value={addFor === pr.id ? dayLabel : ''} onChange={(e) => { setDayLabel(e.target.value); setAddFor(pr.id) }} placeholder="e.g. Push A" /></label>
+                      </div>
+                    </>
                   )}
                   {templates.length > 0 && <button type="button" className="btn ghost" onClick={() => addSession(pr.id)}>Add to program</button>}
+                  <ProgramMetaEditor program={pr} onSaved={(up) => setPrograms((ps) => ps.map((x) => (x.id === up.id ? up : x)))} />
+                  <ProgramSchedule program={pr} onSaved={(up) => setPrograms((ps) => ps.map((x) => (x.id === up.id ? up : x)))} />
                   <button type="button" className="link-btn" onClick={() => delProgram(pr.id)}>Delete program</button>
                 </div>
               )}
@@ -2059,7 +2741,7 @@ function CoachPrograms({ coachId }) {
 
       {error && <p className="error">{error}</p>}
       {!creating ? (
-        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => { setCreating(true); setError('') }}>New program</button>
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => { setCreating(true); setError('') }}>{personal ? `Create a program for ${clientFirst}` : 'New program'}</button>
       ) : (
         <div className="stack" style={{ marginTop: 12 }}>
           <label className="field">Program name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. 8-Week Lean Strength" /></label>
@@ -2083,8 +2765,8 @@ function CoachPrograms({ coachId }) {
               </label>
             ))}
           </div>
-          <label className="field">Only show to tag (optional)<input value={meta.audience_tag || ''} onChange={(e) => setMeta((m) => ({ ...m, audience_tag: e.target.value }))} placeholder="e.g. standard — blank shows to everyone" /></label>
-          <button className="btn primary big" onClick={createProgram}>Create program</button>
+          {!personal && <label className="field">Only show to tag (optional)<input value={meta.audience_tag || ''} onChange={(e) => setMeta((m) => ({ ...m, audience_tag: e.target.value }))} placeholder="e.g. standard — blank shows to everyone" /></label>}
+          <button className="btn primary big" onClick={createProgram}>{personal ? `Create for ${clientFirst}` : 'Create program'}</button>
           <button type="button" className="link-btn" onClick={() => { setCreating(false); setError('') }}>Cancel</button>
         </div>
       )}
@@ -2096,13 +2778,12 @@ function CoachPrograms({ coachId }) {
 // workout" and pick one (see ClientApp). Supports the advanced set types.
 function CoachTemplates({ coachId }) {
   const [items, setItems] = useState([])
-  const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [focus, setFocus] = useState('')
-  const [rows, setRows] = useState([newExerciseRow()])
+  const { title, focus, rows, setTitle, setFocus, setRows, clear, hasDraft } = useWorkoutDraft('tpl:' + coachId)
+  const [open, setOpen] = useState(hasDraft)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null)
+  const [editId, setEditId] = useState(null)
 
   async function load() {
     const { data } = await supabase.from('workout_templates').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
@@ -2121,7 +2802,7 @@ function CoachTemplates({ coachId }) {
     if (err) { setError(err.message); return }
     if (data) {
       setItems((i) => [data, ...i])
-      setTitle(''); setFocus(''); setRows([newExerciseRow()]); setOpen(false)
+      clear(); setOpen(false)
     }
   }
 
@@ -2146,7 +2827,20 @@ function CoachTemplates({ coachId }) {
                 </div>
                 <span className="chev">{openId === t.id ? '−' : '+'}</span>
               </button>
-              {openId === t.id && (
+              {openId === t.id && (editId === t.id ? (
+                <WorkoutEditForm
+                  initial={{ title: t.title, focus: t.focus, exercises: t.exercises }}
+                  titleLabel="Template name" saveLabel="Save template"
+                  onCancel={() => setEditId(null)}
+                  onSave={async ({ title, focus, exercises }) => {
+                    const { data, error: err } = await supabase.from('workout_templates')
+                      .update({ title: title || 'Session template', focus: focus || null, exercises })
+                      .eq('id', t.id).select().single()
+                    if (err) throw err
+                    setItems((i) => i.map((x) => (x.id === data.id ? data : x))); setEditId(null)
+                  }}
+                />
+              ) : (
                 <>
                   <ol className="ex-list">
                     {(t.exercises || []).map((ex, i) => (
@@ -2160,9 +2854,12 @@ function CoachTemplates({ coachId }) {
                       </li>
                     ))}
                   </ol>
-                  <button type="button" className="btn ghost sm" onClick={() => del(t.id)}>Delete template</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="btn ghost sm" onClick={() => setEditId(t.id)}>Edit template</button>
+                    <button type="button" className="btn ghost sm" onClick={() => del(t.id)}>Delete template</button>
+                  </div>
                 </>
-              )}
+              ))}
             </div>
           ))}
         </div>
@@ -2187,10 +2884,8 @@ function CoachTemplates({ coachId }) {
 }
 
 function AssignWorkout({ clientId, trainerId, onAssigned }) {
-  const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [focus, setFocus] = useState('')
-  const [rows, setRows] = useState([newExerciseRow()])
+  const { title, focus, rows, setTitle, setFocus, setRows, clear, hasDraft } = useWorkoutDraft('assign:' + clientId)
+  const [open, setOpen] = useState(hasDraft)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -2208,7 +2903,7 @@ function AssignWorkout({ clientId, trainerId, onAssigned }) {
     if (data) {
       onAssigned(data)
       setSaved(true)
-      setTitle(''); setFocus(''); setRows([newExerciseRow()])
+      clear()
       setTimeout(() => { setSaved(false); setOpen(false) }, 1800)
     }
   }

@@ -1,5 +1,64 @@
 # Kym A Fitness — Tasks
 
+## Kim's feature wishlist (2026-08-05) — green-lit "whole lot, wave order"
+### DONE + LIVE (coached-by-kim.netlify.app)
+Wave 1:
+- [x] Video library enabled for Kim (coach adds titled YouTube/Vimeo links -> client folders). Flag `videos`.
+- [x] Coach analytics: avg calories/day (week total /7, Kim's method) + lowest weight (7d) on each client's adherence card.
+Wave 2:
+- [x] Coach meal-plan templates — author (one-tap 5-day starter skeleton), Assign copies to client, adapt per-client, client "My meal plan" tile. Tables meal_plans + client_meal_plans (RLS verified e2e_mealplans.mjs). Flag `coachMealPlans`. New file src/MealPlans.jsx.
+- [x] Front/side/back progress photos — body_scans.pose col; same-angle AI compare; pose filter in ProgressPhotos (client+coach). Enabled `progressHub` for Kim.
+- [x] Week planner + payment reminders — WeekPlanner grid on ClientDetail (sessions + reminder chips per day, week nav); new 'payment' client_task kind (kind CHECK extended); enabled `agenda` for Kim (clients now get the daily plan card; coach gets WeeklySchedule + ClientReminders).
+
+### TODO — Wave 3 (PICK UP HERE next session)
+- [ ] #26 Event countdowns + holiday mode — new table client_events (kind countdown|holiday, label, start_date, end_date). Countdown "N weeks to go" on client + coach; holiday range auto-pauses check-in/measurement reminders while away (skip taskDueToday if date within an active holiday). 
+- [ ] #27 Birthday + client-anniversary greetings — add dob + client_since to profiles (or use created_at for anniversary); happy-birthday + 6mo/1yr/2yr prompts to coach + client agenda.
+- [ ] #28 Menstrual cycle tracking — new table cycle_logs (client_id, period_start); predict next period + flag luteal phase; client input + display; optional coach visibility. Fits Kim's women-35+ base.
+
+### Paul (app.redefineacademy.com) — all shipped 2026-08-05
+- [x] Tag capitalisation bug — audience_tag lowercased on all 3 programme-save sites.
+- [x] AI programme builder fills ALL weeks — clones base week across N weeks: progressive overload + deload every 4th, default days (Mon/Wed/Fri...), each session week+dow, editable. (progressExercises/daySpread in TrainerApp; logic unit-tested.)
+- [x] Shift-worker per-week days — already works via multi-week week+dow; explained, no build.
+
+### Resume notes
+- DB reachable via claude.ai Supabase MCP (project ezwmfbuuopsnpanebtal) — run migrations directly; verify/clean test rows via execute_sql. See lessons.md.
+- NOT feasible: Apple Health auto step-import (HealthKit is native-iOS-only, walled off from PWAs). Manual steps already exist. Ricky told.
+- Deploy: `npm run build` (BRAND=kim default; `BRAND=paul npm run build` for Paul) -> `netlify deploy --dir=dist --site <id>` -> `netlify api restoreSiteDeploy` to promote. Kim site 08a2f0ba-f0a8-4ee9-80f5-cd314abacce3; Paul (redefine-academy) bda91296-2224-4923-b91c-d6482971eab1.
+- No emojis anywhere (UI/chat) — Ricky's font renders them as tofu.
+
+## Paul batch 3 (2026-08-03)
+Shipped (all 4 sites unless noted):
+- [x] Scanner iOS "low memory" crash fixed — all image scanners downscale on-device
+      (scaleImageToBase64) before send; also HEIC→JPEG. Universal.
+- [x] Macro rule guard (coach): fat%/protein-g/kg readout + "Apply the rule" (protein
+      2g/kg, fat 25%, carbs fill) on the client's macro targets card. (Calculator already
+      enforced it for new clients.)
+- [x] AI meal-plan builder (Paul only, `mealPlans` flag): Nutrition tab → qualifying
+      questions (meals/day, options/meal, snacks, dietary, allergies, prefs) → AI day that
+      hits their targets; log any option. Fn `meal-plan.mjs` (Haiku).
+
+Queued:
+- [ ] Multi-week programmes (Paul, 1-2-1): build a programme over N weeks (e.g. 4-wk cycle),
+      assign with a START DATE + optional REPEAT so it cycles without rebuilding. Needs:
+      `week` on program_sessions (or weeks structure) + a client-program assignment
+      (program_id, client_id, start_date, repeat) + agenda logic to compute "today's
+      session" from start_date/week/dow. Design decision: how it coexists with the per-dow
+      client_schedule + scheduled_for. BIG — its own build.
+
+
+## Paul batch (2026-08-02)
+Shipped to all 4 live sites:
+- [x] #1 Step target — ANSWERED: Standard clients auto-default to 10k (`profile.step_target || 10000`); coach can override per client. No build.
+- [x] #3 Recipes: AI tags generated recipes (high-protein, lunch, quick…); client Recipe library has search + tag-chip filter.
+- [x] #4 Programme details/tags editable after save (ProgramMetaEditor in open programme view).
+- [x] #7 Food logging: "Add food" + day picker (back-fill past / pre-log future); home "today" total only counts today.
+
+Shipped 2026-08-02 (all 4 sites):
+- [x] #2 AI exercise swap: "Can't do this? Swap it" per plan exercise (SessionCard) -> reason -> fn `exercise-swap` (Haiku) -> replaces exercise keeping sets, persists to plan.
+- [x] #5 Coach adherence card (top of ClientDetail): sessions done 7d/30d, days food logged /7, last check-in, last measurement. is_my_client RLS.
+- [x] #6 Client "Add to my plan" + day picker on library sessions (workout_plans.scheduled_for); home agenda "Today" slot shows a session scheduled for that day.
+
+
 ## Phase 1 — Foundation & accounts (DONE, verified)
 - [x] Supabase project `kym-a-fitness` (ezwmfbuuopsnpanebtal)
 - [x] Schema + RLS + auto-profile trigger (profiles/roles, macro_targets, nutrition_logs, workout_plans, body_measurements)

@@ -148,6 +148,8 @@ input { font-family: inherit; }
 .ex-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ex-nums { display: grid; grid-template-columns: 0.85fr 1fr 1fr auto; gap: 7px; align-items: center; }
 .row-del { width: 40px; height: 40px; flex: 0 0 40px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; color: var(--muted); font-size: 20px; line-height: 1; }
+.row-move { width: 40px; height: 40px; flex: 0 0 40px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; color: var(--text); font-size: 17px; line-height: 1; }
+.row-move:disabled { opacity: .35; }
 
 /* Session history */
 .session-card { padding: 0; overflow: hidden; }
@@ -504,6 +506,23 @@ input { font-family: inherit; }
 .eg-howto { margin-top: 12px; line-height: 1.5; }
 .eg-cues { margin: 10px 0 0; padding-left: 18px; }
 .eg-cues li { margin-bottom: 5px; color: var(--muted); }
+
+/* In-page camera capture */
+.camera-overlay { position: fixed; inset: 0; background: #000; z-index: 60; display: flex; flex-direction: column; }
+.camera-top { display: flex; justify-content: flex-end; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; }
+.camera-x { background: rgba(255,255,255,0.14); border: 0; color: #fff; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; line-height: 1; }
+.camera-video { flex: 1; width: 100%; object-fit: cover; min-height: 0; background: #000; }
+.camera-fallback { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; color: #fff; }
+.camera-controls { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px calc(18px + env(safe-area-inset-bottom)); }
+.camera-alt { color: #fff; min-width: 64px; text-align: center; font-size: 13px; }
+.camera-shutter { width: 68px; height: 68px; border-radius: 50%; background: #fff; border: 4px solid rgba(255,255,255,0.4); padding: 0; }
+.camera-shutter:disabled { opacity: 0.4; }
+.camera-controls .btn { flex: 0 0 auto; }
+
+/* Grouped Home (features.groupedHome) */
+.tile-group { margin-top: 4px; }
+.tile-group-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
+.tile-group:first-of-type .tile-group-title { margin-top: 6px; }
 
 /* Video thumbnails, shop images, serving quick-picks */
 .vid-thumb { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; margin-bottom: 10px; cursor: pointer; border-radius: 12px; overflow: hidden; }
