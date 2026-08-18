@@ -49,16 +49,17 @@ export const BRANDS = {
     tiktok: 'paulandrewspt',
     scheme: 'dark',
     features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true, nutritionSupport: true, groupedHome: true },
-    // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout). Ids map to
-    // screens/hubs in ClientApp; label overrides the per-id default. Brands
-    // without a `nav` keep the default six-tab bar, so Kim/PPH/BBL are untouched.
+    // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout; simplified to
+    // 5 tabs 2026-08-18 per his feedback — Videos folded into the Coach hub,
+    // Coach+Community merged into one tab). Ids map to screens/hubs in
+    // ClientApp; label overrides the per-id default. Brands without a `nav`
+    // keep the default six-tab bar, so Kim/PPH/BBL are untouched.
     nav: [
       { id: 'home', label: 'Home' },
       { id: 'trainhub', label: 'Train' },
       { id: 'nutrition', label: 'Nutrition' },
-      { id: 'videos', label: 'Videos' },
-      { id: 'body', label: 'Progress' },
-      { id: 'ask', label: 'Coach' },
+      { id: 'body', label: 'Check-ins & Progress' },
+      { id: 'coachhub', label: 'Coach' },
     ],
     trainGymName: 'your gym',
     equipment: [

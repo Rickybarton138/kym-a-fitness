@@ -22,6 +22,11 @@ export const handler = async (event) => {
     const preferences = String(b.preferences || '').slice(0, 300).trim()
     const recovery = !!(b.recovery && b.recovery.on)
     const recoveryNote = recovery && b.recovery.note ? String(b.recovery.note).slice(0, 200) : ''
+    const hc = b.healthContext || null
+    const lifeBits = hc ? [hc.hasKids && 'has kids', hc.singleParent && 'single parent', hc.shiftWorker && 'works shifts'].filter(Boolean) : []
+    const healthLine = hc && (hc.conditions || lifeBits.length || hc.note)
+      ? `Client context (not a diagnosis, just realism): ${[hc.conditions && `health condition(s): ${String(hc.conditions).slice(0, 200)}`, lifeBits.length && lifeBits.join(', '), hc.note].filter(Boolean).join('; ')}. Keep meals realistic and achievable for this — e.g. quick/low-effort options for shift work or a busy household with kids; nothing here changes the calorie/macro targets above.\n`
+      : ''
 
     const prompt =
       `Build a realistic one-day meal plan for a coaching client.\n` +
@@ -31,6 +36,7 @@ export const handler = async (event) => {
       (recovery
         ? `RECOVERY-AWARE MODE — this client is in recovery from disordered eating${recoveryNote ? ` and finds this hard: ${recoveryNote}` : ''}. Every option must be generous, satisfying and genuinely nourishing — real, adequate meals. NEVER use "light", "skinny", "low-cal", "guilt-free" or any restrictive framing, and never fall short of the targets. Warm, non-judgmental descriptions. The "note" must be gentle and encouraging about nourishing themselves and going at their own pace — not about hitting numbers or eating less.\n`
         : '') +
+      healthLine +
       (dietary ? `Dietary requirements: ${dietary}. ` : '') +
       (allergies ? `NEVER include these allergens/intolerances: ${allergies}. ` : '') +
       (preferences ? `Preferences: ${preferences}. ` : '') +

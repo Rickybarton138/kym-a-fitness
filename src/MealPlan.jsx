@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { getRecovery } from './lib.js'
+import { getRecovery, getHealthContext } from './lib.js'
 
 // Client meal-plan builder. Uses their saved macro targets as the budget, asks a
 // few qualifying questions, then the AI returns a day where picking one option
@@ -32,7 +32,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
         body: JSON.stringify({
           calories: targets.calories, protein_g: targets.protein_g, carbs_g: targets.carbs_g, fat_g: targets.fat_g,
           meals, options, snacks, dietary: diet.join(', '), allergies, preferences: prefs,
-          recovery: getRecovery(),
+          recovery: getRecovery(), healthContext: getHealthContext(),
         }),
       })
       const j = await res.json()

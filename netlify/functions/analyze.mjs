@@ -116,7 +116,7 @@ function buildBriefingSystem(persona) {
   )
 }
 
-function buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto }) {
+function buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, healthContext }) {
   const equipLine = fromPhoto
     ? 'Look at the photo — it shows the equipment actually available to the client right now. Build the session using ONLY equipment you can see in the photo, and name the specific piece for each exercise. If the photo is unclear, fall back to sensible commonly-available kit.'
     : `Use ONLY equipment from this list, and name the specific piece for each exercise: ${(equipment || []).join('; ')}.`
@@ -126,7 +126,8 @@ function buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto }) {
     equipLine + ' ' +
     'Give 5-6 exercises, compound strength movements first, with sets (a number), a rep target or range, ' +
     'the exact equipment used, and one short coaching cue each (form and mindset, not just mechanics). ' +
-    'Add a brief finisher. Sensible, joint-friendly volume the client can actually recover from.'
+    'Add a brief finisher. Sensible, joint-friendly volume the client can actually recover from.' +
+    healthLine(healthContext)
   )
 }
 
@@ -149,9 +150,27 @@ function recoveryLine(recovery) {
     ' Use a warm, recovery-aware, trauma-informed tone at ALL times. NEVER suggest cutting calories, losing weight, restricting, skipping food, or creating a deficit — even if their numbers might otherwise suggest it. NEVER call foods good or bad, clean or cheat, or moralise about eating. Frame eating enough and eating flexibly as positive progress; gently encourage adequacy, regularity and variety. Do not fixate on or lead with calorie numbers — keep the focus on nourishment, consistency and a calm relationship with food. Be reassuring and non-judgmental. If they seem to be struggling or distressed, gently and briefly encourage them to lean on their coach and their professional support (their GP, or the Beat eating-disorder helpline) — you are a supportive companion, not a substitute for treatment.'
 }
 
-function buildPrompt(mode, remaining, persona, nutritionStyle, extras, recovery) {
+// Client-shared health conditions + life circumstances (PCOS, menopause, thyroid,
+// PoTS, kids/single-parent/shift-work etc — Paul's ask). Informational context
+// only, never a diagnosis: shapes tone and practical realism, no automatic
+// calorie/macro maths, and explicitly defers medical specifics to a professional.
+function healthLine(hc) {
+  if (!hc) return ''
+  const parts = []
+  if (hc.conditions) parts.push(`They have shared these health condition(s) or diagnoses: ${String(hc.conditions).slice(0, 300)}.`)
+  const life = []
+  if (hc.hasKids) life.push('has kids')
+  if (hc.singleParent) life.push('is a single parent')
+  if (hc.shiftWorker) life.push('works shifts')
+  if (life.length) parts.push(`Their life circumstances: ${life.join(', ')}.`)
+  if (hc.note) parts.push(String(hc.note).slice(0, 300))
+  if (!parts.length) return ''
+  return ' ' + parts.join(' ') + ' Take this into account — adjust tone, expectations and pacing for any relevant condition, and keep meal/session suggestions realistic for their time, energy and childcare/shift constraints. This is shared context, not a diagnosis: never give specific medical advice or claim a condition changes their exact calorie/macro numbers — encourage them to discuss condition-specific management with their GP or specialist, and lean on their coach for how it plays out day to day.'
+}
+
+function buildPrompt(mode, remaining, persona, nutritionStyle, extras, recovery, healthContext) {
   const intro = personaIntro(persona, 'nutrition coach')
-  const style = styleLine(nutritionStyle) + recoveryLine(recovery)
+  const style = styleLine(nutritionStyle) + recoveryLine(recovery) + healthLine(healthContext)
   if (mode === 'fridge') {
     const target = remaining
       ? `The client has these macros LEFT for today: ${remaining.protein_g}g protein, ${remaining.carbs_g}g carbs, ${remaining.fat_g}g fat (about ${remaining.calories} kcal). `
@@ -220,7 +239,7 @@ function buildExpertSystem() {
   )
 }
 
-function buildAskSystem(knowledge, comms, persona, nutritionStyle, recovery) {
+function buildAskSystem(knowledge, comms, persona, nutritionStyle, recovery, healthContext) {
   const name = (persona && persona.name) || 'the coach'
   const kb = (knowledge || [])
     .map((k, i) => `[${i + 1}] ${k.title ? k.title + ': ' : ''}${k.content}`)
@@ -241,7 +260,7 @@ function buildAskSystem(knowledge, comms, persona, nutritionStyle, recovery) {
     'This is general fitness and nutrition guidance, not medical advice; for pain, injury, pregnancy or medical concerns, advise seeing a professional.' +
     (kb ? `\n\n${name.toUpperCase()}’S KNOWLEDGE:\n` + kb : `\n\n(No specific knowledge added yet — answer generally in the coach’s style.)`) +
     (convo ? `\n\nRECENT MESSAGES BETWEEN ${name.toUpperCase()} AND THIS CLIENT (for context):\n` + convo : '') +
-    styleLine(nutritionStyle) + recoveryLine(recovery)
+    styleLine(nutritionStyle) + recoveryLine(recovery) + healthLine(healthContext)
   )
 }
 
@@ -299,7 +318,7 @@ export const handler = async (event) => {
     return json(400, { error: 'Invalid JSON body.' })
   }
 
-  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras, recovery } = body
+  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras, recovery, healthContext } = body
 
   // ---- Nutrition Expert: evidence-based sports-nutrition answers ----
   if (mode === 'expert') {
@@ -334,7 +353,7 @@ export const handler = async (event) => {
         body: JSON.stringify({
           model: MODEL_MID,
           max_tokens: 800,
-          system: cacheable(buildAskSystem(knowledge, comms, persona, nutritionStyle, recovery)),
+          system: cacheable(buildAskSystem(knowledge, comms, persona, nutritionStyle, recovery, healthContext)),
           messages: [{ role: 'user', content: String(question).slice(0, 2000) }],
         }),
       })
@@ -423,7 +442,7 @@ export const handler = async (event) => {
     const fromPhoto = !!image
     // With an equipment photo, use a vision-capable mid model; text-only stays cheap.
     model = fromPhoto ? MODEL_MID : MODEL_LITE
-    content = [{ type: 'text', text: buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto }) }]
+    content = [{ type: 'text', text: buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, healthContext }) }]
     if (fromPhoto) content.push({ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } })
   } else if (mode === 'parse') {
     if (!text) return json(400, { error: 'Paste some text to parse.' })
@@ -436,7 +455,7 @@ export const handler = async (event) => {
     // model stays MODEL (Opus) — macro/photo accuracy matters here
     content = [
       { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } },
-      { type: 'text', text: buildPrompt(mode, remaining, persona, nutritionStyle, extras, recovery) },
+      { type: 'text', text: buildPrompt(mode, remaining, persona, nutritionStyle, extras, recovery, healthContext) },
     ]
   } else {
     return json(400, { error: 'Unknown mode.' })

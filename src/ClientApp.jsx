@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, mealByHour, MEALS } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -52,6 +52,7 @@ const TAB_META = {
   videos:    { label: 'Videos',    icon: IconContent },
   body:      { label: 'Body',      icon: IconBody },
   ask:       { label: 'Coach',     icon: IconAsk },
+  coachhub:  { label: 'Coach',     icon: IconAsk },
 }
 const DEFAULT_NAV = [
   { id: 'home' }, { id: 'train' }, { id: 'fridge' },
@@ -60,8 +61,9 @@ const DEFAULT_NAV = [
 // So a hub tab stays lit while you're inside one of its screens.
 const HUB_CHILDREN = {
   trainhub:  ['train', 'programs', 'muscles', 'testing', 'strava'],
-  nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert'],
+  nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert', 'health'],
   body:      ['body', 'growth', 'monitoring'],
+  coachhub:  ['ask', 'form', 'content', 'community', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
 }
 
 export default function ClientApp({ profile, onSignOut }) {
@@ -81,6 +83,10 @@ export default function ClientApp({ profile, onSignOut }) {
   async function loadAll() {
     setNutritionStyle(profile.nutrition_style)
     setRecovery({ on: profile.nutrition_sensitive, note: profile.nutrition_sensitive_note })
+    setHealthContext({
+      conditions: profile.health_conditions, hasKids: profile.has_kids,
+      singleParent: profile.single_parent, shiftWorker: profile.shift_worker, note: profile.life_context_note,
+    })
     const [t, logs, meas] = await Promise.all([
       supabase.from('macro_targets').select('*').eq('client_id', profile.id).maybeSingle(),
       supabase.from('nutrition_logs').select('*').eq('client_id', profile.id).gte('logged_at', startOfTodayISO()).order('logged_at', { ascending: false }),
@@ -131,6 +137,9 @@ export default function ClientApp({ profile, onSignOut }) {
   const activeTab = nav.some((n) => n.id === screen)
     ? screen
     : (nav.find((n) => HUB_CHILDREN[n.id]?.includes(screen))?.id || screen)
+  // Screens that live under the Coach & Community hub on brands that have one
+  // (Paul) go back there; everyone else (no coachhub tab) goes back to Home.
+  const backFromCoach = () => setScreen(nav.some((n) => n.id === 'coachhub') ? 'coachhub' : 'home')
 
   async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type, logged_at }, source) {
     const row = {
@@ -178,6 +187,19 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
         {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
+        {screen === 'health' && (
+          <HealthDetails
+            profile={profile}
+            onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')}
+            onSaved={(patch) => {
+              setRecovery({ on: patch.nutrition_sensitive, note: patch.nutrition_sensitive_note })
+              setHealthContext({
+                conditions: patch.health_conditions, hasKids: patch.has_kids,
+                singleParent: patch.single_parent, shiftWorker: patch.shift_worker, note: patch.life_context_note,
+              })
+            }}
+          />
+        )}
         {screen === 'testing' && <Testing clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'muscles' && (
           <div className="stack">
@@ -195,13 +217,13 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'programs' && <ProgramLibrary clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'recipes' && <RecipeLibrary profile={profile} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
         {screen === 'mealplan' && <MealPlanBuilder targets={targets} coachName={coachName} onLog={(m) => logFood(m, 'manual')} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
-        {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={backFromCoach} />}
         {screen === 'myplan' && <ClientMealPlan clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'cycle' && <CycleTracker clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
-        {screen === 'supplements' && <LinkList kind="supplement" coachName={coachName} onBack={() => setScreen('home')} />}
-        {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={() => setScreen('home')} />}
-        {screen === 'podcasts' && <LinkList kind="podcast" coachName={coachName} onBack={() => setScreen('home')} />}
-        {screen === 'files' && <FilesLibrary coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'supplements' && <LinkList kind="supplement" coachName={coachName} onBack={backFromCoach} />}
+        {screen === 'shop' && <LinkList kind="shop" coachName={coachName} onBack={backFromCoach} />}
+        {screen === 'podcasts' && <LinkList kind="podcast" coachName={coachName} onBack={backFromCoach} />}
+        {screen === 'files' && <FilesLibrary coachName={coachName} onBack={backFromCoach} />}
         {screen === 'rehab' && <Rehab clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'barcode' && <BarcodeScan onLog={(m) => logFood(m, 'barcode')} onBack={() => setScreen('home')} />}
         {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
@@ -221,11 +243,13 @@ export default function ClientApp({ profile, onSignOut }) {
           </div>
         )}
         {screen === 'body' && <Body measurements={measurements} onAdd={addMeasurement} clientId={profile.id} coachName={coachName} />}
-        {screen === 'ask' && <KimHub clientId={profile.id} coachName={coachName} />}
-        {screen === 'form' && <FormCheck clientId={profile.id} coachName={coachName} />}
-        {screen === 'content' && <IGContent coachName={coachName} />}
+        {screen === 'coachhub' && <CoachHub coachName={coachName} onGo={setScreen} />}
+        {screen === 'ask' && <KimHub clientId={profile.id} coachName={coachName} onBack={nav.some((n) => n.id === 'coachhub') ? backFromCoach : undefined} />}
+        {screen === 'form' && <FormCheck clientId={profile.id} coachName={coachName} onBack={nav.some((n) => n.id === 'coachhub') ? backFromCoach : undefined} />}
+        {screen === 'content' && <IGContent coachName={coachName} onBack={nav.some((n) => n.id === 'coachhub') ? backFromCoach : undefined} />}
         {screen === 'community' && (
           <div className="stack">
+            {nav.some((n) => n.id === 'coachhub') && <button className="link-btn" onClick={backFromCoach}>‹ Back</button>}
             <p className="eyebrow">Community</p>
             <h1 className="h1">The {coachName?.split(' ')[0] || 'Kim'} community.</h1>
             <p className="lead">Share your wins and cheer each other on.</p>
@@ -330,7 +354,7 @@ function homeTileDefs(coachFirst) {
     { id: 'recipes', group: 'Nutrition', show: THEME.features?.recipes, Icon: IconMeal, title: 'Recipes', sub: `${coachFirst}’s go-to meals, log in one tap` },
     { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'Build a day around your targets' },
     { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
-    { id: 'videos', group: 'Training', show: THEME.features?.videos, Icon: IconForm, title: 'Video library', sub: `Technique & mindset clips from ${coachFirst}` },
+    { id: 'videos', group: 'Coach & Community', show: THEME.features?.videos, Icon: IconForm, title: 'Video library', sub: `Technique & mindset clips from ${coachFirst}` },
     { id: 'body', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Body scan', sub: 'Track your progress' },
     { id: 'cycle', group: 'Progress & Body', show: THEME.features?.cycle, Icon: IconBody, title: 'Cycle', sub: 'Log your period, train with your body' },
     { id: 'ask', group: 'Coach & Community', hero: true, show: true, Icon: IconAsk, title: `Ask ${coachFirst}`, sub: `Get an answer in ${coachFirst}’s method, any time` },
@@ -342,12 +366,13 @@ function homeTileDefs(coachFirst) {
     { id: 'podcasts', group: 'Coach & Community', show: THEME.features?.podcasts, Icon: IconContent, title: 'Podcasts', sub: `Listen to ${coachFirst}’s episodes` },
     { id: 'files', group: 'Coach & Community', show: THEME.features?.files, Icon: IconForm, title: 'Files', sub: `${coachFirst}’s guides & resources` },
     { id: 'checkin', group: 'Progress & Body', hero: true, show: true, Icon: IconAsk, title: 'Weekly check-in', sub: `Send ${coachFirst} your progress & how the week went` },
-    { id: 'strava', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
+    { id: 'strava', group: 'Training', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
     { id: 'testing', group: 'Training', show: THEME.features?.testing, Icon: IconTest, title: 'Performance testing', sub: 'Log your tests & track your PBs' },
     { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
     { id: 'monitoring', group: 'Progress & Body', show: THEME.features?.monitoring, Icon: IconBody, title: 'Readiness & load', sub: 'Daily check-in & training-load tracking' },
     { id: 'rehab', group: 'Progress & Body', show: THEME.features?.rehab, Icon: IconBody, title: 'My rehab', sub: 'Your rehab plan, return-to-play & soreness' },
     { id: 'growth', group: 'Progress & Body', show: THEME.features?.growth, Icon: IconTest, title: 'Growth tracker', sub: 'Your height, growth & maturation' },
+    { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: 'Health conditions & life circumstances — optional' },
   ]
 }
 const HOME_GROUPS = ['Nutrition', 'Training', 'Progress & Body', 'Coach & Community']
@@ -2684,10 +2709,11 @@ function Metric({ k, v, d }) {
   )
 }
 
-function KimHub({ clientId, coachName }) {
+function KimHub({ clientId, coachName, onBack }) {
   const [tab, setTab] = useState('ai')
   return (
     <div className="stack">
+      {onBack && <button className="link-btn" onClick={onBack}>‹ Back</button>}
       <p className="eyebrow">Your coach</p>
       <h1 className="h1">{coachName || 'Kim'}, any time.</h1>
       <div className="seg">
@@ -2768,7 +2794,7 @@ function AskKim({ clientId, coachName }) {
   )
 }
 
-function FormCheck({ clientId, coachName }) {
+function FormCheck({ clientId, coachName, onBack }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [exercise, setExercise] = useState('')
   const [checks, setChecks] = useState([])
@@ -2823,6 +2849,7 @@ function FormCheck({ clientId, coachName }) {
 
   return (
     <div className="stack">
+      {onBack && <button className="link-btn" onClick={onBack}>‹ Back</button>}
       <p className="eyebrow">Form check</p>
       <h1 className="h1">Check your form.</h1>
       <p className="lead">Upload a short video or a photo of your lift — record a new one or choose an existing file — and get instant AI pointers, then {coachFirst} reviews it.</p>
@@ -2881,7 +2908,7 @@ function IgEmbed({ url }) {
   )
 }
 
-function IGContent({ coachName }) {
+function IGContent({ coachName, onBack }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const first = coachName?.split(' ')[0] || 'Kim'
@@ -2890,6 +2917,7 @@ function IGContent({ coachName }) {
   }, [])
   return (
     <div className="stack">
+      {onBack && <button className="link-btn" onClick={onBack}>‹ Back</button>}
       <p className="eyebrow">From {first}</p>
       <h1 className="h1">Content &amp; inspiration.</h1>
       <p className="lead">Posts and reels {first} wants you to see.</p>
@@ -2938,6 +2966,10 @@ function TrainHub({ coachName, onGo }) {
             <div><b>Performance testing</b><span>Log your tests &amp; track your PBs</span></div>
           </button>
         )}
+        <button className="tile" onClick={() => onGo('strava')}>
+          <IconBody />
+          <div><b>Connect Strava</b><span>Pull your runs, rides &amp; workouts into the app</span></div>
+        </button>
       </div>
     </div>
   )
@@ -3015,6 +3047,72 @@ function NutritionHub({ profile, coachName, onGo }) {
           <IconMeal />
           <div><b>Calorie calculator</b><span>Recalculate your targets any time</span></div>
         </button>
+        <button className="tile" onClick={() => onGo('health')}>
+          <IconAsk />
+          <div><b>My details</b><span>Health conditions &amp; life circumstances — optional</span></div>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Coach & Community hub (brands with a `coachhub` nav tab — Paul). Community
+// and the video library lead, per his ask; everything else that used to be
+// scattered Home tiles or a standalone Videos tab lives here now.
+function CoachHub({ coachName, onGo }) {
+  const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  return (
+    <div className="stack">
+      <p className="eyebrow">Coach &amp; Community</p>
+      <h1 className="h1">{coachFirst} &amp; the crew.</h1>
+      <p className="lead">Everyone and everything outside training and nutrition.</p>
+      <div className="tiles">
+        <button className="tile tile-hero" onClick={() => onGo('community')}>
+          <IconCommunity />
+          <div><b>Community</b><span>Share wins &amp; cheer each other on</span></div>
+        </button>
+        {THEME.features?.videos && (
+          <button className="tile tile-hero" onClick={() => onGo('videos')}>
+            <IconContent />
+            <div><b>Video library</b><span>Technique &amp; mindset clips from {coachFirst}</span></div>
+          </button>
+        )}
+        <button className="tile" onClick={() => onGo('ask')}>
+          <IconAsk />
+          <div><b>Ask {coachFirst}</b><span>Get an answer in {coachFirst}’s method, any time</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('form')}>
+          <IconForm />
+          <div><b>Form check</b><span>Upload a clip — AI + {coachFirst} check your form</span></div>
+        </button>
+        <button className="tile" onClick={() => onGo('content')}>
+          <IconContent />
+          <div><b>From {coachFirst}</b><span>{coachFirst}’s latest posts &amp; inspiration</span></div>
+        </button>
+        {THEME.features?.supplements && (
+          <button className="tile" onClick={() => onGo('supplements')}>
+            <IconMeal />
+            <div><b>Supplements</b><span>Trusted brands &amp; your discount code</span></div>
+          </button>
+        )}
+        {THEME.features?.shop && (
+          <button className="tile" onClick={() => onGo('shop')}>
+            <IconContent />
+            <div><b>Shop</b><span>{coachFirst}’s book, merch &amp; gear</span></div>
+          </button>
+        )}
+        {THEME.features?.podcasts && (
+          <button className="tile" onClick={() => onGo('podcasts')}>
+            <IconContent />
+            <div><b>Podcasts</b><span>Listen to {coachFirst}’s episodes</span></div>
+          </button>
+        )}
+        {THEME.features?.files && (
+          <button className="tile" onClick={() => onGo('files')}>
+            <IconForm />
+            <div><b>Files</b><span>{coachFirst}’s guides &amp; resources</span></div>
+          </button>
+        )}
       </div>
     </div>
   )
@@ -3097,6 +3195,79 @@ function CalcTargets({ profile, onSaveTargets, onBack }) {
       {error && <p className="error">{error}</p>}
       <button className="btn primary big" disabled={!targets || saving} onClick={apply}>{saving ? 'Saving…' : 'Save new targets'}</button>
       {saved && <p className="logged-ok">Targets updated ✓</p>}
+    </div>
+  )
+}
+
+// Client-editable health conditions + life circumstances (Paul's ask). Same
+// fields captured at onboarding, editable any time. Feeds AI tone only —
+// see healthLine() in analyse.mjs — never changes calorie/macro maths.
+function HealthDetails({ profile, onBack, onSaved }) {
+  const [nutritionSensitive, setNutritionSensitive] = useState(!!profile.nutrition_sensitive)
+  const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState(profile.nutrition_sensitive_note || '')
+  const [healthConditions, setHealthConditions] = useState(profile.health_conditions || '')
+  const [hasKids, setHasKids] = useState(!!profile.has_kids)
+  const [singleParent, setSingleParent] = useState(!!profile.single_parent)
+  const [shiftWorker, setShiftWorker] = useState(!!profile.shift_worker)
+  const [lifeContextNote, setLifeContextNote] = useState(profile.life_context_note || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    const patch = {
+      nutrition_sensitive: nutritionSensitive, nutrition_sensitive_note: nutritionSensitive ? (nutritionSensitiveNote.trim() || null) : null,
+      health_conditions: healthConditions.trim() || null,
+      has_kids: hasKids, single_parent: singleParent, shift_worker: shiftWorker,
+      life_context_note: lifeContextNote.trim() || null,
+    }
+    const { error } = await supabase.from('profiles').update(patch).eq('id', profile.id)
+    setSaving(false)
+    if (!error) { onSaved(patch); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  }
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">My details</p>
+      <h1 className="h1">Health &amp; circumstances.</h1>
+      <p className="lead">Optional — sharing this helps your coach and the AI support you better. Private to you and your coach.</p>
+      <div className="card">
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <input type="checkbox" checked={nutritionSensitive} onChange={(e) => setNutritionSensitive(e.target.checked)} style={{ width: 'auto' }} />
+          I’ve struggled with disordered eating
+        </label>
+        {nutritionSensitive && (
+          <label className="field" style={{ marginTop: 8 }}>What do you find hardest? (optional — guides the AI)
+            <input value={nutritionSensitiveNote} onChange={(e) => setNutritionSensitiveNote(e.target.value)} placeholder="e.g. increasing calories, fear foods, eating regularly" />
+          </label>
+        )}
+      </div>
+      <div className="card">
+        <label className="field">Any health conditions we should know about?
+          <input value={healthConditions} onChange={(e) => setHealthConditions(e.target.value)} placeholder="e.g. PCOS, menopause, thyroid, PoTS" />
+        </label>
+      </div>
+      <div className="card">
+        <p className="eyebrow">Life circumstances</p>
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <input type="checkbox" checked={hasKids} onChange={(e) => setHasKids(e.target.checked)} style={{ width: 'auto' }} />
+          I have kids
+        </label>
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <input type="checkbox" checked={singleParent} onChange={(e) => setSingleParent(e.target.checked)} style={{ width: 'auto' }} />
+          I’m a single parent
+        </label>
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <input type="checkbox" checked={shiftWorker} onChange={(e) => setShiftWorker(e.target.checked)} style={{ width: 'auto' }} />
+          I work shifts
+        </label>
+        <label className="field" style={{ marginTop: 8 }}>Anything else?
+          <input value={lifeContextNote} onChange={(e) => setLifeContextNote(e.target.value)} placeholder="e.g. travel a lot for work, caring responsibilities" />
+        </label>
+      </div>
+      <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+      {saved && <p className="logged-ok">Saved ✓</p>}
     </div>
   )
 }

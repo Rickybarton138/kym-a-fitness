@@ -42,13 +42,20 @@ const optionStyle = (on) => ({
 })
 
 export default function Onboarding({ profile, onDone }) {
-  const [step, setStep] = useState('stats') // stats | goal | result
+  const [step, setStep] = useState('stats') // stats | goal | context | result
   const [sex, setSex] = useState('male')
   const [age, setAge] = useState('')
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
   const [activity, setActivity] = useState('moderate')
   const [goal, setGoal] = useState('lose')
+  const [nutritionSensitive, setNutritionSensitive] = useState(false)
+  const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState('')
+  const [healthConditions, setHealthConditions] = useState('')
+  const [hasKids, setHasKids] = useState(false)
+  const [singleParent, setSingleParent] = useState(false)
+  const [shiftWorker, setShiftWorker] = useState(false)
+  const [lifeContextNote, setLifeContextNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -74,6 +81,10 @@ export default function Onboarding({ profile, onDone }) {
       const upP = await supabase.from('profiles').update({
         sex, age: Number(age), height_cm: Number(height), activity_level: activity,
         goal, onboarded_at: now,
+        nutrition_sensitive: nutritionSensitive, nutrition_sensitive_note: nutritionSensitive ? (nutritionSensitiveNote.trim() || null) : null,
+        health_conditions: healthConditions.trim() || null,
+        has_kids: hasKids, single_parent: singleParent, shift_worker: shiftWorker,
+        life_context_note: lifeContextNote.trim() || null,
       }).eq('id', profile.id)
       if (upP.error) throw new Error(upP.error.message)
       const { data: bm } = await supabase.from('body_measurements').select('id').eq('client_id', profile.id).limit(1)
@@ -101,6 +112,7 @@ export default function Onboarding({ profile, onDone }) {
           <p className="muted">
             {step === 'stats' && 'A few quick numbers so we can set your targets.'}
             {step === 'goal' && 'What are you working towards right now?'}
+            {step === 'context' && 'Optional — anything that helps us support you better.'}
             {step === 'result' && 'Built from your numbers — you can fine-tune any time.'}
           </p>
         </div>
@@ -143,7 +155,45 @@ export default function Onboarding({ profile, onDone }) {
             ))}
             <div className="seg" style={{ marginTop: 16 }}>
               <button type="button" onClick={() => setStep('stats')}>Back</button>
-              <button type="button" className="on" onClick={() => setStep('result')}>See my targets</button>
+              <button type="button" className="on" onClick={() => setStep('context')}>Continue</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'context' && (
+          <div className="auth-form">
+            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" checked={nutritionSensitive} onChange={(e) => setNutritionSensitive(e.target.checked)} style={{ width: 'auto' }} />
+              I’ve struggled with disordered eating
+            </label>
+            {nutritionSensitive && (
+              <label className="field" style={{ marginTop: 4 }}>What do you find hardest? (optional — guides the AI)
+                <input value={nutritionSensitiveNote} onChange={(e) => setNutritionSensitiveNote(e.target.value)} placeholder="e.g. increasing calories, fear foods, eating regularly" />
+              </label>
+            )}
+            <label className="field" style={{ marginTop: 12 }}>Any health conditions we should know about? (optional)
+              <input value={healthConditions} onChange={(e) => setHealthConditions(e.target.value)} placeholder="e.g. PCOS, menopause, thyroid, PoTS" />
+            </label>
+            <p className="muted-note" style={{ marginTop: 12 }}>Life circumstances (optional — helps keep suggestions realistic)</p>
+            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <input type="checkbox" checked={hasKids} onChange={(e) => setHasKids(e.target.checked)} style={{ width: 'auto' }} />
+              I have kids
+            </label>
+            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <input type="checkbox" checked={singleParent} onChange={(e) => setSingleParent(e.target.checked)} style={{ width: 'auto' }} />
+              I’m a single parent
+            </label>
+            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <input type="checkbox" checked={shiftWorker} onChange={(e) => setShiftWorker(e.target.checked)} style={{ width: 'auto' }} />
+              I work shifts
+            </label>
+            <label className="field" style={{ marginTop: 8 }}>Anything else? (optional)
+              <input value={lifeContextNote} onChange={(e) => setLifeContextNote(e.target.value)} placeholder="e.g. travel a lot for work, caring responsibilities" />
+            </label>
+            <p className="muted-note" style={{ marginTop: 10 }}>All optional and private to you and your coach — you can change this any time from Home.</p>
+            <div className="seg" style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => setStep('goal')}>Back</button>
+              <button type="button" className="on" onClick={() => setStep('result')}>Continue</button>
             </div>
           </div>
         )}
@@ -164,7 +214,7 @@ export default function Onboarding({ profile, onDone }) {
             </div>
             {error && <p className="error">{error}</p>}
             <div className="seg" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => setStep('goal')}>Back</button>
+              <button type="button" onClick={() => setStep('context')}>Back</button>
               <button type="button" className="on" onClick={finish} disabled={saving}>{saving ? 'Saving…' : 'Start'}</button>
             </div>
           </div>

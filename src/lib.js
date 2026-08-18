@@ -31,12 +31,24 @@ let activeRecovery = null
 export function setRecovery(r) { activeRecovery = r && r.on ? { on: true, note: r.note || '' } : null }
 export function getRecovery() { return activeRecovery }
 
+// Client-shared health conditions (PCOS, menopause, thyroid, PoTS etc — free
+// text, client or coach set) + life circumstances (kids/single parent/shift
+// work), set from the profile after login and attached to every AI call so
+// tone and practical suggestions account for it. Informational only — never
+// changes calorie/macro maths.
+let activeHealthContext = null
+export function setHealthContext(h) {
+  activeHealthContext = h && (h.conditions || h.hasKids || h.singleParent || h.shiftWorker || h.note) ? h : null
+}
+export function getHealthContext() { return activeHealthContext }
+
 // Call the serverless Claude proxy.
 export async function analyze(payload) {
   let body = payload
   if (activePersona && !body.persona) body = { ...body, persona: activePersona }
   if (activeNutritionStyle && !body.nutritionStyle) body = { ...body, nutritionStyle: activeNutritionStyle }
   if (activeRecovery && !body.recovery) body = { ...body, recovery: activeRecovery }
+  if (activeHealthContext && !body.healthContext) body = { ...body, healthContext: activeHealthContext }
   const res = await fetch('/.netlify/functions/analyze', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

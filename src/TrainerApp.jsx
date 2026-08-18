@@ -36,7 +36,7 @@ export default function TrainerApp({ profile, onSignOut }) {
 
   async function loadClients() {
     const { data } = await supabase
-      .from('profiles').select('id, full_name, created_at, membership_tier, goal, step_target')
+      .from('profiles').select('id, full_name, created_at, membership_tier, goal, step_target, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note')
       .eq('trainer_id', profile.id).order('created_at', { ascending: true })
     setClients(data || [])
     setLoading(false)
@@ -333,6 +333,52 @@ function NutritionSupport({ client }) {
   )
 }
 
+// Coach control for health conditions (PCOS, menopause, thyroid, PoTS etc) +
+// life circumstances (kids/single parent/shift work). Clients can also set
+// this themselves from Home > My details — either side can flag it. Feeds AI
+// tone only (see healthLine() in analyse.mjs) — never changes calorie maths.
+function ClientHealthContext({ client }) {
+  const [conditions, setConditions] = useState(client.health_conditions || '')
+  const [hasKids, setHasKids] = useState(!!client.has_kids)
+  const [singleParent, setSingleParent] = useState(!!client.single_parent)
+  const [shiftWorker, setShiftWorker] = useState(!!client.shift_worker)
+  const [note, setNote] = useState(client.life_context_note || '')
+  const [saved, setSaved] = useState(false)
+  const first = (client.full_name || 'this client').split(' ')[0]
+  async function save() {
+    const { error } = await supabase.rpc('set_client_health_context', {
+      p_client: client.id, p_conditions: conditions.trim() || null, p_has_kids: hasKids,
+      p_single_parent: singleParent, p_shift_worker: shiftWorker, p_life_note: note.trim() || null,
+    })
+    if (!error) { setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  }
+  return (
+    <div className="card">
+      <p className="eyebrow">Health &amp; circumstances</p>
+      <p className="muted-note">Optional context that shapes AI tone and suggestions — never changes {first}’s calorie/macro targets. {first} can also set this themselves from Home &gt; My details.</p>
+      <label className="field" style={{ marginTop: 8 }}>Health conditions
+        <input value={conditions} onChange={(e) => setConditions(e.target.value)} placeholder="e.g. PCOS, menopause, thyroid, PoTS" />
+      </label>
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
+        <input type="checkbox" checked={hasKids} onChange={(e) => setHasKids(e.target.checked)} style={{ width: 'auto' }} />
+        Has kids
+      </label>
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+        <input type="checkbox" checked={singleParent} onChange={(e) => setSingleParent(e.target.checked)} style={{ width: 'auto' }} />
+        Single parent
+      </label>
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+        <input type="checkbox" checked={shiftWorker} onChange={(e) => setShiftWorker(e.target.checked)} style={{ width: 'auto' }} />
+        Works shifts
+      </label>
+      <label className="field" style={{ marginTop: 8 }}>Anything else?
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. travel a lot for work, caring responsibilities" />
+      </label>
+      <button className="btn primary" style={{ marginTop: 10 }} onClick={save}>{saved ? 'Saved ✓' : 'Save'}</button>
+    </div>
+  )
+}
+
 function ClientDetail({ client, trainerId, onBack }) {
   const [targets, setTargets] = useState(null)
   const [today, setToday] = useState({ protein_g: 0, carbs_g: 0, fat_g: 0, calories: 0 })
@@ -455,6 +501,7 @@ function ClientDetail({ client, trainerId, onBack }) {
             </div>
 
             {THEME.features?.nutritionSupport && <NutritionSupport client={client} />}
+            {THEME.features?.nutritionSupport && <ClientHealthContext client={client} />}
 
             {THEME.features?.coachMealPlans && <ClientMealPlanPanel clientId={client.id} coachId={trainerId} />}
 
