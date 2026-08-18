@@ -341,41 +341,47 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
 // order/output as before — Kim/PPH/BBL/Elev8 untouched); Paul renders it
 // chunked under section headers instead (his ask: "group things into sections
 // or widgets", his Home tab was one 25-tile wall).
+// Tile order within each group follows the matching hub tab's order (Paul's
+// ask — Home and the hub tabs should agree), not just alphabetical/legacy order.
 function homeTileDefs(coachFirst) {
   return [
-    { id: 'fridge', group: 'Nutrition', hero: true, show: true, Icon: IconFridge, title: 'Fridge-to-Plate', sub: 'Snap your fridge, get a meal that fits your macros' },
     { id: 'classes', group: 'Training', hero: true, show: THEME.features?.booking, Icon: IconTrain, title: 'Book a class', sub: 'See the timetable & book your spot' },
     { id: 'train', group: 'Training', show: true, Icon: IconTrain, title: 'Today’s session', sub: 'A plan built for your gym’s kit' },
     { id: 'programs', group: 'Training', hero: true, show: THEME.features?.programs, Icon: IconTrain, title: 'Program library', sub: `Follow a full plan built by ${coachFirst}` },
     { id: 'muscles', group: 'Training', show: true, Icon: IconTrain, title: 'Muscle targeter', sub: 'Tap a muscle, get exercises to train it' },
+    { id: 'strava', group: 'Training', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
+    { id: 'testing', group: 'Training', show: THEME.features?.testing, Icon: IconTest, title: 'Performance testing', sub: 'Log your tests & track your PBs' },
     { id: 'meal', group: 'Nutrition', show: true, Icon: IconMeal, title: 'Scan a meal', sub: 'Photo → calories & macros' },
+    { id: 'fridge', group: 'Nutrition', hero: true, show: true, Icon: IconFridge, title: 'Fridge-to-Plate', sub: 'Snap your fridge, get a meal that fits your macros' },
     { id: 'food', group: 'Nutrition', show: true, Icon: IconMeal, title: 'Log food', sub: 'Search foods & drinks, add your portion' },
     { id: 'barcode', group: 'Nutrition', show: THEME.features?.barcode, Icon: IconMeal, title: 'Barcode scan', sub: 'Scan a product, log it in a tap' },
     { id: 'recipes', group: 'Nutrition', show: THEME.features?.recipes, Icon: IconMeal, title: 'Recipes', sub: `${coachFirst}’s go-to meals, log in one tap` },
     { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'Build a day around your targets' },
     { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
-    { id: 'videos', group: 'Coach & Community', show: THEME.features?.videos, Icon: IconForm, title: 'Video library', sub: `Technique & mindset clips from ${coachFirst}` },
+    { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
+    { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: 'Health conditions & life circumstances — optional' },
     { id: 'body', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Body scan', sub: 'Track your progress' },
     { id: 'cycle', group: 'Progress & Body', show: THEME.features?.cycle, Icon: IconBody, title: 'Cycle', sub: 'Log your period, train with your body' },
+    { id: 'checkin', group: 'Progress & Body', hero: true, show: true, Icon: IconAsk, title: 'Weekly check-in', sub: `Send ${coachFirst} your progress & how the week went` },
+    { id: 'monitoring', group: 'Progress & Body', show: THEME.features?.monitoring, Icon: IconBody, title: 'Readiness & load', sub: 'Daily check-in & training-load tracking' },
+    { id: 'rehab', group: 'Progress & Body', show: THEME.features?.rehab, Icon: IconBody, title: 'My rehab', sub: 'Your rehab plan, return-to-play & soreness' },
+    { id: 'growth', group: 'Progress & Body', show: THEME.features?.growth, Icon: IconTest, title: 'Growth tracker', sub: 'Your height, growth & maturation' },
+    { id: 'community', group: 'Coach & Community', show: true, Icon: IconCommunity, title: 'Community', sub: 'Share wins & cheer each other on' },
+    { id: 'videos', group: 'Coach & Community', show: THEME.features?.videos, Icon: IconForm, title: 'Video library', sub: `Technique & mindset clips from ${coachFirst}` },
     { id: 'ask', group: 'Coach & Community', hero: true, show: true, Icon: IconAsk, title: `Ask ${coachFirst}`, sub: `Get an answer in ${coachFirst}’s method, any time` },
     { id: 'form', group: 'Coach & Community', show: true, Icon: IconForm, title: 'Form check', sub: `Upload a clip — AI + ${coachFirst} check your form` },
     { id: 'content', group: 'Coach & Community', show: true, Icon: IconContent, title: `From ${coachFirst}`, sub: `${coachFirst}’s latest posts & inspiration` },
-    { id: 'community', group: 'Coach & Community', show: true, Icon: IconCommunity, title: 'Community', sub: 'Share wins & cheer each other on' },
     { id: 'supplements', group: 'Coach & Community', show: THEME.features?.supplements, Icon: IconMeal, title: 'Supplements', sub: 'Trusted brands & your discount code' },
     { id: 'shop', group: 'Coach & Community', show: THEME.features?.shop, Icon: IconContent, title: 'Shop', sub: `${coachFirst}’s book, merch & gear` },
     { id: 'podcasts', group: 'Coach & Community', show: THEME.features?.podcasts, Icon: IconContent, title: 'Podcasts', sub: `Listen to ${coachFirst}’s episodes` },
     { id: 'files', group: 'Coach & Community', show: THEME.features?.files, Icon: IconForm, title: 'Files', sub: `${coachFirst}’s guides & resources` },
-    { id: 'checkin', group: 'Progress & Body', hero: true, show: true, Icon: IconAsk, title: 'Weekly check-in', sub: `Send ${coachFirst} your progress & how the week went` },
-    { id: 'strava', group: 'Training', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
-    { id: 'testing', group: 'Training', show: THEME.features?.testing, Icon: IconTest, title: 'Performance testing', sub: 'Log your tests & track your PBs' },
-    { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
-    { id: 'monitoring', group: 'Progress & Body', show: THEME.features?.monitoring, Icon: IconBody, title: 'Readiness & load', sub: 'Daily check-in & training-load tracking' },
-    { id: 'rehab', group: 'Progress & Body', show: THEME.features?.rehab, Icon: IconBody, title: 'My rehab', sub: 'Your rehab plan, return-to-play & soreness' },
-    { id: 'growth', group: 'Progress & Body', show: THEME.features?.growth, Icon: IconTest, title: 'Growth tracker', sub: 'Your height, growth & maturation' },
-    { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: 'Health conditions & life circumstances — optional' },
   ]
 }
-const HOME_GROUPS = ['Nutrition', 'Training', 'Progress & Body', 'Coach & Community']
+// Section order matches the bottom nav order (Home, Train, Nutrition,
+// Check-ins & Progress, Coach); labels match the nav's own labels too — Paul's
+// ask, so Home and the tab bar read as the same taxonomy.
+const HOME_GROUPS = ['Training', 'Nutrition', 'Progress & Body', 'Coach & Community']
+const HOME_GROUP_LABELS = { Training: 'Train', Nutrition: 'Nutrition', 'Progress & Body': 'Check-ins & Progress', 'Coach & Community': 'Coach & Community' }
 
 function HomeTile({ t, onGo }) {
   const Icon = t.Icon
@@ -389,6 +395,7 @@ function HomeTile({ t, onGo }) {
 
 function HomeTiles({ coachFirst, onGo }) {
   const tiles = homeTileDefs(coachFirst).filter((t) => t.show)
+  const [open, setOpen] = useState('')
   if (!THEME.features?.groupedHome) {
     return <div className="tiles">{tiles.map((t) => <HomeTile key={t.id} t={t} onGo={onGo} />)}</div>
   }
@@ -397,10 +404,14 @@ function HomeTiles({ coachFirst, onGo }) {
       {HOME_GROUPS.map((g) => {
         const group = tiles.filter((t) => t.group === g)
         if (!group.length) return null
+        const isOpen = open === g
         return (
           <div className="tile-group" key={g}>
-            <p className="tile-group-title">{g}</p>
-            <div className="tiles">{group.map((t) => <HomeTile key={t.id} t={t} onGo={onGo} />)}</div>
+            <button type="button" className="tile-group-title" onClick={() => setOpen(isOpen ? '' : g)}>
+              {HOME_GROUP_LABELS[g] || g}
+              <span className={'tile-group-chev' + (isOpen ? ' open' : '')}>▾</span>
+            </button>
+            {isOpen && <div className="tiles">{group.map((t) => <HomeTile key={t.id} t={t} onGo={onGo} />)}</div>}
           </div>
         )
       })}
@@ -2960,16 +2971,16 @@ function TrainHub({ coachName, onGo }) {
           <IconTrain />
           <div><b>Muscle targeter</b><span>Tap a muscle, get exercises to train it</span></div>
         </button>
+        <button className="tile" onClick={() => onGo('strava')}>
+          <IconBody />
+          <div><b>Connect Strava</b><span>Pull your runs, rides &amp; workouts into the app</span></div>
+        </button>
         {THEME.features?.testing && (
           <button className="tile" onClick={() => onGo('testing')}>
             <IconTest />
             <div><b>Performance testing</b><span>Log your tests &amp; track your PBs</span></div>
           </button>
         )}
-        <button className="tile" onClick={() => onGo('strava')}>
-          <IconBody />
-          <div><b>Connect Strava</b><span>Pull your runs, rides &amp; workouts into the app</span></div>
-        </button>
       </div>
     </div>
   )

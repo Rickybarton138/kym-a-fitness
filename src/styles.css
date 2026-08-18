@@ -519,10 +519,12 @@ input { font-family: inherit; }
 .camera-shutter:disabled { opacity: 0.4; }
 .camera-controls .btn { flex: 0 0 auto; }
 
-/* Grouped Home (features.groupedHome) */
+/* Grouped Home (features.groupedHome) — collapsible accordion sections */
 .tile-group { margin-top: 4px; }
-.tile-group-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px; }
-.tile-group:first-of-type .tile-group-title { margin-top: 6px; }
+.tile-group-title { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; padding: 10px 2px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 12px 0 0; text-align: left; }
+.tile-group:first-of-type .tile-group-title { margin-top: 2px; }
+.tile-group-chev { font-size: 12px; transition: transform .15s ease; }
+.tile-group-chev.open { transform: rotate(180deg); }
 
 /* Video thumbnails, shop images, serving quick-picks */
 .vid-thumb { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; margin-bottom: 10px; cursor: pointer; border-radius: 12px; overflow: hidden; }
