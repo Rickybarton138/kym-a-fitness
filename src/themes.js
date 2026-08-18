@@ -12,7 +12,7 @@ export const BRANDS = {
     logo: '/logo.jpg',
     mark: 'CBK',
     instagram: 'cbk_coachedbykim',
-    features: { activityFeed: true, videos: true, coachMealPlans: true, progressHub: true, agenda: true, events: true, cycle: true },
+    features: { activityFeed: true, videos: true, coachMealPlans: true, progressHub: true, agenda: true, events: true, cycle: true, nutritionSupport: true },
     trainGymName: 'South Coast Power House',
     equipment: [
       'Squat racks & Olympic benches',
