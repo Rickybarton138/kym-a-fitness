@@ -63,7 +63,7 @@ const HUB_CHILDREN = {
   trainhub:  ['train', 'programs', 'muscles', 'testing', 'strava'],
   nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert', 'health'],
   body:      ['body', 'growth', 'monitoring'],
-  coachhub:  ['ask', 'form', 'content', 'community', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
+  coachhub:  ['ask', 'form', 'content', 'community', 'mygroups', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
 }
 
 export default function ClientApp({ profile, onSignOut }) {
@@ -231,7 +231,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'checkin' && (THEME.features?.checkinForms
           ? <CheckinFormRun clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} onBack={() => setScreen('home')} />
           : <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />)}
-        {screen === 'diary' && <FoodDiary clientId={profile.id} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
+        {screen === 'diary' && <FoodDiary clientId={profile.id} coachId={profile.trainer_id} contributorId={profile.id} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'fridge' && <FridgeScan remaining={remaining} onLog={(m) => logFood(m, 'fridge')} />}
         {screen === 'meal' && <MealScan onLog={(m) => logFood(m, 'meal')} />}
         {screen === 'food' && (
@@ -239,7 +239,7 @@ export default function ClientApp({ profile, onSignOut }) {
             <p className="eyebrow">Food diary</p>
             <h1 className="h1">Log a food or drink.</h1>
             <p className="lead">Search thousands of foods and drinks, pick your portion, and it’s added to today.</p>
-            <FoodSearch onLog={(m) => logFood(m, 'manual')} />
+            <FoodSearch onLog={(m) => logFood(m, 'manual')} contributorId={profile.id} coachId={profile.trainer_id} />
           </div>
         )}
         {screen === 'body' && <Body measurements={measurements} onAdd={addMeasurement} clientId={profile.id} coachName={coachName} />}
@@ -256,6 +256,7 @@ export default function ClientApp({ profile, onSignOut }) {
             <CommunityFeed communityCoachId={profile.trainer_id} me={profile.id} myName={profile.full_name} isCoach={false} />
           </div>
         )}
+        {screen === 'mygroups' && <MyGroups clientId={profile.id} clientName={profile.full_name} trainerId={profile.trainer_id} onBack={backFromCoach} />}
       </main>
 
       <nav className={'tabbar' + (nav.length === 6 ? ' six' : '')}>
@@ -367,6 +368,7 @@ function homeTileDefs(coachFirst) {
     { id: 'rehab', group: 'Progress & Body', show: THEME.features?.rehab, Icon: IconBody, title: 'My rehab', sub: 'Your rehab plan, return-to-play & soreness' },
     { id: 'growth', group: 'Progress & Body', show: THEME.features?.growth, Icon: IconTest, title: 'Growth tracker', sub: 'Your height, growth & maturation' },
     { id: 'community', group: 'Coach & Community', show: true, Icon: IconCommunity, title: 'Community', sub: 'Share wins & cheer each other on' },
+    { id: 'mygroups', group: 'Coach & Community', hero: true, show: THEME.features?.groups, Icon: IconCommunity, title: 'My group', sub: 'Your group feed, files & programme' },
     { id: 'videos', group: 'Coach & Community', show: THEME.features?.videos, Icon: IconForm, title: 'Video library', sub: `Technique & mindset clips from ${coachFirst}` },
     { id: 'ask', group: 'Coach & Community', hero: true, show: true, Icon: IconAsk, title: `Ask ${coachFirst}`, sub: `Get an answer in ${coachFirst}’s method, any time` },
     { id: 'form', group: 'Coach & Community', show: true, Icon: IconForm, title: 'Form check', sub: `Upload a clip — AI + ${coachFirst} check your form` },
@@ -1545,8 +1547,13 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
   const todayLocal = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
 
   useEffect(() => {
-    supabase.from('workout_programs').select('*').order('created_at', { ascending: false })
-      .then(({ data }) => setPrograms(data || []))
+    Promise.all([
+      supabase.from('workout_programs').select('*').order('created_at', { ascending: false }),
+      supabase.from('client_tags').select('tag').eq('client_id', clientId),
+    ]).then(([{ data: progs }, { data: tagRows }]) => {
+      const myTags = (tagRows || []).map((r) => r.tag)
+      setPrograms((progs || []).filter((pr) => !pr.audience_tag || myTags.includes(pr.audience_tag)))
+    })
   }, [])
 
   const anyFilter = Object.values(filters).some(Boolean)
@@ -1966,7 +1973,7 @@ function FilesLibrary({ coachName, onBack }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [files, setFiles] = useState(null)
   useEffect(() => {
-    supabase.from('coach_files').select('*').order('created_at', { ascending: false }).then(({ data }) => setFiles(data || []))
+    supabase.from('coach_files').select('*').is('audience_tag', null).order('created_at', { ascending: false }).then(({ data }) => setFiles(data || []))
   }, [])
   const fileUrl = (path) => supabase.storage.from('coach-files').getPublicUrl(path).data.publicUrl
   return (
@@ -3082,6 +3089,12 @@ function CoachHub({ coachName, onGo }) {
           <IconCommunity />
           <div><b>Community</b><span>Share wins &amp; cheer each other on</span></div>
         </button>
+        {THEME.features?.groups && (
+          <button className="tile tile-hero" onClick={() => onGo('mygroups')}>
+            <IconCommunity />
+            <div><b>My group</b><span>Your group feed, files &amp; programme</span></div>
+          </button>
+        )}
         {THEME.features?.videos && (
           <button className="tile tile-hero" onClick={() => onGo('videos')}>
             <IconContent />
@@ -3125,6 +3138,91 @@ function CoachHub({ coachName, onGo }) {
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// A client's own group(s) — membership is a client_tags row matching a
+// coach's groups.tag. Most clients are in zero or one group; if they're in
+// several, pick one to open. The group's feed/files are the same
+// CommunityFeed/coach_files primitives the coach's Group Feed/Files tabs use,
+// just scoped with filterTag/audienceTag so only members ever see them.
+function MyGroups({ clientId, clientName, trainerId, onBack }) {
+  const [groups, setGroups] = useState(null)
+  const [active, setActive] = useState(null)
+  const [tab, setTab] = useState('feed')
+  const [files, setFiles] = useState([])
+
+  useEffect(() => {
+    if (!trainerId) return
+    Promise.all([
+      supabase.from('client_tags').select('tag').eq('client_id', clientId),
+      supabase.from('groups').select('*').eq('coach_id', trainerId),
+    ]).then(([{ data: tagRows }, { data: allGroups }]) => {
+      const myTags = (tagRows || []).map((r) => r.tag)
+      const mine = (allGroups || []).filter((g) => myTags.includes(g.tag))
+      setGroups(mine)
+      if (mine.length === 1) setActive(mine[0])
+    })
+  }, [trainerId])
+
+  useEffect(() => {
+    if (!active || tab !== 'files') return
+    supabase.from('coach_files').select('*').eq('audience_tag', active.tag).order('created_at', { ascending: false })
+      .then(({ data }) => setFiles(data || []))
+  }, [active, tab])
+
+  const fileUrl = (path) => supabase.storage.from('coach-files').getPublicUrl(path).data.publicUrl
+
+  if (groups === null) return <Loader text="Loading your group…" />
+
+  if (!active) {
+    return (
+      <div className="stack">
+        <button className="link-btn" onClick={onBack}>‹ Back</button>
+        <p className="eyebrow">Your groups</p>
+        {groups.length === 0
+          ? <p className="muted-note">You’re not in a group yet.</p>
+          : (
+            <div className="tiles">
+              {groups.map((g) => (
+                <button className="tile" key={g.id} onClick={() => setActive(g)}>
+                  <span className="avatar">{g.icon}</span>
+                  <div><b>{g.name}</b><span>Group</span></div>
+                </button>
+              ))}
+            </div>
+          )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={() => (groups.length > 1 ? setActive(null) : onBack())}>‹ Back</button>
+      <p className="eyebrow">{active.icon} {active.name}</p>
+      <div className="seg">
+        <button type="button" className={tab === 'feed' ? 'on' : ''} onClick={() => setTab('feed')}>Feed</button>
+        <button type="button" className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>Files</button>
+      </div>
+      {tab === 'feed' && (
+        <CommunityFeed communityCoachId={trainerId} me={clientId} myName={clientName} isCoach={false} filterTag={active.tag} />
+      )}
+      {tab === 'files' && (
+        files.length === 0
+          ? <p className="muted-note">No files in this group yet.</p>
+          : (
+            <div className="stack">
+              {files.map((f) => (
+                <div className="card" key={f.id}>
+                  <div className="session-title">{f.title}</div>
+                  {f.note && <p className="muted-note" style={{ marginTop: 6 }}>{f.note}</p>}
+                  <a className="btn primary sm" style={{ marginTop: 10, display: 'inline-block' }} href={fileUrl(f.path)} target="_blank" rel="noopener noreferrer">Open</a>
+                </div>
+              ))}
+            </div>
+          )
+      )}
     </div>
   )
 }

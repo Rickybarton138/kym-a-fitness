@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { supabase } from './supabaseClient.js'
 import { searchFoods } from './foods.js'
 import { mealByHour, MEALS } from './lib.js'
 
@@ -14,12 +15,26 @@ const dayLabel = (s) => {
   try { return new Date(s + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) } catch { return s }
 }
 
-// Type-search a food/drink (built-in list + live database), pick a portion, log
-// the macros. Or add anything manually if it isn't found. Logs to today by default
-// but the day picker lets a client back-fill or pre-log a meal on any date.
-export function FoodSearch({ onLog, defaultMeal }) {
+// Type-search a food/drink (built-in list + live database + the coach's own
+// library — see below), pick a portion, log the macros. Or add anything
+// manually if it isn't found. Logs to today by default but the day picker
+// lets a client back-fill or pre-log a meal on any date.
+//
+// coachFoods: when a client can't find something and adds it manually, it's
+// saved to `coach_foods` (Paul's ask) — remembered so they don't retype it
+// next time, and shared with every other client of the same coach. Unlike
+// the per-100g static/API foods, these are a FIXED serving (exactly what was
+// logged has no meaningful per-100g breakdown), so they skip the portion
+// picker and log directly at their stored macros.
+// contributorId is whoever is actually adding this entry (the authenticated
+// user) — the client themselves when logging their own diary, or the coach
+// when adding on a client's behalf from ClientDetail. NOT the same as whose
+// diary this is: a coach adding food to a client's diary is still the
+// contributor for library-attribution/RLS purposes.
+export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
   const [q, setQ] = useState('')
   const [api, setApi] = useState([])
+  const [coachFoods, setCoachFoods] = useState([])
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState(null)
   const [grams, setGrams] = useState('')
@@ -30,6 +45,12 @@ export function FoodSearch({ onLog, defaultMeal }) {
   const timer = useRef(null)
 
   const local = searchFoods(q)
+
+  useEffect(() => {
+    if (!coachId) return
+    supabase.from('coach_foods').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
+      .then(({ data }) => setCoachFoods(data || []))
+  }, [coachId])
 
   useEffect(() => {
     if (q.trim().length < 2) { setApi([]); return }
@@ -46,10 +67,27 @@ export function FoodSearch({ onLog, defaultMeal }) {
     return () => clearTimeout(timer.current)
   }, [q])
 
-  const seen = new Set(local.map((f) => f.n.toLowerCase()))
-  const results = [...local, ...api.filter((r) => r.n && !seen.has(r.n.toLowerCase()))].slice(0, 20)
+  const qLower = q.trim().toLowerCase()
+  const coachMatches = qLower.length >= 1
+    ? coachFoods.filter((cf) => cf.name.toLowerCase().includes(qLower))
+      .map((cf) => ({ n: cf.name, k: cf.calories, p: cf.protein_g, c: cf.carbs_g, f: cf.fat_g, fb: cf.fibre_g, fixed: true }))
+    : []
+  const seen = new Set([...coachMatches.map((f) => f.n.toLowerCase()), ...local.map((f) => f.n.toLowerCase())])
+  const results = [...coachMatches, ...local, ...api.filter((r) => r.n && !seen.has(r.n.toLowerCase()))].slice(0, 20)
 
-  function pick(f) { setSelected(f); setGrams(String(f.s || 100)) }
+  // A client-contributed food is saved once per coach (first entry wins —
+  // this is a quick shared list, not something worth a rename/merge UI for).
+  async function saveToLibrary(m) {
+    if (!coachId || !contributorId) return
+    if (coachFoods.some((cf) => cf.name.toLowerCase() === m.name.toLowerCase())) return
+    const { data } = await supabase.from('coach_foods').insert({
+      coach_id: coachId, created_by: contributorId, name: m.name,
+      calories: m.calories, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g, fibre_g: m.fibre_g,
+    }).select().single()
+    if (data) setCoachFoods((cf) => [data, ...cf])
+  }
+
+  function pick(f) { setSelected(f); if (!f.fixed) setGrams(String(f.s || 100)) }
   function logSelected() {
     const g = Number(grams) || 0
     if (!g || !selected) return
@@ -66,6 +104,41 @@ export function FoodSearch({ onLog, defaultMeal }) {
     })
     setLogged(selected.n); setSelected(null); setQ(''); setApi([]); setGrams('')
     setTimeout(() => setLogged(''), 2200)
+  }
+  function logFixed() {
+    if (!selected) return
+    onLog({
+      name: selected.n,
+      calories: selected.k,
+      protein_g: selected.p || 0,
+      carbs_g: selected.c || 0,
+      fat_g: selected.f || 0,
+      fibre_g: selected.fb || 0,
+      meal_type: meal,
+      logged_at: dayISO(day),
+    })
+    setLogged(selected.n); setSelected(null); setQ(''); setApi([])
+    setTimeout(() => setLogged(''), 2200)
+  }
+
+  if (selected && selected.fixed) {
+    return (
+      <div className="card">
+        <button type="button" className="link-btn" onClick={() => setSelected(null)}>‹ Back to search</button>
+        <p className="eyebrow accent">{selected.n}</p>
+        <div className="macro-row">
+          <span><b>{selected.p || 0}g</b> protein</span>
+          <span><b>{selected.c || 0}g</b> carbs</span>
+          <span><b>{selected.f || 0}g</b> fat</span>
+          <span className="kcal"><b>{selected.k}</b> kcal</span>
+        </div>
+        <div className="grid-2">
+          <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+          <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
+        </div>
+        <button className="btn primary" onClick={logFixed}>Add food{day !== todayStr() ? ` · ${dayLabel(day)}` : ''}</button>
+      </div>
+    )
   }
 
   if (selected) {
@@ -108,7 +181,7 @@ export function FoodSearch({ onLog, defaultMeal }) {
           {results.map((f, i) => (
             <button type="button" className="food-row" key={f.n + i} onClick={() => pick(f)}>
               <span className="food-name">{f.n}</span>
-              <span className="food-kcal">{f.k} kcal<span className="muted-note"> /100g</span></span>
+              <span className="food-kcal">{f.k} kcal{!f.fixed && <span className="muted-note"> /100g</span>}</span>
             </button>
           ))}
           {searching && <p className="muted-note">Searching…</p>}
@@ -122,7 +195,7 @@ export function FoodSearch({ onLog, defaultMeal }) {
             <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
             <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
           </div>
-          <ManualFood dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { onLog({ ...m, meal_type: meal, logged_at: dayISO(day) }); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} /></>}
+          <ManualFood dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { onLog({ ...m, meal_type: meal, logged_at: dayISO(day) }); saveToLibrary(m); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} /></>}
     </div>
   )
 }

@@ -4,7 +4,10 @@ import { supabase } from './supabaseClient.js'
 // One feed per coach — the coach and all their clients share it. `me` is the
 // viewer's profile id, `communityCoachId` is the coach whose community this is
 // (a client's trainer_id, or the coach's own id).
-export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
+// `filterTag`, if set, scopes this to a single group's feed: only posts tagged
+// for that group are shown, and new posts are locked to that tag — used by a
+// Group's own feed view rather than the main coach-wide Community screen.
+export function CommunityFeed({ communityCoachId, me, myName, isCoach, filterTag }) {
   const [posts, setPosts] = useState([])
   const [cheers, setCheers] = useState({})
   const [body, setBody] = useState('')
@@ -19,11 +22,24 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
 
   const pubUrl = (path) => supabase.storage.from('content-images').getPublicUrl(path).data.publicUrl
 
+  // A client only ever sees posts aimed at everyone, at a tag they hold, or
+  // (in group-feed mode) the group's own tag — audience_tag was previously
+  // display-only for the coach and didn't actually restrict visibility.
   async function load() {
     if (!communityCoachId) return
-    const { data: ps } = await supabase.from('community_posts').select('*').eq('coach_id', communityCoachId).order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(50)
-    setPosts(ps || [])
-    const ids = (ps || []).map((p) => p.id)
+    let visibleTags = null
+    if (!isCoach && !filterTag) {
+      const { data: mt } = await supabase.from('client_tags').select('tag').eq('client_id', me)
+      visibleTags = (mt || []).map((r) => r.tag)
+    }
+    let q = supabase.from('community_posts').select('*').eq('coach_id', communityCoachId)
+    if (filterTag) q = q.eq('audience_tag', filterTag)
+    const { data: allPs } = await q.order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(200)
+    const ps = (!isCoach && !filterTag)
+      ? (allPs || []).filter((p) => !p.audience_tag || visibleTags.includes(p.audience_tag))
+      : allPs
+    setPosts((ps || []).slice(0, 50))
+    const ids = (ps || []).slice(0, 50).map((p) => p.id)
     if (ids.length) {
       const { data: cs } = await supabase.from('community_cheers').select('post_id, user_id').in('post_id', ids)
       const map = {}
@@ -35,7 +51,7 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
       setCheers(map)
     } else setCheers({})
   }
-  useEffect(() => { load() }, [communityCoachId])
+  useEffect(() => { load() }, [communityCoachId, filterTag])
 
   // Coach only: load the tags they've assigned, to target posts by audience.
   useEffect(() => {
@@ -69,7 +85,7 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
       const linkOk = /^https?:\/\/\S+$/.test(link.trim())
       const { data } = await supabase.from('community_posts').insert({
         coach_id: communityCoachId, author_id: me, author_name: myName, body: text, image_path,
-        audience_tag: isCoach && audience ? audience : null,
+        audience_tag: filterTag ? filterTag : (isCoach && audience ? audience : null),
         link_url: linkOk ? link.trim() : null,
       }).select().single()
       if (data) { setPosts((p) => [data, ...p]); setBody(''); setImgFile(null); setImgPreview(null); setLink(''); setAudience(''); if (fileRef.current) fileRef.current.value = '' }
@@ -104,7 +120,7 @@ export function CommunityFeed({ communityCoachId, me, myName, isCoach }) {
         <textarea className="community-input" rows={2} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Share a win, a PR, a milestone…" />
         {imgPreview && <img className="content-img" src={imgPreview} alt="" style={{ marginTop: 10 }} />}
         <input className="community-link" value={link} onChange={(e) => setLink(e.target.value)} placeholder="Add a link (optional)" />
-        {isCoach && tags.length > 0 && (
+        {isCoach && !filterTag && tags.length > 0 && (
           <div className="community-audience">
             <span className="muted-note">Show to</span>
             <select className="ex-select" value={audience} onChange={(e) => setAudience(e.target.value)}>

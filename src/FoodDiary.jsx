@@ -24,7 +24,7 @@ const isToday = (d) => d.toDateString() === new Date().toDateString()
 
 const MAX_AHEAD = 14 // days you can pre-log into the future
 
-export function FoodDiary({ clientId, title = 'Food diary', onBack }) {
+export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diary', onBack }) {
   const [day, setDay] = useState(() => new Date())
   const [logs, setLogs] = useState(null)
   const [targets, setTargets] = useState(null)
@@ -140,7 +140,7 @@ export function FoodDiary({ clientId, title = 'Food diary', onBack }) {
         <div className="sheet-overlay" onClick={() => setAdding(false)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head"><b>Add food{isToday(day) ? '' : ' · ' + day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</b><button className="link-btn" onClick={() => setAdding(false)}>Done</button></div>
-            <FoodSearch onLog={addFood} defaultMeal={mealByHour(day)} />
+            <FoodSearch onLog={addFood} defaultMeal={mealByHour(day)} coachId={coachId} contributorId={contributorId} />
           </div>
         </div>
       )}

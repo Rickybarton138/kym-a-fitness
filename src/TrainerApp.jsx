@@ -29,8 +29,10 @@ import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './cr
 export default function TrainerApp({ profile, onSignOut }) {
   const [clients, setClients] = useState([])
   const [squads, setSquads] = useState([])
+  const [groups, setGroups] = useState([])
   const [selected, setSelected] = useState(null)
   const [selectedSquad, setSelectedSquad] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
 
@@ -45,7 +47,11 @@ export default function TrainerApp({ profile, onSignOut }) {
     const { data } = await supabase.from('squads').select('*').eq('coach_id', profile.id).order('created_at', { ascending: true })
     setSquads(data || [])
   }
-  useEffect(() => { loadClients(); if (THEME.features?.squads) loadSquads() }, [])
+  async function loadGroups() {
+    const { data } = await supabase.from('groups').select('*').eq('coach_id', profile.id).order('created_at', { ascending: true })
+    setGroups(data || [])
+  }
+  useEffect(() => { loadClients(); if (THEME.features?.squads) loadSquads(); if (THEME.features?.groups) loadGroups() }, [])
 
   // Keep the coach where they were: a phone app-switch reloads the PWA and would
   // otherwise drop them back on the dashboard. Persist the open client/squad and
@@ -79,6 +85,16 @@ export default function TrainerApp({ profile, onSignOut }) {
   }
   if (selectedSquad) {
     return <SquadDetail squad={selectedSquad} clients={clients} onBack={() => setSelectedSquad(null)} />
+  }
+  if (selectedGroup) {
+    return (
+      <GroupDetail
+        group={selectedGroup} coachId={profile.id} coachName={profile.full_name} clients={clients}
+        onBack={() => setSelectedGroup(null)}
+        onUpdated={(g) => { setGroups((gs) => gs.map((x) => x.id === g.id ? g : x)); setSelectedGroup(g) }}
+        onDeleted={(id) => { setGroups((gs) => gs.filter((x) => x.id !== id)); setSelectedGroup(null) }}
+      />
+    )
   }
 
   return (
@@ -141,6 +157,10 @@ export default function TrainerApp({ profile, onSignOut }) {
 
         {THEME.features?.squads && (
           <SquadList squads={squads} coachId={profile.id} onOpen={setSelectedSquad} onCreated={(s) => setSquads((xs) => [...xs, s])} />
+        )}
+
+        {THEME.features?.groups && (
+          <GroupsPanel groups={groups} coachId={profile.id} onOpen={setSelectedGroup} onCreated={(g) => setGroups((xs) => [...xs, g])} />
         )}
 
         {THEME.features?.vald && <CoachVald coachId={profile.id} clients={clients} />}
@@ -576,7 +596,7 @@ function ClientDetail({ client, trainerId, onBack }) {
               </div>
             )}
 
-            <FoodDiary clientId={client.id} title="Food diary" />
+            <FoodDiary clientId={client.id} coachId={trainerId} contributorId={trainerId} title="Food diary" />
 
             <LiftProgress plans={plans} title="Weights lifted" />
 
@@ -2103,7 +2123,10 @@ function ProtocolRow({ pr, items, onOpen, onAdd }) {
 
 // Coach uploads shared PDFs/guides to a public bucket; every client sees them
 // in their Files section. coach_files mirrors the videos RLS pattern.
-function CoachFiles({ coachId }) {
+// audienceTag scopes this to one group's Files tab instead of the general
+// library — general (audienceTag omitted) only ever shows untagged files, and
+// a group's Files only shows files tagged for that group.
+function CoachFiles({ coachId, audienceTag }) {
   const [items, setItems] = useState([])
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -2114,10 +2137,12 @@ function CoachFiles({ coachId }) {
   const ref = useRef(null)
 
   async function load() {
-    const { data } = await supabase.from('coach_files').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
+    let q = supabase.from('coach_files').select('*').eq('coach_id', coachId)
+    q = audienceTag ? q.eq('audience_tag', audienceTag) : q.is('audience_tag', null)
+    const { data } = await q.order('created_at', { ascending: false })
     setItems(data || [])
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [audienceTag])
 
   async function save() {
     if (!title.trim()) { setError('Give the file a title.'); return }
@@ -2128,7 +2153,7 @@ function CoachFiles({ coachId }) {
       const path = `${coachId}/${crypto.randomUUID()}.${ext}`
       const up = await supabase.storage.from('coach-files').upload(path, file, { contentType: file.type || 'application/pdf' })
       if (up.error) throw new Error(up.error.message)
-      const { data, error: err } = await supabase.from('coach_files').insert({ coach_id: coachId, title: title.trim(), path, note: note.trim() || null }).select().single()
+      const { data, error: err } = await supabase.from('coach_files').insert({ coach_id: coachId, title: title.trim(), path, note: note.trim() || null, audience_tag: audienceTag || null }).select().single()
       if (err) throw new Error(err.message)
       setItems((i) => [data, ...i]); setTitle(''); setNote(''); setFile(null); setOpen(false); if (ref.current) ref.current.value = ''
     } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -2142,7 +2167,7 @@ function CoachFiles({ coachId }) {
   return (
     <div className="card">
       <p className="eyebrow">Files</p>
-      <p className="muted-note">Upload PDFs and guides — every client can open them from their Files section.</p>
+      <p className="muted-note">{audienceTag ? 'Files just for this group — members see these plus your general Files.' : 'Upload PDFs and guides — every client can open them from their Files section.'}</p>
       {items.length > 0 && (
         <div className="stack" style={{ marginTop: 12 }}>
           {items.map((f) => (
@@ -2166,6 +2191,218 @@ function CoachFiles({ coachId }) {
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>
         </div>
       )}
+    </div>
+  )
+}
+
+const GROUP_ICONS = ['👥', '🦁', '🐺', '🔥', '⭐', '💪', '🎯', '🌟', '🚀', '🏆']
+const slugTag = (s) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+// Groups: a named/iconed cohort (Kim's Trainerize-style ask). Wraps the
+// existing client_tags mechanism — membership is a client_tags row matching
+// the group's tag, which is exactly what already drives audience-targeted
+// community posts and programme visibility, so a group's feed/files/
+// programme are the same proven tag-gated primitives, just given a proper
+// front door (name, icon, members list, settings) instead of free-typed tags.
+function GroupsPanel({ groups, coachId, onOpen, onCreated }) {
+  const [name, setName] = useState('')
+  const [icon, setIcon] = useState(GROUP_ICONS[0])
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  async function create() {
+    const n = name.trim()
+    if (!n) return
+    const tag = slugTag(n)
+    if (!tag) { setError('Give the group a name.'); return }
+    setSaving(true); setError('')
+    const { data, error: err } = await supabase.from('groups').insert({ coach_id: coachId, tag, name: n, icon }).select().single()
+    setSaving(false)
+    if (err) { setError(err.code === '23505' ? 'You already have a group with that name.' : err.message); return }
+    if (data) { onCreated(data); setName(''); setIcon(GROUP_ICONS[0]); setOpen(false) }
+  }
+  return (
+    <div className="card">
+      <p className="eyebrow">Groups</p>
+      <p className="muted-note">Cohorts with their own feed, files and a shared programme — perfect for a group launch or an online community.</p>
+      {groups.length === 0 && <p className="muted-note">No groups yet.</p>}
+      <div className="stack">
+        {groups.map((g) => (
+          <button className="tile" key={g.id} onClick={() => onOpen(g)}>
+            <span className="avatar">{g.icon}</span>
+            <div><b>{g.name}</b><span>Group</span></div>
+          </button>
+        ))}
+      </div>
+      {!open && <button className="btn ghost" onClick={() => setOpen(true)}>New group</button>}
+      {open && (
+        <div className="stack">
+          <label className="field">Group name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. September Launch" /></label>
+          <div className="seg small">
+            {GROUP_ICONS.map((i) => (
+              <button type="button" key={i} className={icon === i ? 'on' : ''} onClick={() => setIcon(i)}>{i}</button>
+            ))}
+          </div>
+          {error && <p className="error">{error}</p>}
+          <button className="btn primary" disabled={saving} onClick={create}>{saving ? 'Creating…' : 'Create group'}</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GroupDetail({ group, coachId, coachName, clients, onBack, onUpdated, onDeleted }) {
+  const [members, setMembers] = useState([])
+  const [addId, setAddId] = useState('')
+  const [tab, setTab] = useState('feed')
+  const [name, setName] = useState(group.name)
+  const [icon, setIcon] = useState(group.icon)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [programs, setPrograms] = useState([])
+  const [subscribeId, setSubscribeId] = useState('')
+  const [subscribed, setSubscribed] = useState(null)
+  const [subBusy, setSubBusy] = useState(false)
+
+  async function loadMembers() {
+    const { data } = await supabase.from('client_tags').select('*').eq('coach_id', coachId).eq('tag', group.tag)
+    setMembers(data || [])
+  }
+  useEffect(() => { loadMembers() }, [group.tag])
+
+  useEffect(() => {
+    supabase.from('workout_programs').select('id, title, audience_tag').eq('coach_id', coachId).is('client_id', null).order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setPrograms(data || [])
+        const sub = (data || []).find((p) => p.audience_tag === group.tag)
+        setSubscribed(sub || null)
+      })
+  }, [group.tag])
+
+  const memberIds = members.map((m) => m.client_id)
+  const nameOf = (cid) => clients.find((c) => c.id === cid)?.full_name || 'Client'
+  const available = clients.filter((c) => !memberIds.includes(c.id))
+
+  async function addMember() {
+    if (!addId) return
+    const { data } = await supabase.from('client_tags').insert({ coach_id: coachId, client_id: addId, tag: group.tag }).select().single()
+    if (data) { setMembers((m) => [...m, data]); setAddId('') }
+  }
+  async function removeMember(id) {
+    await supabase.from('client_tags').delete().eq('id', id)
+    setMembers((m) => m.filter((x) => x.id !== id))
+  }
+  async function saveSettings() {
+    const n = name.trim(); if (!n) return
+    setSaving(true)
+    const { data, error: err } = await supabase.from('groups').update({ name: n, icon }).eq('id', group.id).select().single()
+    setSaving(false)
+    if (!err && data) { onUpdated(data); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  }
+  async function subscribeProgram() {
+    if (!subscribeId) return
+    setSubBusy(true)
+    // Only one master programme per group at a time — clear any previous one.
+    if (subscribed) await supabase.from('workout_programs').update({ audience_tag: null }).eq('id', subscribed.id)
+    const { data } = await supabase.from('workout_programs').update({ audience_tag: group.tag }).eq('id', subscribeId).select().single()
+    setSubBusy(false)
+    if (data) { setSubscribed(data); setSubscribeId('') }
+  }
+  async function unsubscribeProgram() {
+    if (!subscribed) return
+    setSubBusy(true)
+    await supabase.from('workout_programs').update({ audience_tag: null }).eq('id', subscribed.id)
+    setSubBusy(false)
+    setSubscribed(null)
+  }
+  async function del() {
+    await supabase.from('groups').delete().eq('id', group.id)
+    onDeleted(group.id)
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <button className="link-btn" onClick={onBack}>‹ Groups</button>
+        <span className="brand-name">{group.icon} {group.name}</span>
+        <span style={{ width: 40 }} />
+      </header>
+      <main className="screen">
+        <div className="stack">
+          <div className="seg">
+            <button type="button" className={tab === 'feed' ? 'on' : ''} onClick={() => setTab('feed')}>Feed</button>
+            <button type="button" className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>Members ({members.length})</button>
+            <button type="button" className={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>Files</button>
+            <button type="button" className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>Settings</button>
+          </div>
+
+          {tab === 'feed' && (
+            <CommunityFeed communityCoachId={coachId} me={coachId} myName={coachName} isCoach={true} filterTag={group.tag} />
+          )}
+
+          {tab === 'members' && (
+            <div className="card">
+              <p className="eyebrow">Roster</p>
+              {members.length === 0 && <p className="muted-note">No members yet — add someone below.</p>}
+              {members.map((m) => (
+                <div className="logrow" key={m.id}>
+                  <span className="logname">{nameOf(m.client_id)}</span>
+                  <span className="logmac"><button className="thumb-del" onClick={() => removeMember(m.id)}>×</button></span>
+                </div>
+              ))}
+              {available.length > 0 && (
+                <div className="nudge-actions" style={{ marginTop: 10 }}>
+                  <select className="ex-select" value={addId} onChange={(e) => setAddId(e.target.value)}>
+                    <option value="">Add a client…</option>
+                    {available.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                  </select>
+                  <button className="btn primary sm" disabled={!addId} onClick={addMember}>Add</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'files' && <CoachFiles coachId={coachId} audienceTag={group.tag} />}
+
+          {tab === 'settings' && (
+            <div className="stack">
+              <div className="card">
+                <p className="eyebrow">Group settings</p>
+                <label className="field">Name<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+                <div className="seg small" style={{ marginTop: 8 }}>
+                  {GROUP_ICONS.map((i) => (
+                    <button type="button" key={i} className={icon === i ? 'on' : ''} onClick={() => setIcon(i)}>{i}</button>
+                  ))}
+                </div>
+                <button className="btn primary" style={{ marginTop: 10 }} disabled={saving} onClick={saveSettings}>{saved ? 'Saved ✓' : saving ? 'Saving…' : 'Save'}</button>
+              </div>
+              <div className="card">
+                <p className="eyebrow">Master programme</p>
+                <p className="muted-note">Subscribe the whole group to one shared programme — every member sees it in their Program library.</p>
+                {subscribed ? (
+                  <>
+                    <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
+                      <div className="session-title">{subscribed.title}</div>
+                    </div>
+                    <button className="btn ghost sm" style={{ marginTop: 8 }} disabled={subBusy} onClick={unsubscribeProgram}>Unsubscribe</button>
+                  </>
+                ) : programs.length > 0 ? (
+                  <div className="nudge-actions" style={{ marginTop: 8 }}>
+                    <select className="ex-select" value={subscribeId} onChange={(e) => setSubscribeId(e.target.value)}>
+                      <option value="">Choose a programme…</option>
+                      {programs.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+                    </select>
+                    <button className="btn primary sm" disabled={!subscribeId || subBusy} onClick={subscribeProgram}>Subscribe</button>
+                  </div>
+                ) : (
+                  <p className="muted-note">No programmes in your library yet.</p>
+                )}
+              </div>
+              <button className="btn ghost" onClick={del}>Delete group</button>
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   )
 }
