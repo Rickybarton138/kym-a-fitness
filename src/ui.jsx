@@ -1,5 +1,26 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { THEME } from './themes.js'
 import { setTypeLabel, setTypeNote } from './WorkoutRows.jsx'
+
+// Collapsible section wrapper for the coach dashboard/ClientDetail (Paul's
+// "tidy the layout up like the client side" ask) — reuses the exact
+// tile-group/tile-group-title/tile-group-chev classes the client Home
+// accordion already uses. Brands without features.groupedCoach get an inert
+// passthrough (children render exactly as before — nobody else's dashboard
+// changes shape).
+export function CoachSection({ title, defaultOpen, children }) {
+  const [open, setOpen] = useState(!!defaultOpen)
+  if (!THEME.features?.groupedCoach) return <>{children}</>
+  return (
+    <div className="tile-group">
+      <button type="button" className="tile-group-title" onClick={() => setOpen((o) => !o)}>
+        {title}
+        <span className={'tile-group-chev' + (open ? ' open' : '')}>▾</span>
+      </button>
+      {open && <div className="stack">{children}</div>}
+    </div>
+  )
+}
 
 export function Ring({ value, label, children }) {
   const deg = Math.round(Math.min(Math.max(value, 0), 1) * 360)
@@ -9,6 +30,15 @@ export function Ring({ value, label, children }) {
         <div className="ring-val">{children}</div>
         <span className="ring-label">{label}</span>
       </div>
+    </div>
+  )
+}
+
+export function Metric({ k, v, d, emphasize }) {
+  return (
+    <div className={'metric' + (emphasize ? ' metric-emphasize' : '')}>
+      <div className="metric-k">{k}</div>
+      <div className="metric-v">{v} {d && <span className="delta good">{d}</span>}</div>
     </div>
   )
 }

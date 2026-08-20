@@ -166,6 +166,10 @@ input { font-family: inherit; }
 .metric-v { font-size: 20px; font-weight: 800; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .metric-v .delta { font-size: 12px; font-weight: 700; margin-left: 4px; color: var(--muted); }
 .metric-v .delta.good { color: var(--good); }
+.metric-emphasize { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.metric-emphasize .metric-v { font-size: 23px; color: var(--accent); }
+.week-snapshot .over { color: #c0553c; }
+.week-snapshot .under { color: var(--good); }
 .trend { width: 100%; height: auto; display: block; }
 
 /* Forms */

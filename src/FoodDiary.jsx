@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import { sumMacros, mealByHour } from './lib.js'
 import { FoodSearch } from './FoodSearch.jsx'
+import { Metric } from './ui.jsx'
 
 // Per-day food diary — itemised entries grouped by meal, with delete + daily totals
 // vs target, and a weekly-averages summary. Shared by the client (their own diary)
@@ -39,7 +40,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   }
   async function loadWeek() {
     const from = new Date(); from.setDate(from.getDate() - 6); from.setHours(0, 0, 0, 0)
-    const { data } = await supabase.from('nutrition_logs').select('calories, protein_g, carbs_g, fat_g, logged_at')
+    const { data } = await supabase.from('nutrition_logs').select('calories, protein_g, carbs_g, fat_g, fibre_g, logged_at')
       .eq('client_id', clientId).gte('logged_at', from.toISOString())
     const byDay = {}
     ;(data || []).forEach((l) => { const k = new Date(l.logged_at).toDateString(); (byDay[k] = byDay[k] || []).push(l) })
@@ -82,6 +83,11 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     fibre_g: Math.round(loggedDays.reduce((a, d) => a + d.fibre_g, 0) / loggedDays.length),
   } : null
   const maxCal = Math.max((targets?.calories || 0), ...(week || []).map((d) => d.calories), 1)
+  // Net weekly calories — real total intake (blank days count as zero, same
+  // as the bar chart) vs the full weekly target. Paul's check-in question:
+  // "are they over or under for the week", not just an average day.
+  const weekTotalCal = (week || []).reduce((s, d) => s + d.calories, 0)
+  const netCal = targets?.calories ? weekTotalCal - targets.calories * 7 : null
 
   return (
     <div>
@@ -121,7 +127,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
         </div>
       ))}
 
-      <div className="card">
+      <div className="card week-snapshot">
         <p className="eyebrow">This week</p>
         <div className="diary-week">
           {(week || []).map((d, i) => (
@@ -131,8 +137,19 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
             </div>
           ))}
         </div>
+        {netCal != null && avg && (
+          <p className="muted-note" style={{ marginTop: 8 }}>
+            Net <b className={netCal > 0 ? 'over' : 'under'}>{netCal > 0 ? '+' : ''}{netCal} kcal</b> vs weekly target ({targets.calories} × 7)
+          </p>
+        )}
         {avg ? (
-          <p className="muted-note" style={{ marginTop: 8 }}>Average over {loggedDays.length} logged day{loggedDays.length === 1 ? '' : 's'}: <b>{avg.calories} kcal</b>{targets?.calories ? ` (target ${targets.calories})` : ''} · {avg.protein_g}g P · {avg.carbs_g}g C · {avg.fat_g}g F · {avg.fibre_g}g fibre</p>
+          <>
+            <p className="muted-note" style={{ marginTop: netCal != null ? 4 : 8 }}>Average over {loggedDays.length} logged day{loggedDays.length === 1 ? '' : 's'}: <b>{avg.calories} kcal</b>{targets?.calories ? ` (target ${targets.calories})` : ''} · {avg.carbs_g}g C · {avg.fat_g}g F</p>
+            <div className="metrics-2" style={{ marginTop: 10 }}>
+              <Metric k="Protein / day" v={`${avg.protein_g}g`} d={targets?.protein_g ? `target ${targets.protein_g}g` : ''} emphasize />
+              <Metric k="Fibre / day" v={`${avg.fibre_g}g`} d={targets?.fibre_g ? `target ${targets.fibre_g}g` : ''} />
+            </div>
+          </>
         ) : <p className="muted-note" style={{ marginTop: 8 }}>No food logged this week yet.</p>}
       </div>
 

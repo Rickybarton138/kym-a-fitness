@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
 import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob } from './lib.js'
-import { TrendChart, ExSets } from './ui.jsx'
+import { TrendChart, ExSets, Metric, CoachSection } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm } from './WorkoutRows.jsx'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
@@ -34,7 +34,7 @@ export default function TrainerApp({ profile, onSignOut }) {
   const [selectedSquad, setSelectedSquad] = useState(null)
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState('')
 
   async function loadClients() {
     const { data } = await supabase
@@ -74,10 +74,10 @@ export default function TrainerApp({ profile, onSignOut }) {
     try { selectedSquad ? sessionStorage.setItem('cbk_coach_squad', selectedSquad.id) : sessionStorage.removeItem('cbk_coach_squad') } catch { /* ignore */ }
   }, [selectedSquad])
 
-  function copyCode() {
-    navigator.clipboard?.writeText(profile.trainer_code || '')
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+  function copyCode(code, which) {
+    navigator.clipboard?.writeText(code || '')
+    setCopied(which)
+    setTimeout(() => setCopied(''), 1500)
   }
 
   if (selected) {
@@ -113,11 +113,20 @@ export default function TrainerApp({ profile, onSignOut }) {
 
         <div className="card code-card">
           <div>
-            <p className="eyebrow">Your client code</p>
+            <p className="eyebrow">Standard join code</p>
             <p className="code-big">{profile.trainer_code}</p>
-            <p className="muted-note">Share this with clients — they enter it when they create their account to link to you.</p>
+            <p className="muted-note">Send this to a standard client — signing up with it links them to you and tags them "standard" automatically.</p>
           </div>
-          <button className="btn ghost" onClick={copyCode}>{copied ? 'Copied ✓' : 'Copy'}</button>
+          <button className="btn ghost" onClick={() => copyCode(profile.trainer_code, 'standard')}>{copied === 'standard' ? 'Copied ✓' : 'Copy'}</button>
+        </div>
+
+        <div className="card code-card">
+          <div>
+            <p className="eyebrow">Inner Circle join code</p>
+            <p className="code-big">{profile.trainer_code_ic}</p>
+            <p className="muted-note">Send this to an Inner Circle client instead — signing up with it sets their membership and "inner circle" tag automatically, so their tagged programmes show up straight away.</p>
+          </div>
+          <button className="btn ghost" onClick={() => copyCode(profile.trainer_code_ic, 'ic')}>{copied === 'ic' ? 'Copied ✓' : 'Copy'}</button>
         </div>
 
         {THEME.features?.activityFeed && <CoachActivity profile={profile} clients={clients} onOpenClient={setSelected} />}
@@ -128,61 +137,71 @@ export default function TrainerApp({ profile, onSignOut }) {
 
         {THEME.features?.briefing && <CoachBriefing profile={profile} clients={clients} />}
 
-        {THEME.features?.booking && <CoachTimetable profile={profile} clients={clients} />}
+        <CoachSection title="Clients" defaultOpen>
+          {THEME.features?.booking && <CoachTimetable profile={profile} clients={clients} />}
 
-        <HeroImageSetting profile={profile} />
+          <HeroImageSetting profile={profile} />
 
-        {THEME.features?.events && <TodayCelebrations clients={clients} />}
+          {THEME.features?.events && <TodayCelebrations clients={clients} />}
 
-        {THEME.features?.crm ? (
-          <CoachMembers clients={clients} loading={loading} onOpen={setSelected} />
-        ) : (
-          <>
-            <p className="eyebrow" style={{ marginTop: 8 }}>Your clients ({clients.length})</p>
-            {loading && <p className="muted-note">Loading…</p>}
-            {!loading && clients.length === 0 && <p className="muted-note">No clients yet. Share your code above to get them started.</p>}
-            <div className="stack">
-              {clients.map((c) => (
-                <button className="tile" key={c.id} onClick={() => setSelected(c)}>
-                  <span className="avatar">{(c.full_name || '?').charAt(0).toUpperCase()}</span>
-                  <div><b>{c.full_name || 'Client'}</b><span>View progress & set targets</span></div>
-                  {c.membership_tier === 'inner_circle' && (
-                    <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: 'var(--accent-hi)', border: '1px solid var(--accent)', borderRadius: 999, padding: '3px 9px' }}>Inner Circle</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+          {THEME.features?.crm ? (
+            <CoachMembers clients={clients} loading={loading} onOpen={setSelected} />
+          ) : (
+            <>
+              <p className="eyebrow" style={{ marginTop: 8 }}>Your clients ({clients.length})</p>
+              {loading && <p className="muted-note">Loading…</p>}
+              {!loading && clients.length === 0 && <p className="muted-note">No clients yet. Share your code above to get them started.</p>}
+              <div className="stack">
+                {clients.map((c) => (
+                  <button className="tile" key={c.id} onClick={() => setSelected(c)}>
+                    <span className="avatar">{(c.full_name || '?').charAt(0).toUpperCase()}</span>
+                    <div><b>{c.full_name || 'Client'}</b><span>View progress & set targets</span></div>
+                    {c.membership_tier === 'inner_circle' && (
+                      <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: 'var(--accent-hi)', border: '1px solid var(--accent)', borderRadius: 999, padding: '3px 9px' }}>Inner Circle</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </CoachSection>
 
-        {THEME.features?.squads && (
-          <SquadList squads={squads} coachId={profile.id} onOpen={setSelectedSquad} onCreated={(s) => setSquads((xs) => [...xs, s])} />
-        )}
+        <CoachSection title="Groups & squads">
+          {THEME.features?.squads && (
+            <SquadList squads={squads} coachId={profile.id} onOpen={setSelectedSquad} onCreated={(s) => setSquads((xs) => [...xs, s])} />
+          )}
 
-        {THEME.features?.groups && (
-          <GroupsPanel groups={groups} coachId={profile.id} onOpen={setSelectedGroup} onCreated={(g) => setGroups((xs) => [...xs, g])} />
-        )}
+          {THEME.features?.groups && (
+            <GroupsPanel groups={groups} coachId={profile.id} onOpen={setSelectedGroup} onCreated={(g) => setGroups((xs) => [...xs, g])} />
+          )}
+        </CoachSection>
 
-        {THEME.features?.vald && <CoachVald coachId={profile.id} clients={clients} />}
+        <CoachSection title="Content library">
+          {THEME.features?.vald && <CoachVald coachId={profile.id} clients={clients} />}
 
-        {THEME.features?.templates && <CoachTemplates coachId={profile.id} />}
-        {THEME.features?.programs && <CoachPrograms coachId={profile.id} />}
-        {THEME.features?.recipes && <CoachRecipes coachId={profile.id} />}
-        {THEME.features?.coachMealPlans && <CoachMealPlans coachId={profile.id} clients={clients} />}
-        {THEME.features?.videos && <CoachVideos coachId={profile.id} />}
-        {(THEME.features?.supplements || THEME.features?.shop || THEME.features?.podcasts) && <CoachLinks coachId={profile.id} />}
-        {THEME.features?.checkinForms && <CheckinFormBuilder coachId={profile.id} />}
-        {THEME.features?.files && <CoachFiles coachId={profile.id} />}
+          {THEME.features?.templates && <CoachTemplates coachId={profile.id} />}
+          {THEME.features?.programs && <CoachPrograms coachId={profile.id} />}
+          {THEME.features?.recipes && <CoachRecipes coachId={profile.id} />}
+          {THEME.features?.coachMealPlans && <CoachMealPlans coachId={profile.id} clients={clients} />}
+          {THEME.features?.videos && <CoachVideos coachId={profile.id} />}
+          {(THEME.features?.supplements || THEME.features?.shop || THEME.features?.podcasts) && <CoachLinks coachId={profile.id} />}
+          {THEME.features?.checkinForms && <CheckinFormBuilder coachId={profile.id} />}
+          {THEME.features?.files && <CoachFiles coachId={profile.id} />}
+        </CoachSection>
 
-        <CoachVoice coachId={profile.id} coachName={profile.full_name} />
-        <KimBrain coachId={profile.id} coachName={profile.full_name} />
-        <FeaturedContent coachId={profile.id} coachName={profile.full_name} />
+        <CoachSection title="Your brand & AI">
+          <CoachVoice coachId={profile.id} coachName={profile.full_name} />
+          <KimBrain coachId={profile.id} coachName={profile.full_name} />
+          <FeaturedContent coachId={profile.id} coachName={profile.full_name} />
+        </CoachSection>
 
-        <div className="stack">
-          <p className="eyebrow" style={{ marginTop: 4 }}>Community</p>
-          <p className="muted-note" style={{ margin: '0 0 4px' }}>Post announcements and cheer your members’ wins — everyone linked to you sees this.</p>
-          <CommunityFeed communityCoachId={profile.id} me={profile.id} myName={profile.full_name} isCoach={true} />
-        </div>
+        <CoachSection title="Community">
+          <div className="stack">
+            <p className="eyebrow" style={{ marginTop: 4 }}>Community</p>
+            <p className="muted-note" style={{ margin: '0 0 4px' }}>Post announcements and cheer your members’ wins — everyone linked to you sees this.</p>
+            <CommunityFeed communityCoachId={profile.id} me={profile.id} myName={profile.full_name} isCoach={true} />
+          </div>
+        </CoachSection>
       </main>
     </div>
   )
@@ -271,7 +290,10 @@ function CoachActivity({ profile, clients, onOpenClient }) {
 
 // Quick adherence read for a client: sessions completed, days food logged, and how
 // recently they checked in / took measurements. Coach reads via is_my_client RLS.
-function ClientAdherence({ clientId }) {
+// targets (macro_targets row) is optional — when given, also shows the weekly
+// nutrition snapshot Paul asked for: net calories vs weekly target, and weekly
+// average protein/carbs/fat/fibre (protein emphasised — it's what he checks first).
+function ClientAdherence({ clientId, targets }) {
   const [a, setA] = useState(null)
   useEffect(() => {
     (async () => {
@@ -283,22 +305,38 @@ function ClientAdherence({ clientId }) {
       const [comp7, comp30, food, ci, meas] = await Promise.all([
         supabase.from('workout_completions').select('completed_on').eq('client_id', clientId).gte('completed_on', d7),
         supabase.from('workout_completions').select('id').eq('client_id', clientId).gte('completed_on', d30),
-        supabase.from('nutrition_logs').select('logged_at, calories').eq('client_id', clientId).gte('logged_at', iso7),
+        supabase.from('nutrition_logs').select('logged_at, calories, protein_g, carbs_g, fat_g, fibre_g').eq('client_id', clientId).gte('logged_at', iso7),
         supabase.from(useForms ? 'checkin_responses' : 'weekly_checkins').select('created_at').eq('client_id', clientId).order('created_at', { ascending: false }).limit(1),
         supabase.from('body_measurements').select('weight_kg, measured_at').eq('client_id', clientId).order('measured_at', { ascending: false }).limit(30),
       ])
-      const days = new Set((food.data || []).map((r) => (r.logged_at || '').slice(0, 10))); days.delete('')
+      const byDay = {}
+      ;(food.data || []).forEach((r) => {
+        const k = (r.logged_at || '').slice(0, 10); if (!k) return
+        const d = (byDay[k] = byDay[k] || { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 })
+        d.calories += Number(r.calories) || 0; d.protein_g += Number(r.protein_g) || 0
+        d.carbs_g += Number(r.carbs_g) || 0; d.fat_g += Number(r.fat_g) || 0; d.fibre_g += Number(r.fibre_g) || 0
+      })
+      const days = Object.keys(byDay)
       // Kim's "add it all up and divide by seven" — total calories over the week
-      // averaged across all 7 days (blank days count as zero, as she asked).
-      const totalCal = (food.data || []).reduce((s, r) => s + (Number(r.calories) || 0), 0)
+      // averaged across all 7 days (blank days count as zero, as she asked). Net
+      // uses the same convention: real weekly intake vs the full weekly target.
+      const totalCal = Object.values(byDay).reduce((s, d) => s + d.calories, 0)
       const avgCal = Math.round(totalCal / 7)
+      // Macro averages are per LOGGED day instead — a day they forgot to log
+      // shouldn't drag "what does their protein intake look like" toward zero.
+      const macroAvg = days.length ? {
+        protein_g: Math.round(days.reduce((s, k) => s + byDay[k].protein_g, 0) / days.length),
+        carbs_g: Math.round(days.reduce((s, k) => s + byDay[k].carbs_g, 0) / days.length),
+        fat_g: Math.round(days.reduce((s, k) => s + byDay[k].fat_g, 0) / days.length),
+        fibre_g: Math.round(days.reduce((s, k) => s + byDay[k].fibre_g, 0) / days.length),
+      } : null
       // Lowest bodyweight of the week — only from weigh-ins in the last 7 days.
       const wk = (meas.data || []).filter((r) => r.measured_at && r.measured_at >= d7 && r.weight_kg != null)
       const lowW = wk.length ? Math.min(...wk.map((r) => Number(r.weight_kg))) : null
       setA({
-        s7: (comp7.data || []).length, s30: (comp30.data || []).length, foodDays: days.size,
+        s7: (comp7.data || []).length, s30: (comp30.data || []).length, foodDays: days.length,
         lastCi: ci.data?.[0]?.created_at || null, lastMeas: meas.data?.[0]?.measured_at || null,
-        avgCal, foodLogged: (food.data || []).length > 0, lowW,
+        avgCal, totalCal, macroAvg, foodLogged: (food.data || []).length > 0, lowW,
       })
     })()
   }, [clientId])
@@ -308,6 +346,7 @@ function ClientAdherence({ clientId }) {
     return n <= 0 ? 'Today' : n === 1 ? 'Yesterday' : `${n}d ago`
   }
   if (!a) return null
+  const netCal = targets?.calories ? a.totalCal - targets.calories * 7 : null
   return (
     <div className="card">
       <p className="eyebrow">Adherence · last 7 days</p>
@@ -319,6 +358,22 @@ function ClientAdherence({ clientId }) {
         <Metric k="Last check-in" v={ago(a.lastCi)} />
         <Metric k="Last measurement" v={ago(a.lastMeas)} />
       </div>
+      {a.macroAvg && (
+        <div className="week-snapshot">
+          <p className="eyebrow" style={{ marginTop: 14 }}>This week’s nutrition</p>
+          {netCal != null && (
+            <p className="muted-note" style={{ marginTop: 4 }}>
+              Net <b className={netCal > 0 ? 'over' : 'under'}>{netCal > 0 ? '+' : ''}{netCal} kcal</b> vs weekly target ({targets.calories} × 7)
+            </p>
+          )}
+          <div className="metrics-2" style={{ marginTop: 8 }}>
+            <Metric k="Protein / day" v={`${a.macroAvg.protein_g}g`} d={targets?.protein_g ? `target ${targets.protein_g}g` : ''} emphasize />
+            <Metric k="Fibre / day" v={`${a.macroAvg.fibre_g}g`} d={targets?.fibre_g ? `target ${targets.fibre_g}g` : ''} />
+            <Metric k="Carbs / day" v={`${a.macroAvg.carbs_g}g`} d={targets?.carbs_g ? `target ${targets.carbs_g}g` : ''} />
+            <Metric k="Fat / day" v={`${a.macroAvg.fat_g}g`} d={targets?.fat_g ? `target ${targets.fat_g}g` : ''} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -475,137 +530,151 @@ function ClientDetail({ client, trainerId, onBack }) {
       <main className="screen">
         {loading ? <p className="muted-note">Loading…</p> : (
           <div className="stack">
-            <ClientAdherence clientId={client.id} />
+            <ClientAdherence clientId={client.id} targets={targets} />
 
-            <div className="card">
-              <p className="eyebrow">Membership</p>
-              <div className="seg small" style={{ marginTop: 8 }}>
-                <button type="button" className={tier === 'standard' ? 'on' : ''} disabled={tierBusy} onClick={() => changeTier('standard')}>Standard</button>
-                <button type="button" className={tier === 'inner_circle' ? 'on' : ''} disabled={tierBusy} onClick={() => changeTier('inner_circle')}>Inner Circle</button>
-              </div>
-              <p className="muted-note" style={{ marginTop: 8 }}>
-                {tier === 'inner_circle'
-                  ? 'Coached tier — assigned workouts, form reviews and direct coaching.'
-                  : 'Self-serve tier — calculator, programs and tracking.'}
-              </p>
-            </div>
-
-            {THEME.features?.tags && <ClientTags clientId={client.id} coachId={trainerId} />}
-
-            {THEME.features?.events && <ClientDob client={client} />}
-
-            {THEME.features?.events && <ClientEventsCoach clientId={client.id} coachId={trainerId} />}
-
-            {THEME.features?.cycle && <CoachCycle clientId={client.id} />}
-
-            {THEME.features?.agenda && <WeekPlanner clientId={client.id} coachId={trainerId} />}
-
-            {THEME.features?.agenda && <WeeklySchedule clientId={client.id} coachId={trainerId} />}
-
-            {THEME.features?.agenda && <ClientReminders clientId={client.id} coachId={trainerId} />}
-
-            {THEME.features?.agenda && (
+            <CoachSection title="Profile">
               <div className="card">
-                <p className="eyebrow">Daily step target</p>
-                <p className="muted-note" style={{ marginBottom: 8 }}>Shows on {(client.full_name || 'your client').split(' ')[0]}’s daily plan. Leave blank for the default 10,000.</p>
-                <div className="grid-2">
-                  <label className="field">Steps / day<input type="number" inputMode="numeric" value={stepTarget} onChange={(e) => setStepTarget(e.target.value)} placeholder="10000" /></label>
+                <p className="eyebrow">Membership</p>
+                <div className="seg small" style={{ marginTop: 8 }}>
+                  <button type="button" className={tier === 'standard' ? 'on' : ''} disabled={tierBusy} onClick={() => changeTier('standard')}>Standard</button>
+                  <button type="button" className={tier === 'inner_circle' ? 'on' : ''} disabled={tierBusy} onClick={() => changeTier('inner_circle')}>Inner Circle</button>
                 </div>
-                <button className="btn primary" onClick={saveStepTarget}>{stepSaved ? 'Saved ✓' : 'Save step target'}</button>
-              </div>
-            )}
-
-            <div className="card">
-              <p className="eyebrow accent">Today’s intake</p>
-              <MacroRowSmall m={today} target={targets} />
-            </div>
-
-            {THEME.features?.nutritionSupport && <NutritionSupport client={client} />}
-            {THEME.features?.nutritionSupport && <ClientHealthContext client={client} />}
-
-            {THEME.features?.coachMealPlans && <ClientMealPlanPanel clientId={client.id} coachId={trainerId} />}
-
-            <div className="card">
-              <p className="eyebrow">Set macro targets</p>
-              <div className="grid-2">
-                <label className="field">Calories<input type="number" value={targets.calories} onChange={set('calories')} /></label>
-                <label className="field">Protein (g)<input type="number" value={targets.protein_g} onChange={set('protein_g')} /></label>
-                <label className="field">Carbs (g)<input type="number" value={targets.carbs_g} onChange={set('carbs_g')} /></label>
-                <label className="field">Fat (g)<input type="number" value={targets.fat_g} onChange={set('fat_g')} /></label>
-              </div>
-              {(fatPct != null || protPerKg != null) && (
-                <p className="muted-note" style={{ marginTop: 4 }}>
-                  {fatPct != null && <span style={{ color: fatPct > 25 ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>Fat {fatPct}% of calories{fatPct > 25 ? ' — over the 25% cap' : ''}</span>}
-                  {protPerKg != null && <span style={{ color: (protPerKg < 1.5 || protPerKg > 2.2) ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>{'  ·  '}Protein {protPerKg.toFixed(1)} g/kg{(protPerKg < 1.5 || protPerKg > 2.2) ? ' — outside 1.5–2.2' : ''}</span>}
+                <p className="muted-note" style={{ marginTop: 8 }}>
+                  {tier === 'inner_circle'
+                    ? 'Coached tier — assigned workouts, form reviews and direct coaching.'
+                    : 'Self-serve tier — calculator, programs and tracking.'}
                 </p>
-              )}
-              <div className="nudge-actions">
-                <button className="btn primary sm" onClick={saveTargets}>{saved ? 'Saved ✓' : 'Save targets'}</button>
-                {bw && <button type="button" className="btn ghost sm" onClick={applyMacroRule} title="Protein 2g/kg, fat 25% of calories, carbs fill the rest">Apply the rule</button>}
               </div>
-              {!bw && <p className="muted-note" style={{ marginTop: 6 }}>Add a bodyweight in their measurements to auto-apply the protein rule.</p>}
-            </div>
 
-            <AssignWorkout clientId={client.id} trainerId={trainerId} onAssigned={(p) => setPlans((pl) => [p, ...pl])} />
+              {THEME.features?.tags && <ClientTags clientId={client.id} coachId={trainerId} />}
 
-            {THEME.features?.programs && <CoachPrograms coachId={trainerId} clientId={client.id} clientName={client.full_name} />}
+              {THEME.features?.events && <ClientDob client={client} />}
 
-            {THEME.features?.programs && <AssignProgram clientId={client.id} coachId={trainerId} clientName={client.full_name} />}
+              {THEME.features?.events && <ClientEventsCoach clientId={client.id} coachId={trainerId} />}
 
-            {THEME.features?.programs && <ApplyProgramSchedule clientId={client.id} coachId={trainerId} />}
+              {THEME.features?.cycle && <CoachCycle clientId={client.id} />}
+            </CoachSection>
 
-            <div className="card">
-              <p className="eyebrow">Messages</p>
-              <MessageThread clientId={client.id} me="coach" placeholder={`Reply to ${(client.full_name || 'your client').split(' ')[0]}…`} />
-            </div>
+            <CoachSection title="Schedule">
+              {THEME.features?.agenda && <WeekPlanner clientId={client.id} coachId={trainerId} />}
 
-            {THEME.features?.monitoring && <CoachMonitoring clientId={client.id} />}
+              {THEME.features?.agenda && <WeeklySchedule clientId={client.id} coachId={trainerId} />}
 
-            {THEME.features?.vald && <ValdTests clientId={client.id} />}
+              {THEME.features?.agenda && <ClientReminders clientId={client.id} coachId={trainerId} />}
 
-            {THEME.features?.rehab && <RehabCoach clientId={client.id} coachId={trainerId} />}
-
-            {THEME.features?.growth && <CoachGrowth clientId={client.id} />}
-
-            {THEME.features?.testing && <CoachPerformanceTests clientId={client.id} />}
-
-            {THEME.features?.checkinForms ? <CoachCheckinResponses clientId={client.id} /> : <CoachCheckins clientId={client.id} />}
-
-            <CoachAccountability clientId={client.id} clientName={client.full_name} />
-
-            <FormChecksReview clientId={client.id} />
-
-            <ClientBodyScans clientId={client.id} />
-
-            {THEME.features?.progressHub && (
-              <div className="card">
-                <p className="eyebrow">Progress photos</p>
-                <p className="muted-note" style={{ marginBottom: 8 }}>Tap two to compare {(client.full_name || 'your client').split(' ')[0]}’s photos side by side.</p>
-                <ProgressPhotos clientId={client.id} />
-              </div>
-            )}
-
-            {latest && (
-              <div className="card">
-                <p className="eyebrow">Body progress</p>
-                <div className="metrics-2">
-                  {latest.weight_kg != null && <Metric k="Weight" v={`${latest.weight_kg}kg`} d={first?.weight_kg != null ? `${(latest.weight_kg - first.weight_kg).toFixed(1)}kg` : ''} />}
-                  {latest.body_fat != null && <Metric k="Body fat" v={`${latest.body_fat}%`} d={first?.body_fat != null ? `${(latest.body_fat - first.body_fat).toFixed(1)}%` : ''} />}
+              {THEME.features?.agenda && (
+                <div className="card">
+                  <p className="eyebrow">Daily step target</p>
+                  <p className="muted-note" style={{ marginBottom: 8 }}>Shows on {(client.full_name || 'your client').split(' ')[0]}’s daily plan. Leave blank for the default 10,000.</p>
+                  <div className="grid-2">
+                    <label className="field">Steps / day<input type="number" inputMode="numeric" value={stepTarget} onChange={(e) => setStepTarget(e.target.value)} placeholder="10000" /></label>
+                  </div>
+                  <button className="btn primary" onClick={saveStepTarget}>{stepSaved ? 'Saved ✓' : 'Save step target'}</button>
                 </div>
-                <TrendChart data={measurements.filter((m) => m.weight_kg != null)} field="weight_kg" />
+              )}
+            </CoachSection>
+
+            <CoachSection title="Nutrition">
+              <div className="card">
+                <p className="eyebrow accent">Today’s intake</p>
+                <MacroRowSmall m={today} target={targets} />
               </div>
-            )}
 
-            <FoodDiary clientId={client.id} coachId={trainerId} contributorId={trainerId} title="Food diary" />
+              {THEME.features?.nutritionSupport && <NutritionSupport client={client} />}
+              {THEME.features?.nutritionSupport && <ClientHealthContext client={client} />}
 
-            <LiftProgress plans={plans} title="Weights lifted" />
+              {THEME.features?.coachMealPlans && <ClientMealPlanPanel clientId={client.id} coachId={trainerId} />}
 
-            <div className="card">
-              <p className="eyebrow">Their sessions</p>
-              <p className="muted-note">Tap a session to see the exercises, sets, reps and weights they’ve logged.</p>
-              {plans.length === 0 && <p className="muted-note">No sessions yet.</p>}
-              {plans.map((p) => <CoachSessionCard key={p.id} plan={p} trainerId={trainerId} onUpdated={(np) => setPlans((pl) => pl.map((x) => (x.id === np.id ? np : x)))} />)}
-            </div>
+              <div className="card">
+                <p className="eyebrow">Set macro targets</p>
+                <div className="grid-2">
+                  <label className="field">Calories<input type="number" value={targets.calories} onChange={set('calories')} /></label>
+                  <label className="field">Protein (g)<input type="number" value={targets.protein_g} onChange={set('protein_g')} /></label>
+                  <label className="field">Carbs (g)<input type="number" value={targets.carbs_g} onChange={set('carbs_g')} /></label>
+                  <label className="field">Fat (g)<input type="number" value={targets.fat_g} onChange={set('fat_g')} /></label>
+                </div>
+                {(fatPct != null || protPerKg != null) && (
+                  <p className="muted-note" style={{ marginTop: 4 }}>
+                    {fatPct != null && <span style={{ color: fatPct > 25 ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>Fat {fatPct}% of calories{fatPct > 25 ? ' — over the 25% cap' : ''}</span>}
+                    {protPerKg != null && <span style={{ color: (protPerKg < 1.5 || protPerKg > 2.2) ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>{'  ·  '}Protein {protPerKg.toFixed(1)} g/kg{(protPerKg < 1.5 || protPerKg > 2.2) ? ' — outside 1.5–2.2' : ''}</span>}
+                  </p>
+                )}
+                <div className="nudge-actions">
+                  <button className="btn primary sm" onClick={saveTargets}>{saved ? 'Saved ✓' : 'Save targets'}</button>
+                  {bw && <button type="button" className="btn ghost sm" onClick={applyMacroRule} title="Protein 2g/kg, fat 25% of calories, carbs fill the rest">Apply the rule</button>}
+                </div>
+                {!bw && <p className="muted-note" style={{ marginTop: 6 }}>Add a bodyweight in their measurements to auto-apply the protein rule.</p>}
+              </div>
+            </CoachSection>
+
+            <CoachSection title="Training">
+              <AssignWorkout clientId={client.id} trainerId={trainerId} onAssigned={(p) => setPlans((pl) => [p, ...pl])} />
+
+              {THEME.features?.programs && <CoachPrograms coachId={trainerId} clientId={client.id} clientName={client.full_name} />}
+
+              {THEME.features?.programs && <AssignProgram clientId={client.id} coachId={trainerId} clientName={client.full_name} />}
+
+              {THEME.features?.programs && <ApplyProgramSchedule clientId={client.id} coachId={trainerId} />}
+
+              <div className="card">
+                <p className="eyebrow">Messages</p>
+                <MessageThread clientId={client.id} me="coach" placeholder={`Reply to ${(client.full_name || 'your client').split(' ')[0]}…`} />
+              </div>
+            </CoachSection>
+
+            <CoachSection title="Testing & monitoring">
+              {THEME.features?.monitoring && <CoachMonitoring clientId={client.id} />}
+
+              {THEME.features?.vald && <ValdTests clientId={client.id} />}
+
+              {THEME.features?.rehab && <RehabCoach clientId={client.id} coachId={trainerId} />}
+
+              {THEME.features?.growth && <CoachGrowth clientId={client.id} />}
+
+              {THEME.features?.testing && <CoachPerformanceTests clientId={client.id} />}
+            </CoachSection>
+
+            <CoachSection title="Check-ins">
+              {THEME.features?.checkinForms ? <CoachCheckinResponses clientId={client.id} /> : <CoachCheckins clientId={client.id} />}
+
+              <CoachAccountability clientId={client.id} clientName={client.full_name} />
+            </CoachSection>
+
+            <CoachSection title="Progress & diary">
+              <FormChecksReview clientId={client.id} />
+
+              <ClientBodyScans clientId={client.id} />
+
+              {THEME.features?.progressHub && (
+                <div className="card">
+                  <p className="eyebrow">Progress photos</p>
+                  <p className="muted-note" style={{ marginBottom: 8 }}>Tap two to compare {(client.full_name || 'your client').split(' ')[0]}’s photos side by side.</p>
+                  <ProgressPhotos clientId={client.id} />
+                </div>
+              )}
+
+              {latest && (
+                <div className="card">
+                  <p className="eyebrow">Body progress</p>
+                  <div className="metrics-2">
+                    {latest.weight_kg != null && <Metric k="Weight" v={`${latest.weight_kg}kg`} d={first?.weight_kg != null ? `${(latest.weight_kg - first.weight_kg).toFixed(1)}kg` : ''} />}
+                    {latest.body_fat != null && <Metric k="Body fat" v={`${latest.body_fat}%`} d={first?.body_fat != null ? `${(latest.body_fat - first.body_fat).toFixed(1)}%` : ''} />}
+                  </div>
+                  <TrendChart data={measurements.filter((m) => m.weight_kg != null)} field="weight_kg" />
+                </div>
+              )}
+
+              <FoodDiary clientId={client.id} coachId={trainerId} contributorId={trainerId} title="Food diary" />
+
+              <LiftProgress plans={plans} title="Weights lifted" />
+
+              <div className="card">
+                <p className="eyebrow">Their sessions</p>
+                <p className="muted-note">Tap a session to see the exercises, sets, reps and weights they’ve logged.</p>
+                {plans.length === 0 && <p className="muted-note">No sessions yet.</p>}
+                {plans.map((p) => <CoachSessionCard key={p.id} plan={p} trainerId={trainerId} onUpdated={(np) => setPlans((pl) => pl.map((x) => (x.id === np.id ? np : x)))} />)}
+              </div>
+            </CoachSection>
           </div>
         )}
       </main>
@@ -3760,11 +3829,3 @@ function MacroRowSmall({ m, target }) {
   )
 }
 
-function Metric({ k, v, d }) {
-  return (
-    <div className="metric">
-      <div className="metric-k">{k}</div>
-      <div className="metric-v">{v} {d && <span className="delta good">{d}</span>}</div>
-    </div>
-  )
-}
