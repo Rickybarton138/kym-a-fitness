@@ -20,6 +20,7 @@ import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
+import { WEEKDAYS } from './booking.js'
 import { formatAnswer } from './checkinForms.js'
 import { RTP_LADDER, BODY_REGIONS, availabilityOf, statusLabel } from './rehab.js'
 import { FoodSearch } from './FoodSearch.jsx'
@@ -214,7 +215,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'monitoring' && <Monitoring clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'strava' && <StravaConnect clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'classes' && <Classes profile={profile} onBack={() => setScreen('home')} />}
-        {screen === 'programs' && <ProgramLibrary clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />}
+        {screen === 'programs' && <ProgramLibrary clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} onBack={() => setScreen('home')} />}
         {screen === 'recipes' && <RecipeLibrary profile={profile} coachName={coachName} onLog={(m) => logFood(m, 'recipe')} onBack={() => setScreen('home')} />}
         {screen === 'mealplan' && <MealPlanBuilder targets={targets} coachName={coachName} onLog={(m) => logFood(m, 'manual')} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'videos' && <VideoLibrary coachName={coachName} onBack={backFromCoach} />}
@@ -229,7 +230,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'growth' && <Growth clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'nudges' && <NudgeSettings clientId={profile.id} onBack={() => setScreen('home')} />}
         {screen === 'checkin' && (THEME.features?.checkinForms
-          ? <CheckinFormRun clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} onBack={() => setScreen('home')} />
+          ? <CheckinFormRun clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} membershipTier={profile.membership_tier} onBack={() => setScreen('home')} />
           : <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />)}
         {screen === 'diary' && <FoodDiary clientId={profile.id} coachId={profile.trainer_id} contributorId={profile.id} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'fridge' && <FridgeScan remaining={remaining} onLog={(m) => logFood(m, 'fridge')} />}
@@ -501,11 +502,11 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
     // week from the start date; wraps if set to repeat).
     let progToday = null
     const { data: cp } = await supabase.from('client_programs')
-      .select('program_id, start_date, repeat, workout_programs(title)')
+      .select('program_id, start_date, repeat, day_map, workout_programs(title)')
       .eq('client_id', profile.id).eq('active', true).order('created_at', { ascending: false }).limit(1)
     if (cp && cp[0]) {
       const asg = cp[0]
-      const { data: psess } = await supabase.from('program_sessions').select('week, dow, title, focus, exercises, finisher').eq('program_id', asg.program_id)
+      const { data: psess } = await supabase.from('program_sessions').select('week, dow, position, title, focus, exercises, finisher').eq('program_id', asg.program_id)
       const list = psess || []
       const cycleWeeks = list.reduce((mx, s) => Math.max(mx, s.week || 1), 1)
       const startMid = new Date(asg.start_date + 'T00:00:00')
@@ -515,7 +516,22 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
         let weekNum = Math.floor(diffDays / 7) + 1
         if (weekNum > cycleWeeks) weekNum = asg.repeat ? ((weekNum - 1) % cycleWeeks) + 1 : null
         if (weekNum) {
-          const sess = list.find((s) => (s.week || 1) === weekNum && s.dow === new Date().getDay())
+          const todayDow = new Date().getDay()
+          let sess = null
+          // Client picked their own training days (day_map) rather than following
+          // the programme's authored dow — map that week's sessions onto their
+          // chosen days by position, so it still works whatever dow the coach
+          // originally set when building the programme.
+          if (asg.day_map && asg.day_map.length) {
+            const slot = asg.day_map.indexOf(todayDow)
+            if (slot !== -1) {
+              const weekSessions = list.filter((s) => (s.week || 1) === weekNum)
+                .sort((a, b) => (a.dow ?? 99) - (b.dow ?? 99) || (a.position ?? 0) - (b.position ?? 0))
+              sess = weekSessions[slot] || null
+            }
+          } else {
+            sess = list.find((s) => (s.week || 1) === weekNum && s.dow === todayDow) || null
+          }
           if (sess) progToday = { sess, weekNum, title: asg.workout_programs?.title || 'Your program' }
         }
       }
@@ -960,7 +976,7 @@ function ResponseCard({ resp, coach }) {
   )
 }
 
-function CheckinFormRun({ clientId, trainerId, coachName, onBack }) {
+function CheckinFormRun({ clientId, trainerId, coachName, membershipTier, onBack }) {
   const coach = coachName?.split(' ')[0] || 'your coach'
   const [form, setForm] = useState(undefined) // undefined = loading, null = none set up
   const [answers, setAnswers] = useState({})
@@ -988,6 +1004,24 @@ function CheckinFormRun({ clientId, trainerId, coachName, onBack }) {
     if (data) setPast((p) => [data, ...p])
     setAnswers({})
     setState('done')
+    // Instant AI feedback for standard-tier clients (Paul's ask) — Inner Circle
+    // clients get his personal reply instead, so this stays best-effort and
+    // never blocks the "Sent" confirmation the client already sees above.
+    if (data && THEME.features?.checkinAI && membershipTier !== 'inner_circle') {
+      autoReply(data)
+    }
+  }
+
+  async function autoReply(resp) {
+    try {
+      const { data: acc } = await supabase.from('accountability_settings').select('level').eq('client_id', clientId).maybeSingle()
+      const lines = (resp.fields || []).map((f) => `${f.label}: ${formatAnswer(f, resp.answers?.[f.id])}`)
+      const { reply } = await analyze({ mode: 'checkin', answers: lines, level: acc?.level || 2 })
+      if (reply) {
+        await supabase.from('checkin_responses').update({ coach_reply: reply }).eq('id', resp.id)
+        setPast((p) => p.map((x) => (x.id === resp.id ? { ...x, coach_reply: reply } : x)))
+      }
+    } catch { /* best-effort — the coach can still reply manually */ }
   }
 
   if (form === undefined) return <div className="stack"><button className="link-btn" onClick={onBack}>‹ Back</button><p className="muted-note">Loading…</p></div>
@@ -1534,9 +1568,15 @@ function OwnPlan({ clientId, onSaved }) {
   )
 }
 
-// Programme library: browse the coach's multi-session programmes and start any
-// session from one (copies its snapshot into the client's sessions to log).
-function ProgramLibrary({ clientId, coachName, onBack }) {
+// Days a programme's whole plan gets mapped onto, Monday first (matches the
+// coach's weekly-schedule convention elsewhere) — values are JS getDay() (0-6).
+const PROGRAM_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+// Programme library: browse the coach's multi-session programmes and either
+// start a single session on a day, or add the whole programme to your plan in
+// one go (Paul's ask) — pick your training days once and it applies across
+// every week, so you're not adding each week one session at a time.
+function ProgramLibrary({ clientId, trainerId, coachName, onBack }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [programs, setPrograms] = useState(null)
   const [openId, setOpenId] = useState(null)
@@ -1544,27 +1584,36 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
   const [startedId, setStartedId] = useState(null)
   const [filters, setFilters] = useState({})
   const [schedDay, setSchedDay] = useState({})
+  const [assignOpenId, setAssignOpenId] = useState(null)
+  const [activeAssignment, setActiveAssignment] = useState(null) // this client's one active whole-programme assignment
   const todayLocal = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
 
   useEffect(() => {
     Promise.all([
       supabase.from('workout_programs').select('*').order('created_at', { ascending: false }),
       supabase.from('client_tags').select('tag').eq('client_id', clientId),
-    ]).then(([{ data: progs }, { data: tagRows }]) => {
+      supabase.from('client_programs').select('id, program_id, start_date, day_map').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1),
+    ]).then(([{ data: progs }, { data: tagRows }, { data: asg }]) => {
       const myTags = (tagRows || []).map((r) => r.tag)
       setPrograms((progs || []).filter((pr) => !pr.audience_tag || myTags.includes(pr.audience_tag)))
+      setActiveAssignment((asg && asg[0]) || null)
     })
   }, [])
 
   const anyFilter = Object.values(filters).some(Boolean)
   const shown = (programs || []).filter((pr) => programMatches(pr, filters))
 
+  async function ensureSessions(id) {
+    if (sessions[id]) return sessions[id]
+    const { data } = await supabase.from('program_sessions').select('*').eq('program_id', id).order('week', { ascending: true }).order('position', { ascending: true })
+    const list = data || []
+    setSessions((s) => ({ ...s, [id]: list }))
+    return list
+  }
+
   async function open(id) {
     setOpenId((o) => (o === id ? null : id))
-    if (!sessions[id]) {
-      const { data } = await supabase.from('program_sessions').select('*').eq('program_id', id).order('position', { ascending: true })
-      setSessions((s) => ({ ...s, [id]: data || [] }))
-    }
+    ensureSessions(id)
   }
 
   async function startSession(ps) {
@@ -1578,12 +1627,32 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
     setTimeout(() => setStartedId(null), 2800)
   }
 
+  async function openAssign(pr) {
+    await ensureSessions(pr.id)
+    setAssignOpenId(pr.id)
+  }
+
+  async function assignProgram(pr, days, start) {
+    if (activeAssignment) await supabase.from('client_programs').update({ active: false }).eq('id', activeAssignment.id)
+    const { data } = await supabase.from('client_programs')
+      .insert({ client_id: clientId, coach_id: trainerId, program_id: pr.id, start_date: start, repeat: true, active: true, day_map: days })
+      .select('id, program_id, start_date, day_map').single()
+    if (data) setActiveAssignment(data)
+    setAssignOpenId(null)
+  }
+
+  async function stopAssignment() {
+    if (!activeAssignment) return
+    await supabase.from('client_programs').update({ active: false }).eq('id', activeAssignment.id)
+    setActiveAssignment(null)
+  }
+
   return (
     <div>
       <button className="link-btn" onClick={onBack}>‹ Back</button>
       <p className="eyebrow accent">Program library</p>
       <h1 className="h1">Follow a plan.</h1>
-      <p className="muted-note">Structured programs built by {coachFirst}. Open one, pick a session and add it to your plan on a day — it shows on your agenda, ready to start.</p>
+      <p className="muted-note">Structured programs built by {coachFirst}. Add a whole program to your plan and pick your training days — it applies across every week automatically. Or open one and add a single session to a day.</p>
 
       {programs === null && <Loader text="Loading programs…" />}
       {programs !== null && programs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs yet — {coachFirst} will add them here.</p>}
@@ -1602,46 +1671,98 @@ function ProgramLibrary({ clientId, coachName, onBack }) {
       {programs !== null && programs.length > 0 && shown.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs match those filters — try clearing one.</p>}
 
       <div className="stack" style={{ marginTop: 12 }}>
-        {shown.map((pr) => (
-          <div className="card session-card" key={pr.id}>
-            <button type="button" className="session-head" onClick={() => open(pr.id)}>
-              <div>
-                <div className="session-title">{pr.title}</div>
-                <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null, ...PROGRAM_DIMS.map((d) => programTagLabel(d.key, pr[d.key]))].filter(Boolean).join(' · ')}</div>
+        {shown.map((pr) => {
+          const onThisPlan = activeAssignment?.program_id === pr.id
+          const wk1Count = (sessions[pr.id] || []).filter((s) => (s.week || 1) === 1).length
+          return (
+            <div className="card session-card" key={pr.id}>
+              <button type="button" className="session-head" onClick={() => open(pr.id)}>
+                <div>
+                  <div className="session-title">{pr.title}</div>
+                  <div className="session-sub">{[pr.level, pr.weeks ? pr.weeks + ' weeks' : null, ...PROGRAM_DIMS.map((d) => programTagLabel(d.key, pr[d.key]))].filter(Boolean).join(' · ')}</div>
+                </div>
+                <span className="chev">{openId === pr.id ? '−' : '+'}</span>
+              </button>
+              <div className="grid-2" style={{ marginTop: 8 }}>
+                <button type="button" className={'btn sm' + (onThisPlan ? ' ghost' : ' primary')} onClick={() => openAssign(pr)}>
+                  {onThisPlan ? 'On your plan · change days' : 'Add to my plan'}
+                </button>
+                {onThisPlan && <button type="button" className="link-btn" onClick={stopAssignment}>Stop following</button>}
               </div>
-              <span className="chev">{openId === pr.id ? '−' : '+'}</span>
-            </button>
-            {openId === pr.id && (
-              <div className="stack" style={{ marginTop: 8 }}>
-                {pr.description && <p className="muted-note">{pr.description}</p>}
-                {(sessions[pr.id] || []).map((ps) => (
-                  <div className="card" key={ps.id} style={{ background: 'var(--surface-2)' }}>
-                    <div className="session-title">{ps.label ? ps.label + ' · ' : ''}{ps.title}</div>
-                    <ol className="ex-list" style={{ marginTop: 6 }}>
-                      {(ps.exercises || []).map((ex, i) => (
-                        <li className="ex" key={i}>
-                          <span className="ex-n">{i + 1}</span>
-                          <div className="ex-body"><div className="ex-name">{ex.name}</div><ExSets ex={ex} />{ex.cue && <div className="ex-cue">{ex.cue}</div>}</div>
-                        </li>
-                      ))}
-                      {ps.finisher && <p className="finisher"><b>Finisher:</b> {ps.finisher}</p>}
-                    </ol>
-                    <div className="grid-2" style={{ marginTop: 4 }}>
-                      <label className="field">Add to day
-                        <input type="date" value={schedDay[ps.id] || todayLocal} min={todayLocal}
-                          onChange={(e) => setSchedDay((m) => ({ ...m, [ps.id]: e.target.value || todayLocal }))} />
-                      </label>
-                      <button type="button" className="btn primary sm" style={{ alignSelf: 'end' }} onClick={() => startSession(ps)}>
-                        {startedId === ps.id ? 'Added to your plan ✓' : 'Add to my plan'}
-                      </button>
+              {onThisPlan && !assignOpenId && <p className="muted-note" style={{ marginTop: 4 }}>Training {(activeAssignment.day_map || []).map((d) => WEEKDAYS[d]).join(', ') || '—'}, from {activeAssignment.start_date}.</p>}
+              {assignOpenId === pr.id && (
+                <ProgramDayPicker
+                  sessionsPerWeek={wk1Count}
+                  initialDays={onThisPlan ? activeAssignment.day_map : []}
+                  onCancel={() => setAssignOpenId(null)}
+                  onConfirm={(days, start) => assignProgram(pr, days, start)}
+                />
+              )}
+              {openId === pr.id && (
+                <div className="stack" style={{ marginTop: 8 }}>
+                  {pr.description && <p className="muted-note">{pr.description}</p>}
+                  {(sessions[pr.id] || []).map((ps) => (
+                    <div className="card" key={ps.id} style={{ background: 'var(--surface-2)' }}>
+                      <div className="session-title">{ps.label ? ps.label + ' · ' : ''}{ps.title}</div>
+                      <ol className="ex-list" style={{ marginTop: 6 }}>
+                        {(ps.exercises || []).map((ex, i) => (
+                          <li className="ex" key={i}>
+                            <span className="ex-n">{i + 1}</span>
+                            <div className="ex-body"><div className="ex-name">{ex.name}</div><ExSets ex={ex} />{ex.cue && <div className="ex-cue">{ex.cue}</div>}</div>
+                          </li>
+                        ))}
+                        {ps.finisher && <p className="finisher"><b>Finisher:</b> {ps.finisher}</p>}
+                      </ol>
+                      <div className="grid-2" style={{ marginTop: 4 }}>
+                        <label className="field">Add to day
+                          <input type="date" value={schedDay[ps.id] || todayLocal} min={todayLocal}
+                            onChange={(e) => setSchedDay((m) => ({ ...m, [ps.id]: e.target.value || todayLocal }))} />
+                        </label>
+                        <button type="button" className="btn primary sm" style={{ alignSelf: 'end' }} onClick={() => startSession(ps)}>
+                          {startedId === ps.id ? 'Added to your plan ✓' : 'Add this session'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {sessions[pr.id] && sessions[pr.id].length === 0 && <p className="muted-note">Sessions coming soon.</p>}
-              </div>
-            )}
-          </div>
+                  ))}
+                  {sessions[pr.id] && sessions[pr.id].length === 0 && <p className="muted-note">Sessions coming soon.</p>}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Pick which real weekdays a whole programme's sessions land on (Paul's ask) —
+// applies the same days across every week, so following a 12-week programme is
+// one action instead of adding each week's sessions individually.
+function ProgramDayPicker({ sessionsPerWeek, initialDays, onCancel, onConfirm }) {
+  const [days, setDays] = useState(initialDays || [])
+  const [start, setStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
+  const [busy, setBusy] = useState(false)
+  const toggle = (dow) => setDays((ds) => (ds.includes(dow) ? ds.filter((d) => d !== dow) : [...ds, dow].sort((a, b) => a - b)))
+  async function confirm() {
+    setBusy(true)
+    await onConfirm(days, start)
+    setBusy(false)
+  }
+  return (
+    <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
+      <p className="eyebrow">Which days do you want to train?</p>
+      <p className="muted-note">
+        {sessionsPerWeek ? `This program has ${sessionsPerWeek} session${sessionsPerWeek === 1 ? '' : 's'} a week — pick ${sessionsPerWeek} day${sessionsPerWeek === 1 ? '' : 's'} and it'll apply the same days across every week.` : 'Pick your training days and it applies across every week.'}
+      </p>
+      <div className="seg" style={{ flexWrap: 'wrap' }}>
+        {PROGRAM_WEEK_ORDER.map((dow) => (
+          <button type="button" key={dow} className={days.includes(dow) ? 'on' : ''} onClick={() => toggle(dow)}>{WEEKDAYS[dow]}</button>
         ))}
+      </div>
+      <label className="field" style={{ marginTop: 8 }}>Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+      <div className="grid-2" style={{ marginTop: 10 }}>
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn primary" disabled={!days.length || busy} onClick={confirm}>{busy ? 'Adding…' : 'Confirm'}</button>
       </div>
     </div>
   )
@@ -2597,7 +2718,9 @@ function BodyScan({ clientId, coachName }) {
   const [summary, setSummary] = useState('')
   const [error, setError] = useState('')
   const [pose, setPose] = useState('front')
+  const [date, setDate] = useState('')
   const [showCam, setShowCam] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
 
   async function load() {
     const { data } = await supabase.from('body_scans').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(20)
@@ -2610,11 +2733,14 @@ function BodyScan({ clientId, coachName }) {
     setError(''); setSummary(''); setState('scanning')
     try {
       const current = await scaleImageToBase64(file, 800)
-      // Compare against the most recent prior photo of the SAME pose (front vs
-      // front), so the AI reads real change not a change of angle. Older scans
-      // with no pose count as "front" for back-compatibility.
+      const takenAt = date ? new Date(date + 'T12:00:00').toISOString() : new Date().toISOString()
+      // Compare against the most recent prior photo of the SAME pose taken
+      // BEFORE this one (not just "most recently added") — so a backdated
+      // starting-point photo still compares correctly against real history.
       let frames = [current]
-      const prev = scans.find((s) => (s.pose || 'front') === pose) || null
+      const prev = scans
+        .filter((s) => (s.pose || 'front') === pose && s.created_at < takenAt)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null
       if (prev) {
         try {
           const { data: signed } = await supabase.storage.from('body-photos').createSignedUrl(prev.photo_path, 300)
@@ -2628,8 +2754,9 @@ function BodyScan({ clientId, coachName }) {
       if (s) setSummary(s)
       const up = await uploadPromise
       if (up.error) throw new Error(up.error.message)
-      const { data } = await supabase.from('body_scans').insert({ client_id: clientId, photo_path: path, summary: s || null, pose }).select().single()
-      if (data) setScans((c) => [data, ...c])
+      const { data } = await supabase.from('body_scans').insert({ client_id: clientId, photo_path: path, summary: s || null, pose, created_at: takenAt }).select().single()
+      if (data) setScans((c) => [...c, data].sort((a, b) => b.created_at.localeCompare(a.created_at)))
+      setDate('')
       setState('done')
     } catch (err) { setError(err.message); setState('error') }
   }
@@ -2645,6 +2772,8 @@ function BodyScan({ clientId, coachName }) {
       <div className="seg" style={{ marginBottom: 4 }}>
         {BODY_POSES.map(([v, l]) => <button type="button" key={v} className={pose === v ? 'on' : ''} onClick={() => setPose(v)}>{l}</button>)}
       </div>
+      <label className="field">Date<input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></label>
+      <p className="muted-note">Uploading an old photo to mark your real starting point? Set the date above so your timeline stays accurate.</p>
       {state !== 'scanning' && <button className="btn primary big" onClick={() => setShowCam(true)}>Add {poseLabel.toLowerCase()} photo</button>}
       {state === 'scanning' && <Loader text="Scanning your progress…" />}
       {summary && <div className="card"><div className="fc-block"><b>{first ? 'Your baseline' : 'Since your last scan'}</b><p>{summary}</p></div></div>}
@@ -2676,9 +2805,11 @@ function BodyLog({ measurements, onAdd }) {
   const [w, setW] = useState('')
   const [bf, setBf] = useState('')
   const [waist, setWaist] = useState('')
+  const [date, setDate] = useState('')
   const [saving, setSaving] = useState(false)
   const latest = measurements[measurements.length - 1]
   const first = measurements[0]
+  const today = new Date().toISOString().slice(0, 10)
 
   async function submit(e) {
     e.preventDefault()
@@ -2688,8 +2819,9 @@ function BodyLog({ measurements, onAdd }) {
       weight_kg: w ? Number(w) : null,
       body_fat: bf ? Number(bf) : null,
       waist_cm: waist ? Number(waist) : null,
+      measured_at: date || undefined,
     })
-    setW(''); setBf(''); setWaist(''); setSaving(false)
+    setW(''); setBf(''); setWaist(''); setDate(''); setSaving(false)
   }
 
   return (
@@ -2711,7 +2843,9 @@ function BodyLog({ measurements, onAdd }) {
           <label className="field">Weight (kg)<input type="number" step="0.1" value={w} onChange={(e) => setW(e.target.value)} /></label>
           <label className="field">Body fat (%)<input type="number" step="0.1" value={bf} onChange={(e) => setBf(e.target.value)} /></label>
           <label className="field">Waist (cm)<input type="number" step="0.1" value={waist} onChange={(e) => setWaist(e.target.value)} /></label>
+          <label className="field">Date<input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></label>
         </div>
+        <p className="muted-note">Starting fresh with an old photo or measurement? Backdate it to your real start date so your trend stays accurate.</p>
         <button className="btn primary" disabled={saving} type="submit">{saving ? 'Saving…' : 'Save measurement'}</button>
       </form>
     </div>

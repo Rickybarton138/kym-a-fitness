@@ -2,6 +2,7 @@
 // POST { mode: 'fridge' | 'meal', image: <base64 no prefix>, mediaType, remaining? }
 
 import { kbForPrompt } from '../../src/nutritionExpert.js'
+import { LEVELS } from '../../src/accountability.js'
 
 // Model routing by job (cost lever). Vision stays on Opus for macro/photo
 // accuracy; client-facing coaching text runs on Sonnet; mechanical/internal
@@ -264,6 +265,23 @@ function buildAskSystem(knowledge, comms, persona, nutritionStyle, recovery, hea
   )
 }
 
+// Instant reply to a client's weekly check-in — Paul's ask: standard-tier
+// clients get feedback the moment they submit, in the coach's voice, matching
+// the accountability tone they've chosen and factoring in any health context.
+function buildCheckinSystem(persona, level, healthContext, recovery) {
+  const lvl = LEVELS.find((l) => l.n === level) || LEVELS[1]
+  const name = (persona && persona.name) || 'their coach'
+  return (
+    personaIntro(persona, 'strength & nutrition coach') + ' ' +
+    `A client has just submitted their weekly check-in. Reply to them directly as ${name}, responding to what they actually shared — ` +
+    'acknowledge 1-2 specific things from their answers (a win, a struggle, or a number that stands out), give one concrete, practical piece of advice or encouragement for the week ahead, and end warmly. ' +
+    `Match this accountability tone: level ${lvl.n} — ${lvl.label}. ${lvl.blurb} ` +
+    'Keep it to 3-5 short sentences, speak directly to them (never in the third person). ' +
+    'Write in plain text — no markdown, no bold, no asterisks, no headings, no emojis unless the tone genuinely calls for a light touch.' +
+    healthLine(healthContext) + recoveryLine(recovery)
+  )
+}
+
 function buildBodyScanPrompt(hasPrev, persona, recovery) {
   const base =
     personaIntro(persona, 'body-composition coach') + ' ' +
@@ -318,7 +336,7 @@ export const handler = async (event) => {
     return json(400, { error: 'Invalid JSON body.' })
   }
 
-  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras, recovery, healthContext } = body
+  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras, recovery, healthContext, answers } = body
 
   // ---- Nutrition Expert: evidence-based sports-nutrition answers ----
   if (mode === 'expert') {
@@ -361,6 +379,29 @@ export const handler = async (event) => {
       if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { answer: tb ? tb.text : 'Sorry, I couldn’t answer that — try messaging Kim.' })
+    } catch {
+      return json(502, { error: 'Could not reach the AI service. Please try again.' })
+    }
+  }
+
+  // ---- Check-in reply: instant, personal feedback on a client's weekly check-in ----
+  if (mode === 'checkin') {
+    if (!answers || !answers.length) return json(400, { error: 'No check-in answers to reply to.' })
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: MODEL_MID,
+          max_tokens: 500,
+          system: cacheable(buildCheckinSystem(persona, body.level, healthContext, recovery)),
+          messages: [{ role: 'user', content: 'Here is their check-in:\n\n' + answers.join('\n') }],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      const tb = (data.content || []).find((b) => b.type === 'text')
+      return json(200, { reply: tb ? tb.text : '' })
     } catch {
       return json(502, { error: 'Could not reach the AI service. Please try again.' })
     }

@@ -48,7 +48,7 @@ export const BRANDS = {
     instagram: 'paulandrewspt',
     tiktok: 'paulandrewspt',
     scheme: 'dark',
-    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true, nutritionSupport: true, groupedHome: true, groupedCoach: true },
+    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, checkinAI: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true, nutritionSupport: true, groupedHome: true, groupedCoach: true },
     // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout; simplified to
     // 5 tabs 2026-08-18 per his feedback — Videos folded into the Coach hub,
     // Coach+Community merged into one tab). Ids map to screens/hubs in
