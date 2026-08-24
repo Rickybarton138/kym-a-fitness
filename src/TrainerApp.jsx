@@ -54,25 +54,35 @@ export default function TrainerApp({ profile, onSignOut }) {
   useEffect(() => { loadClients(); if (THEME.features?.squads) loadSquads(); if (THEME.features?.groups) loadGroups() }, [])
 
   // Keep the coach where they were: a phone app-switch reloads the PWA and would
-  // otherwise drop them back on the dashboard. Persist the open client/squad and
-  // restore it once the lists have loaded.
+  // otherwise drop them back on the dashboard. Uses localStorage, not
+  // sessionStorage — iOS can drop sessionStorage across a home-screen-app
+  // switch/relaunch, which is exactly the case this exists to survive (Paul's
+  // report: coming back to the app dropped him back on the dashboard).
+  // Cleared on sign-out below so it can't leak into another coach's session.
   useEffect(() => {
     if (loading) return
     if (!selected) {
-      const id = sessionStorage.getItem('cbk_coach_sel')
+      const id = localStorage.getItem('cbk_coach_sel')
       if (id) { const c = clients.find((x) => x.id === id); if (c) setSelected(c) }
     }
     if (!selectedSquad) {
-      const id = sessionStorage.getItem('cbk_coach_squad')
+      const id = localStorage.getItem('cbk_coach_squad')
       if (id) { const s = squads.find((x) => x.id === id); if (s) setSelectedSquad(s) }
     }
-  }, [loading, clients, squads])
+    if (!selectedGroup) {
+      const id = localStorage.getItem('cbk_coach_group')
+      if (id) { const g = groups.find((x) => x.id === id); if (g) setSelectedGroup(g) }
+    }
+  }, [loading, clients, squads, groups])
   useEffect(() => {
-    try { selected ? sessionStorage.setItem('cbk_coach_sel', selected.id) : sessionStorage.removeItem('cbk_coach_sel') } catch { /* ignore */ }
+    try { selected ? localStorage.setItem('cbk_coach_sel', selected.id) : localStorage.removeItem('cbk_coach_sel') } catch { /* ignore */ }
   }, [selected])
   useEffect(() => {
-    try { selectedSquad ? sessionStorage.setItem('cbk_coach_squad', selectedSquad.id) : sessionStorage.removeItem('cbk_coach_squad') } catch { /* ignore */ }
+    try { selectedSquad ? localStorage.setItem('cbk_coach_squad', selectedSquad.id) : localStorage.removeItem('cbk_coach_squad') } catch { /* ignore */ }
   }, [selectedSquad])
+  useEffect(() => {
+    try { selectedGroup ? localStorage.setItem('cbk_coach_group', selectedGroup.id) : localStorage.removeItem('cbk_coach_group') } catch { /* ignore */ }
+  }, [selectedGroup])
 
   function copyCode(code, which) {
     navigator.clipboard?.writeText(code || '')
@@ -104,7 +114,7 @@ export default function TrainerApp({ profile, onSignOut }) {
           {THEME.logo ? <img className="mark-img" src={THEME.logo} alt="" /> : <span className="mark-badge">{THEME.mark}</span>}
           <span className="brand-name">{THEME.name}</span>
         </div>
-        <button className="link-btn" onClick={onSignOut}>Sign out</button>
+        <button className="link-btn" onClick={() => { try { localStorage.removeItem('cbk_coach_sel'); localStorage.removeItem('cbk_coach_squad'); localStorage.removeItem('cbk_coach_group') } catch { /* ignore */ } onSignOut() }}>Sign out</button>
       </header>
 
       <main className="screen">
@@ -2733,10 +2743,14 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
   const [meta, setMeta] = useState({}) // location / equipment / audience / goal filters
   const [error, setError] = useState('')
   const [addFor, setAddFor] = useState(null) // program_id we're adding a session to
-  const [pickTpl, setPickTpl] = useState('')
+  const [pickTpl, setPickTpl] = useState('') // template id, or '__custom__' to build from scratch
   const [dayLabel, setDayLabel] = useState('')
   const [pickWeek, setPickWeek] = useState(1)
   const [pickDow, setPickDow] = useState('')
+  const [customTitle, setCustomTitle] = useState('')
+  const [customFocus, setCustomFocus] = useState('')
+  const [customRows, setCustomRows] = useState([newExerciseRow()])
+  const [addError, setAddError] = useState('') // scoped to the add-session flow, so it doesn't get lost below a long programme card
   const [editSess, setEditSess] = useState(null) // program_session id being edited
   // AI whole-programme edit: one instruction rewrites all sessions.
   const [aiEditFor, setAiEditFor] = useState(null) // programme id in AI-edit mode
@@ -2786,21 +2800,30 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
   }
 
   async function addSession(programId) {
-    const tpl = templates.find((t) => t.id === pickTpl)
-    if (!tpl) { setError('Pick a template to add.'); return }
+    let title, focus, exercises, finisher
+    if (pickTpl === '__custom__') {
+      exercises = rowsToExercises(customRows, 'Coach plan')
+      if (exercises.length === 0) { setAddError('Add at least one exercise with a set.'); return }
+      title = customTitle.trim() || 'Custom session'; focus = customFocus.trim() || null; finisher = null
+    } else {
+      const tpl = templates.find((t) => t.id === pickTpl)
+      if (!tpl) { setAddError('Pick a template, or build a custom session.'); return }
+      title = tpl.title; focus = tpl.focus; exercises = tpl.exercises || []; finisher = tpl.finisher || null
+    }
     const pos = (sessions[programId] || []).length
     const { data, error: err } = await supabase.from('program_sessions').insert({
       program_id: programId, position: pos, label: dayLabel.trim() || null,
       week: Number(pickWeek) || 1, dow: pickDow === '' ? null : Number(pickDow),
-      title: tpl.title, focus: tpl.focus, exercises: tpl.exercises || [], finisher: tpl.finisher || null,
+      title, focus, exercises, finisher,
     }).select().single()
-    if (err) { setError(err.message); return }
+    if (err) { setAddError(err.message); return }
     setSessions((s) => {
       const next = [...(s[programId] || []), data]
       next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
       return { ...s, [programId]: next }
     })
-    setPickTpl(''); setDayLabel(''); setPickDow(''); setError('')
+    setPickTpl(''); setDayLabel(''); setPickDow(''); setAddError('')
+    setCustomTitle(''); setCustomFocus(''); setCustomRows([newExerciseRow()])
   }
 
   async function delSession(programId, id) {
@@ -3055,33 +3078,40 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                       )}
                     </div>
                   ))}
-                  {(sessions[pr.id] || []).length === 0 && <p className="muted-note">No sessions yet — add one from your templates.</p>}
+                  {(sessions[pr.id] || []).length === 0 && <p className="muted-note">No sessions yet — add one below.</p>}
 
-                  {templates.length === 0 ? (
-                    <p className="muted-note">Build a session template first (above) — programs are made from templates.</p>
-                  ) : (
-                    <>
+                  <div className="grid-2">
+                    <label className="field">Add session
+                      <select className="ex-select" value={addFor === pr.id ? pickTpl : ''} onChange={(e) => { setPickTpl(e.target.value); setAddFor(pr.id) }}>
+                        <option value="">Choose a template…</option>
+                        <option value="__custom__">+ Build a custom session</option>
+                        {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                      </select>
+                    </label>
+                    <label className="field">Week<input type="number" min="1" inputMode="numeric" value={addFor === pr.id ? pickWeek : 1} onChange={(e) => { setPickWeek(e.target.value); setAddFor(pr.id) }} /></label>
+                  </div>
+                  <div className="grid-2">
+                    <label className="field">Day
+                      <select className="ex-select" value={addFor === pr.id ? pickDow : ''} onChange={(e) => { setPickDow(e.target.value); setAddFor(pr.id) }}>
+                        <option value="">Any day</option>
+                        {SCHED_DOW.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label className="field">Label (optional)<input value={addFor === pr.id ? dayLabel : ''} onChange={(e) => { setDayLabel(e.target.value); setAddFor(pr.id) }} placeholder="e.g. Push A" /></label>
+                  </div>
+
+                  {addFor === pr.id && pickTpl === '__custom__' && (
+                    <div className="stack" style={{ marginTop: 4 }}>
                       <div className="grid-2">
-                        <label className="field">Add session
-                          <select className="ex-select" value={addFor === pr.id ? pickTpl : ''} onChange={(e) => { setPickTpl(e.target.value); setAddFor(pr.id) }}>
-                            <option value="">Choose a template…</option>
-                            {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
-                          </select>
-                        </label>
-                        <label className="field">Week<input type="number" min="1" inputMode="numeric" value={addFor === pr.id ? pickWeek : 1} onChange={(e) => { setPickWeek(e.target.value); setAddFor(pr.id) }} /></label>
+                        <label className="field">Session name<input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder="e.g. Upper Push A" /></label>
+                        <label className="field">Focus<input value={customFocus} onChange={(e) => setCustomFocus(e.target.value)} placeholder="e.g. Push" /></label>
                       </div>
-                      <div className="grid-2">
-                        <label className="field">Day
-                          <select className="ex-select" value={addFor === pr.id ? pickDow : ''} onChange={(e) => { setPickDow(e.target.value); setAddFor(pr.id) }}>
-                            <option value="">Any day</option>
-                            {SCHED_DOW.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
-                          </select>
-                        </label>
-                        <label className="field">Label (optional)<input value={addFor === pr.id ? dayLabel : ''} onChange={(e) => { setDayLabel(e.target.value); setAddFor(pr.id) }} placeholder="e.g. Push A" /></label>
-                      </div>
-                    </>
+                      <ExerciseRowsEditor rows={customRows} setRows={setCustomRows} />
+                    </div>
                   )}
-                  {templates.length > 0 && <button type="button" className="btn ghost" onClick={() => addSession(pr.id)}>Add to program</button>}
+
+                  {addFor === pr.id && addError && <p className="error">{addError}</p>}
+                  <button type="button" className="btn ghost" onClick={() => addSession(pr.id)}>Add to program</button>
                   <ProgramMetaEditor program={pr} onSaved={(up) => setPrograms((ps) => ps.map((x) => (x.id === up.id ? up : x)))} />
                   <ProgramSchedule program={pr} onSaved={(up) => setPrograms((ps) => ps.map((x) => (x.id === up.id ? up : x)))} />
                   <button type="button" className="link-btn" onClick={() => delProgram(pr.id)}>Delete program</button>
@@ -3133,10 +3163,14 @@ function CoachTemplates({ coachId }) {
   const [items, setItems] = useState([])
   const { title, focus, rows, setTitle, setFocus, setRows, clear, hasDraft } = useWorkoutDraft('tpl:' + coachId)
   const [open, setOpen] = useState(hasDraft)
+  const [audienceTag, setAudienceTag] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [openId, setOpenId] = useState(null)
   const [editId, setEditId] = useState(null)
+  const [tagEditId, setTagEditId] = useState(null)
+  const [tagDraft, setTagDraft] = useState('')
+  const [tagSaving, setTagSaving] = useState(false)
 
   async function load() {
     const { data } = await supabase.from('workout_templates').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
@@ -3150,13 +3184,23 @@ function CoachTemplates({ coachId }) {
     setSaving(true); setError('')
     const { data, error: err } = await supabase.from('workout_templates').insert({
       coach_id: coachId, title: title.trim() || 'Session template', focus: focus.trim() || null, exercises,
+      audience_tag: audienceTag.trim().toLowerCase() || null,
     }).select().single()
     setSaving(false)
     if (err) { setError(err.message); return }
     if (data) {
       setItems((i) => [data, ...i])
-      clear(); setOpen(false)
+      clear(); setAudienceTag(''); setOpen(false)
     }
+  }
+
+  function startTagEdit(t) { setTagEditId(t.id); setTagDraft(t.audience_tag || '') }
+  async function saveTag(id) {
+    setTagSaving(true)
+    const audience_tag = tagDraft.trim().toLowerCase() || null
+    const { data, error: err } = await supabase.from('workout_templates').update({ audience_tag }).eq('id', id).select().single()
+    setTagSaving(false)
+    if (!err && data) { setItems((i) => i.map((x) => (x.id === data.id ? data : x))); setTagEditId(null) }
   }
 
   async function del(id) {
@@ -3176,11 +3220,19 @@ function CoachTemplates({ coachId }) {
               <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
                 <div>
                   <div className="session-title">{t.title}</div>
-                  <div className="session-sub">{t.focus ? t.focus + ' · ' : ''}{(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}</div>
+                  <div className="session-sub">{t.focus ? t.focus + ' · ' : ''}{(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}{t.audience_tag ? ` · only "${t.audience_tag}"` : ' · shows to everyone'}</div>
                 </div>
                 <span className="chev">{openId === t.id ? '−' : '+'}</span>
               </button>
-              {openId === t.id && (editId === t.id ? (
+              {openId === t.id && (tagEditId === t.id ? (
+                <div className="stack" style={{ marginTop: 10 }}>
+                  <label className="field">Only show to tag (optional)<input value={tagDraft} onChange={(e) => setTagDraft(e.target.value)} placeholder="e.g. standard — blank shows to everyone" /></label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="btn primary sm" disabled={tagSaving} onClick={() => saveTag(t.id)}>{tagSaving ? 'Saving…' : 'Save visibility'}</button>
+                    <button type="button" className="link-btn" onClick={() => setTagEditId(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : editId === t.id ? (
                 <WorkoutEditForm
                   initial={{ title: t.title, focus: t.focus, exercises: t.exercises }}
                   titleLabel="Template name" saveLabel="Save template"
@@ -3209,6 +3261,7 @@ function CoachTemplates({ coachId }) {
                   </ol>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" className="btn ghost sm" onClick={() => setEditId(t.id)}>Edit template</button>
+                    <button type="button" className="btn ghost sm" onClick={() => startTagEdit(t)}>Edit visibility</button>
                     <button type="button" className="btn ghost sm" onClick={() => del(t.id)}>Delete template</button>
                   </div>
                 </>
@@ -3227,6 +3280,7 @@ function CoachTemplates({ coachId }) {
             <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Push" /></label>
           </div>
           <ExerciseRowsEditor rows={rows} setRows={setRows} />
+          <label className="field">Only show to tag (optional)<input value={audienceTag} onChange={(e) => setAudienceTag(e.target.value)} placeholder="e.g. standard — blank shows to everyone" /></label>
           {error && <p className="error">{error}</p>}
           <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save template'}</button>
           <button type="button" className="link-btn" onClick={() => { setOpen(false); setError('') }}>Cancel</button>

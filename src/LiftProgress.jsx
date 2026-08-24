@@ -18,12 +18,21 @@ export function LiftProgress({ plans, title = 'Weights lifted' }) {
 
 function LiftRow({ lift }) {
   const [open, setOpen] = useState(false)
-  const up = lift.points.length > 1 && lift.latest > lift.points[0].weight
+  const hasHistory = lift.points.length > 1
+  const up = hasHistory && lift.latest > lift.start
+  const down = hasHistory && lift.latest < lift.start
   return (
     <div className="lift-row">
       <button type="button" className="lift-head" onClick={() => setOpen((o) => !o)}>
         <span className="lift-name">{lift.name}</span>
-        <span className="lift-val">{lift.latest}kg{up && <span className="delta good"> ↑</span>} <span className="muted-note">· best {lift.best}kg</span></span>
+        <span className="lift-val">
+          {hasHistory ? (
+            <>Started {lift.start}kg → now {lift.latest}kg{up && <span className="delta good"> ↑</span>}{down && <span className="delta"> ↓</span>}</>
+          ) : (
+            <>{lift.latest}kg <span className="muted-note">· first log</span></>
+          )}
+          {lift.best !== lift.latest && <span className="muted-note"> · best {lift.best}kg</span>}
+        </span>
       </button>
       {open && (lift.points.length >= 2
         ? <TrendChart data={lift.points} field="weight" />

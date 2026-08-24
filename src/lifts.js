@@ -53,7 +53,27 @@ export function aggregateLifts(plans) {
     .map(([name, points]) => {
       points.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       const weights = points.map((x) => x.weight)
-      return { name, points, latest: weights[weights.length - 1], best: Math.max(...weights), count: points.length }
+      return { name, points, start: weights[0], latest: weights[weights.length - 1], best: Math.max(...weights), count: points.length }
     })
     .sort((a, b) => b.count - a.count)
+}
+
+// Most recent full set (reps + weight) logged per exercise, so a client about to
+// train can see exactly what they did last time, not just a pre-filled number.
+// Expects plans newest-first (matches every existing history query in the app)
+// and keeps the first — i.e. most recent — match per exercise name.
+export function lastSetsByName(plans) {
+  const map = {}
+  for (const p of plans || []) {
+    for (const ex of p.exercises || []) {
+      const key = (ex.name || '').trim().toLowerCase()
+      if (!key || map[key]) continue
+      const sets = Array.isArray(ex.sets)
+        ? ex.sets.filter((s) => String(s.reps ?? '').trim() || String(s.weight ?? '').trim())
+        : []
+      if (!sets.length) continue
+      map[key] = { sets, date: p.created_at || null }
+    }
+  }
+  return map
 }

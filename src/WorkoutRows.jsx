@@ -63,10 +63,21 @@ export function useWorkoutDraft(key) {
   }
 }
 
+// What was logged last time for one exercise, as a compact reference line —
+// e.g. "Last time (12 Aug): 8×60kg, 8×60kg, 6×65kg".
+export function lastTimeLabel(last) {
+  if (!last || !last.sets?.length) return ''
+  const when = last.date ? new Date(last.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
+  const sets = last.sets.map((s) => (s.weight ? `${s.reps || '-'}×${s.weight}kg` : s.reps || '-')).join(', ')
+  return `Last time${when ? ` (${when})` : ''}: ${sets}`
+}
+
 // Shared exercise editor: pick an exercise, then log each set's reps and weight
 // (different per set). Used by the client's "Build your own" and the coach's
-// "Assign a workout" / squad builders.
-export function ExerciseRowsEditor({ rows, setRows }) {
+// "Assign a workout" / squad builders. `lastByName` (optional) maps a lowercased
+// exercise name to their last logged sets, so whoever's logging can see what was
+// done last time instead of guessing at a starting weight.
+export function ExerciseRowsEditor({ rows, setRows, lastByName }) {
   const update = (i, k, v) => setRows((r) => r.map((row, j) => (j === i ? { ...row, [k]: v } : row)))
   const addRow = () => setRows((r) => [...r, newExerciseRow()])
   const removeRow = (i) => setRows((r) => (r.length > 1 ? r.filter((_, j) => j !== i) : r))
@@ -125,6 +136,11 @@ export function ExerciseRowsEditor({ rows, setRows }) {
                 value={r.rpe || ''} onChange={(e) => update(i, 'rpe', e.target.value)} />
             </div>
             {(r.set_type && r.set_type !== 'straight') && <p className="muted-note ex-settype-note">{setTypeNote(r.set_type)}</p>}
+            {(() => {
+              const last = lastByName?.[(r.name || '').trim().toLowerCase()]
+              const label = last && lastTimeLabel(last)
+              return label ? <p className="muted-note ex-last-time">{label}</p> : null
+            })()}
 
             <div className="set-grid">
               <div className="set-head"><span>Set</span><span>Reps</span><span>Weight (kg)</span><span aria-hidden="true" /></div>

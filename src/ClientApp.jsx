@@ -8,7 +8,8 @@ import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
 import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
-import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel } from './WorkoutRows.jsx'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel, lastTimeLabel } from './WorkoutRows.jsx'
+import { lastSetsByName } from './lifts.js'
 import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
@@ -1464,14 +1465,14 @@ function Train({ clientId, onWorkoutDone }) {
 
       {tab === 'start' && <StartWorkout clientId={clientId} onStarted={onSaved} />}
       {tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
-      {tab === 'own' && <OwnPlan clientId={clientId} onSaved={onSaved} />}
+      {tab === 'own' && <OwnPlan clientId={clientId} onSaved={onSaved} history={history} />}
 
       <LiftProgress plans={history} title="Weights lifted" />
 
       {history.length > 0 && (
         <div className="stack">
           <p className="eyebrow">Your sessions</p>
-          {history.map((p) => <SessionCard key={p.id} plan={p} clientId={clientId} onWorkoutDone={onWorkoutDone} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
+          {history.map((p) => <SessionCard key={p.id} plan={p} clientId={clientId} onWorkoutDone={onWorkoutDone} history={history} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
         </div>
       )}
     </div>
@@ -1529,13 +1530,14 @@ function AiPlan({ clientId, onSaved }) {
   )
 }
 
-function OwnPlan({ clientId, onSaved }) {
+function OwnPlan({ clientId, onSaved, history = [] }) {
   const [title, setTitle] = useState('')
   const [focus, setFocus] = useState('')
   const [rows, setRows] = useState([newExerciseRow()])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const lastByName = lastSetsByName(history)
 
   async function save() {
     const exercises = rowsToExercises(rows, 'Own choice')
@@ -1560,7 +1562,7 @@ function OwnPlan({ clientId, onSaved }) {
         <label className="field">Session name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leg day" /></label>
         <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Legs" /></label>
       </div>
-      <ExerciseRowsEditor rows={rows} setRows={setRows} />
+      <ExerciseRowsEditor rows={rows} setRows={setRows} lastByName={lastByName} />
       {error && <p className="error">{error}</p>}
       <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save session'}</button>
       {saved && <p className="logged-ok">Saved to your sessions ✓</p>}
@@ -2320,7 +2322,7 @@ function fromPlayer(playerExs) {
 }
 
 const GW_KEY = (id) => 'cbk_gw:' + id
-function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
+function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastByName }) {
   // Restore an in-progress session (survives app-switch / reload), so ticked sets
   // and logged weights aren't lost until they hit Finish.
   const [exs, setExs] = useState(() => {
@@ -2392,6 +2394,11 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
               {(ex.set_type && ex.set_type !== 'straight') && <span className="settype-chip">{ex.set_type === 'superset' && ex.group ? 'Superset ' + ex.group : setTypeLabel(ex.set_type)}</span>}
               {ex.rpe && <span className="settype-chip rpe">RPE {ex.rpe}</span>}
             </div>
+            {(() => {
+              const last = lastByName?.[(ex.name || '').trim().toLowerCase()]
+              const label = last && lastTimeLabel(last)
+              return label ? <p className="muted-note gw-last-time">{label}</p> : null
+            })()}
             {embed && <div className="video-embed"><iframe src={embed} title={ex.name} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>}
             <div className="gw-sets">
               {ex.sets.map((s, si) => (
@@ -2418,7 +2425,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit }) {
   )
 }
 
-function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
+function SessionCard({ plan, onUpdate, clientId, onWorkoutDone, history = [] }) {
   // If this session was mid-play when the app was backgrounded, reopen it so the
   // player comes straight back up with their saved sets.
   const resuming = (() => { try { return sessionStorage.getItem('cbk_gw_active') === plan.id } catch { return false } })()
@@ -2429,6 +2436,9 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
   const [saving, setSaving] = useState(false)
   const [guideEx, setGuideEx] = useState(null)
   const exs = plan.exercises || []
+  // What was logged last time, for the reference note while (re-)logging this
+  // session — only sessions strictly older than this one count as "last time".
+  const lastByName = lastSetsByName(history.filter((h) => h.id !== plan.id && h.created_at < plan.created_at))
   // A squad-session plan is the coach's floor record — read-only here so the
   // athlete can't overwrite logged actuals by re-finishing it.
   const squadLocked = !!plan.squad_session_id
@@ -2542,12 +2552,12 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone }) {
         </>
       )}
       {open && playing && !squadLocked && (
-        <GuidedWorkout plan={plan} clientId={clientId} onDone={onUpdate} onFinishedToday={onWorkoutDone} onExit={() => setPlaying(false)} />
+        <GuidedWorkout plan={plan} clientId={clientId} onDone={onUpdate} onFinishedToday={onWorkoutDone} onExit={() => setPlaying(false)} lastByName={lastByName} />
       )}
       {open && editing && (
         <div className="stack" style={{ marginTop: 10 }}>
           <p className="muted-note">Log the reps and weight for each set — this feeds your weights-lifted progress.</p>
-          <ExerciseRowsEditor rows={rows} setRows={setRows} />
+          <ExerciseRowsEditor rows={rows} setRows={setRows} lastByName={lastByName} />
           <div className="nudge-actions">
             <button className="btn primary sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
             <button className="btn ghost sm" onClick={() => setEditing(false)}>Cancel</button>
