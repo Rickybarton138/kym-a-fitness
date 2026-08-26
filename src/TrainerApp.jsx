@@ -8,6 +8,7 @@ import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
+import { ParqReview } from './Parq.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
@@ -543,6 +544,8 @@ function ClientDetail({ client, trainerId, onBack }) {
             <ClientAdherence clientId={client.id} targets={targets} />
 
             <CoachSection title="Profile">
+              {THEME.features?.parq && <ParqReview clientId={client.id} />}
+
               <div className="card">
                 <p className="eyebrow">Membership</p>
                 <div className="seg small" style={{ marginTop: 8 }}>

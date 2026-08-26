@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { THEME } from './themes.js'
 import { setTypeLabel, setTypeNote } from './WorkoutRows.jsx'
 
@@ -8,9 +8,22 @@ import { setTypeLabel, setTypeNote } from './WorkoutRows.jsx'
 // accordion already uses. Brands without features.groupedCoach get an inert
 // passthrough (children render exactly as before — nobody else's dashboard
 // changes shape).
+// Which sections are open also survives an app-switch (the rest of "keep the
+// coach where they were" lives in TrainerApp) — otherwise coming back to the
+// app collapses everything he had open. Only for brands using the accordion.
 export function CoachSection({ title, defaultOpen, children }) {
-  const [open, setOpen] = useState(!!defaultOpen)
-  if (!THEME.features?.groupedCoach) return <>{children}</>
+  const grouped = !!THEME.features?.groupedCoach
+  const key = 'cbk_coach_sec_' + title
+  const [open, setOpen] = useState(() => {
+    if (!grouped) return !!defaultOpen
+    try { const v = localStorage.getItem(key); if (v !== null) return v === '1' } catch { /* ignore */ }
+    return !!defaultOpen
+  })
+  useEffect(() => {
+    if (!grouped) return
+    try { localStorage.setItem(key, open ? '1' : '0') } catch { /* ignore */ }
+  }, [grouped, key, open])
+  if (!grouped) return <>{children}</>
   return (
     <div className="tile-group">
       <button type="button" className="tile-group-title" onClick={() => setOpen((o) => !o)}>

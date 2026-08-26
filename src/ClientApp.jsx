@@ -10,6 +10,8 @@ import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel, lastTimeLabel } from './WorkoutRows.jsx'
 import { lastSetsByName } from './lifts.js'
+import { ParqSection } from './Parq.jsx'
+import { latestParq } from './parq.js'
 import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
@@ -73,6 +75,10 @@ export default function ClientApp({ profile, onSignOut }) {
   // page on return) drops them back where they were, not on the home screen.
   const [screen, setScreen] = useState(() => { try { return sessionStorage.getItem('cbk_screen') || 'home' } catch { return 'home' } })
   useEffect(() => { try { sessionStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
+  // Where the client came from, so a screen reachable two ways (My details: the
+  // Nutrition tile, or the PAR-Q prompt on Home) sends them back where they were.
+  const cameFrom = useRef('home')
+  useEffect(() => { const from = screen; return () => { cameFrom.current = from } }, [screen])
   const [targets, setTargets] = useState(null)
   const [todayLogs, setTodayLogs] = useState([])
   const [measurements, setMeasurements] = useState([])
@@ -192,7 +198,8 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'health' && (
           <HealthDetails
             profile={profile}
-            onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')}
+            coachName={coachName}
+            onBack={() => setScreen(cameFrom.current === 'home' ? 'home' : (THEME.nav ? 'nutrition' : 'home'))}
             onSaved={(patch) => {
               setRecovery({ on: patch.nutrition_sensitive, note: patch.nutrition_sensitive_note })
               setHealthContext({
@@ -362,7 +369,7 @@ function homeTileDefs(coachFirst) {
     { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'Build a day around your targets' },
     { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
     { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
-    { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: 'Health conditions & life circumstances — optional' },
+    { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: THEME.features?.parq ? 'PAR-Q, health conditions & life circumstances' : 'Health conditions & life circumstances — optional' },
     { id: 'body', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Body scan', sub: 'Track your progress' },
     { id: 'cycle', group: 'Progress & Body', show: THEME.features?.cycle, Icon: IconBody, title: 'Cycle', sub: 'Log your period, train with your body' },
     { id: 'checkin', group: 'Progress & Body', hero: true, show: true, Icon: IconAsk, title: 'Weekly check-in', sub: `Send ${coachFirst} your progress & how the week went` },
@@ -484,6 +491,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
   const [reminders, setReminders] = useState([])         // coach's custom reminders
   const [remDone, setRemDone] = useState(() => new Set())
   const [tasks, setTasks] = useState([])                 // coach-scheduled recurring tasks
+  const [parqMissing, setParqMissing] = useState(false)  // PAR-Q outstanding (existing clients)
 
   async function load() {
     const dow = new Date().getDay()
@@ -548,6 +556,10 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
       const { data: tpl } = await supabase.from('workout_templates').select('*').eq('id', sc.template_id).maybeSingle()
       setTodaySession(tpl || null)
     } else setTodaySession(null)
+
+    // Clients who joined before the PAR-Q existed never saw it in onboarding —
+    // prompt them here until it's on record, then it drops off for good.
+    if (THEME.features?.parq) setParqMissing(!(await latestParq(profile.id)))
   }
   useEffect(() => { load() }, [foodLoggedToday, workoutTick])
 
@@ -604,6 +616,12 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
         <span className="muted-note">{dateLabel}</span>
       </div>
       <div className="agenda-list">
+        {parqMissing && (
+          <AgendaItem label="Health questionnaire" sub={`${coach} needs this before your next session`}>
+            <button className="btn primary sm" onClick={() => onGo('health')}>Open</button>
+          </AgendaItem>
+        )}
+
         <AgendaItem done={foodLoggedToday} label="Log your food" sub={foodLoggedToday ? 'Logged for today' : 'Keep your calories on track'}>
           {!foodLoggedToday && <button className="btn ghost sm" onClick={() => onGo(THEME.nav ? 'nutrition' : 'meal')}>Log</button>}
         </AgendaItem>
@@ -3211,7 +3229,7 @@ function NutritionHub({ profile, coachName, onGo }) {
         </button>
         <button className="tile" onClick={() => onGo('health')}>
           <IconAsk />
-          <div><b>My details</b><span>Health conditions &amp; life circumstances — optional</span></div>
+          <div><b>My details</b><span>{THEME.features?.parq ? 'PAR-Q, health conditions & life circumstances' : 'Health conditions & life circumstances — optional'}</span></div>
         </button>
       </div>
     </div>
@@ -3455,7 +3473,7 @@ function CalcTargets({ profile, onSaveTargets, onBack }) {
 // Client-editable health conditions + life circumstances (Paul's ask). Same
 // fields captured at onboarding, editable any time. Feeds AI tone only —
 // see healthLine() in analyse.mjs — never changes calorie/macro maths.
-function HealthDetails({ profile, onBack, onSaved }) {
+function HealthDetails({ profile, coachName, onBack, onSaved }) {
   const [nutritionSensitive, setNutritionSensitive] = useState(!!profile.nutrition_sensitive)
   const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState(profile.nutrition_sensitive_note || '')
   const [healthConditions, setHealthConditions] = useState(profile.health_conditions || '')
@@ -3463,6 +3481,7 @@ function HealthDetails({ profile, onBack, onSaved }) {
   const [singleParent, setSingleParent] = useState(!!profile.single_parent)
   const [shiftWorker, setShiftWorker] = useState(!!profile.shift_worker)
   const [lifeContextNote, setLifeContextNote] = useState(profile.life_context_note || '')
+  const [parqEditing, setParqEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -3481,10 +3500,21 @@ function HealthDetails({ profile, onBack, onSaved }) {
 
   return (
     <div className="stack">
-      <button className="link-btn" onClick={onBack}>‹ Back</button>
-      <p className="eyebrow">My details</p>
-      <h1 className="h1">Health &amp; circumstances.</h1>
-      <p className="lead">Optional — sharing this helps your coach and the AI support you better. Private to you and your coach.</p>
+      {!parqEditing && (
+        <>
+          <button className="link-btn" onClick={onBack}>‹ Back</button>
+          <p className="eyebrow">My details</p>
+          <h1 className="h1">Health &amp; circumstances.</h1>
+          <p className="lead">Optional — sharing this helps your coach and the AI support you better. Private to you and your coach.</p>
+        </>
+      )}
+      {/* PAR-Q sits at the top of this screen because it's the one part that
+          isn't optional. Flag-gated, so brands without it see the screen
+          exactly as before. While it's being filled in it takes over the
+          screen — two save buttons and a Back that bins the answers otherwise. */}
+      {THEME.features?.parq && <ParqSection profile={profile} coachName={coachName} onEditingChange={setParqEditing} />}
+      {!parqEditing && (
+        <>
       <div className="card">
         <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <input type="checkbox" checked={nutritionSensitive} onChange={(e) => setNutritionSensitive(e.target.checked)} style={{ width: 'auto' }} />
@@ -3521,6 +3551,8 @@ function HealthDetails({ profile, onBack, onSaved }) {
       </div>
       <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
       {saved && <p className="logged-ok">Saved ✓</p>}
+        </>
+      )}
     </div>
   )
 }

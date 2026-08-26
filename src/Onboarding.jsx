@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
+import { ParqQuestions, ParqAdvice, ParqDeclaration } from './Parq.jsx'
+import { saveParq, parqComplete, anyYes } from './parq.js'
 
 // First-run onboarding for a client: quick stats -> goal -> calorie calculator
 // writes their starting nutrition targets, then drops them into the app.
@@ -41,8 +43,13 @@ const optionStyle = (on) => ({
   cursor: 'pointer', marginTop: 8, transition: 'border-color .15s, background .15s',
 })
 
+// PAR-Q screening is part of the join flow only where the coach has asked for
+// it (Paul). Brands without the flag keep the exact original step sequence —
+// this must never put a health questionnaire in front of another coach's signups.
+const PARQ_ON = !!THEME.features?.parq
+
 export default function Onboarding({ profile, onDone }) {
-  const [step, setStep] = useState('stats') // stats | goal | context | result
+  const [step, setStep] = useState('stats') // stats | goal | context | [parq] | result
   const [sex, setSex] = useState('male')
   const [age, setAge] = useState('')
   const [height, setHeight] = useState('')
@@ -56,8 +63,15 @@ export default function Onboarding({ profile, onDone }) {
   const [singleParent, setSingleParent] = useState(false)
   const [shiftWorker, setShiftWorker] = useState(false)
   const [lifeContextNote, setLifeContextNote] = useState('')
+  const [parqAnswers, setParqAnswers] = useState({})
+  const [parqMeds, setParqMeds] = useState('')
+  const [parqInjuries, setParqInjuries] = useState('')
+  const [parqName, setParqName] = useState(profile.full_name || '')
+  const [parqAgreed, setParqAgreed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const parqReady = parqComplete(parqAnswers) && parqAgreed && parqName.trim().length > 1
 
   const first = (profile.full_name || '').split(' ')[0]
   const statsValid =
@@ -73,6 +87,14 @@ export default function Onboarding({ profile, onDone }) {
     setSaving(true); setError('')
     try {
       const now = new Date().toISOString()
+      // PAR-Q first: if this write fails the client retries with onboarded_at
+      // still unset, rather than landing in the app with no screening on record.
+      if (PARQ_ON) {
+        await saveParq({
+          clientId: profile.id, answers: parqAnswers, medications: parqMeds,
+          injuries: parqInjuries, declaredName: parqName,
+        })
+      }
       const upT = await supabase.from('macro_targets').upsert({
         client_id: profile.id, calories: targets.calories, protein_g: targets.protein_g,
         carbs_g: targets.carbs_g, fat_g: targets.fat_g, updated_at: now,
@@ -113,6 +135,7 @@ export default function Onboarding({ profile, onDone }) {
             {step === 'stats' && 'A few quick numbers so we can set your targets.'}
             {step === 'goal' && 'What are you working towards right now?'}
             {step === 'context' && 'Optional — anything that helps us support you better.'}
+            {step === 'parq' && 'A quick health check before you start — please answer every question.'}
             {step === 'result' && 'Built from your numbers — you can fine-tune any time.'}
           </p>
         </div>
@@ -193,7 +216,27 @@ export default function Onboarding({ profile, onDone }) {
             <p className="muted-note" style={{ marginTop: 10 }}>All optional and private to you and your coach — you can change this any time from Home.</p>
             <div className="seg" style={{ marginTop: 16 }}>
               <button type="button" onClick={() => setStep('goal')}>Back</button>
-              <button type="button" className="on" onClick={() => setStep('result')}>Continue</button>
+              <button type="button" className="on" onClick={() => setStep(PARQ_ON ? 'parq' : 'result')}>Continue</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'parq' && (
+          <div className="auth-form">
+            <p className="muted-note" style={{ marginTop: 0 }}>
+              This is your PAR-Q — the standard readiness check every coach asks for. It stays private
+              between you and your coach.
+            </p>
+            <ParqQuestions
+              answers={parqAnswers} setAnswers={setParqAnswers}
+              medications={parqMeds} setMedications={setParqMeds}
+              injuries={parqInjuries} setInjuries={setParqInjuries}
+            />
+            {anyYes(parqAnswers) && <ParqAdvice coachName={null} />}
+            <ParqDeclaration value={parqName} onChange={setParqName} agreed={parqAgreed} setAgreed={setParqAgreed} />
+            <div className="seg" style={{ marginTop: 16 }}>
+              <button type="button" onClick={() => setStep('context')}>Back</button>
+              <button type="button" className="on" disabled={!parqReady} onClick={() => setStep('result')}>Continue</button>
             </div>
           </div>
         )}
@@ -214,7 +257,7 @@ export default function Onboarding({ profile, onDone }) {
             </div>
             {error && <p className="error">{error}</p>}
             <div className="seg" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => setStep('context')}>Back</button>
+              <button type="button" onClick={() => setStep(PARQ_ON ? 'parq' : 'context')}>Back</button>
               <button type="button" className="on" onClick={finish} disabled={saving}>{saving ? 'Saving…' : 'Start'}</button>
             </div>
           </div>
