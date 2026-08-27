@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { THEME } from './themes.js'
+import { WEEKDAYS } from './booking.js'
 import { setTypeLabel, setTypeNote } from './WorkoutRows.jsx'
 
 // Collapsible section wrapper for the coach dashboard/ClientDetail (Paul's
@@ -129,7 +130,7 @@ export function ExSets({ ex }) {
         {ex.sets.map((st, i) => (
           <div className="set-line" key={i}>
             <span className="sl-n">{setWord} {i + 1}</span>
-            <span className="sl-v">{st.reps ? (/[a-zA-Z]/.test(st.reps) ? st.reps : st.reps + ' reps') : '—'}{st.weight ? ' @ ' + st.weight + 'kg' : ''}</span>
+            <span className="sl-v">{st.reps ? (/[a-zA-Z]/.test(st.reps) ? st.reps : st.reps + ' reps') : '—'}{st.weight ? ' @ ' + st.weight + 'kg' : ''}{st.drops ? ` + ${st.drops} drop${st.drops === 1 ? '' : 's'}` : ''}</span>
           </div>
         ))}
         {type && setTypeNote(type) && <div className="ex-meta">{setTypeNote(type)}</div>}
@@ -151,3 +152,38 @@ export function IconForm() { return <svg viewBox="0 0 24 24" {...s}><rect x="3" 
 export function IconContent() { return <svg viewBox="0 0 24 24" {...s}><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="12" cy="12" r="3.2" /><path d="M17 6.8h.01" /></svg> }
 export function IconCommunity() { return <svg viewBox="0 0 24 24" {...s}><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5" /><path d="M16 5.5a3 3 0 0 1 0 5.8M18 20c0-2.8-1.4-4.3-3.5-4.8" /></svg> }
 export function IconTest() { return <svg viewBox="0 0 24 24" {...s}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg> }
+
+// Weekday order for a training week — Monday first, Sunday last.
+const PROGRAM_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+// Shared by the client (self-assigning from the library) and the coach
+// (AssignProgram) so both flows pick training days the same way.
+export function ProgramDayPicker({ sessionsPerWeek, initialDays, onCancel, onConfirm }) {
+  const [days, setDays] = useState(initialDays || [])
+  const [start, setStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
+  const [busy, setBusy] = useState(false)
+  const toggle = (dow) => setDays((ds) => (ds.includes(dow) ? ds.filter((d) => d !== dow) : [...ds, dow].sort((a, b) => a - b)))
+  async function confirm() {
+    setBusy(true)
+    await onConfirm(days, start)
+    setBusy(false)
+  }
+  return (
+    <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
+      <p className="eyebrow">Which days do you want to train?</p>
+      <p className="muted-note">
+        {sessionsPerWeek ? `This program has ${sessionsPerWeek} session${sessionsPerWeek === 1 ? '' : 's'} a week — pick ${sessionsPerWeek} day${sessionsPerWeek === 1 ? '' : 's'} and it'll apply the same days across every week.` : 'Pick your training days and it applies across every week.'}
+      </p>
+      <div className="seg" style={{ flexWrap: 'wrap' }}>
+        {PROGRAM_WEEK_ORDER.map((dow) => (
+          <button type="button" key={dow} className={days.includes(dow) ? 'on' : ''} onClick={() => toggle(dow)}>{WEEKDAYS[dow]}</button>
+        ))}
+      </div>
+      <label className="field" style={{ marginTop: 8 }}>Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+      <div className="grid-2" style={{ marginTop: 10 }}>
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn primary" disabled={!days.length || busy} onClick={confirm}>{busy ? 'Adding…' : 'Confirm'}</button>
+      </div>
+    </div>
+  )
+}

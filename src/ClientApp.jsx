@@ -36,7 +36,7 @@ import { StravaConnect } from './StravaConnect.jsx'
 import { Classes } from './Classes.jsx'
 import { exchangeStrava } from './strava.js'
 import {
-  Ring, MacroBar, MacroRow, Loader, TrendChart,
+  Ring, MacroBar, MacroRow, Loader, TrendChart, ProgramDayPicker,
   IconHome, IconTrain, IconFridge, IconMeal, IconBody, IconAsk, IconForm, IconContent, IconCommunity, IconTest, ExSets,
 } from './ui.jsx'
 
@@ -197,8 +197,8 @@ export default function ClientApp({ profile, onSignOut }) {
 
       <main className="screen">
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
-        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
-        {screen === 'trainhub' && <TrainHub coachName={coachName} onGo={setScreen} />}
+        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
+        {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
         {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'health' && (
@@ -1488,7 +1488,41 @@ function NutritionExpert({ clientId, onBack }) {
 }
 
 /* ---------- Train ---------- */
-function Train({ clientId, onWorkoutDone }) {
+// "Your plan" — the programme the client is actually on, whichever way they got
+// there (Paul: "it would be good if the client can see the program they have
+// picked clearly in their training section... either the programme they chose or
+// the one assigned by me"). Renders nothing when they aren't on one.
+function YourPlanCard({ clientId }) {
+  const [plan, setPlan] = useState(undefined)
+  useEffect(() => {
+    supabase.from('client_programs')
+      .select('start_date, day_map, coach_id, repeat, program_id, workout_programs(title, weeks)')
+      .eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1)
+      .then(({ data }) => setPlan((data && data[0]) || null))
+  }, [clientId])
+  if (!plan) return null
+
+  const weeks = plan.workout_programs?.weeks || null
+  const started = new Date(plan.start_date + 'T00:00:00')
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diffDays = Math.floor((today - started) / 86400000)
+  let week = diffDays >= 0 ? Math.floor(diffDays / 7) + 1 : null
+  if (week && weeks && week > weeks) week = plan.repeat ? ((week - 1) % weeks) + 1 : null
+
+  return (
+    <div className="card" style={{ borderColor: 'var(--accent)' }}>
+      <p className="eyebrow accent">Your plan</p>
+      <div className="session-title" style={{ marginTop: 4 }}>{plan.workout_programs?.title || 'Your program'}</div>
+      <div className="session-sub">
+        {week ? `Week ${week}${weeks ? ' of ' + weeks : ''}` : 'Starts ' + plan.start_date}
+        {(plan.day_map || []).length ? ' · ' + plan.day_map.map((d) => WEEKDAYS[d]).join(', ') : ''}
+      </div>
+      <p className="muted-note">{plan.coach_id ? 'Set for you by your coach.' : 'You picked this one from the library.'}</p>
+    </div>
+  )
+}
+
+function Train({ clientId, trainerId, onWorkoutDone }) {
   const [tab, setTab] = useState(THEME.features?.templates ? 'start' : 'ai')
   const [history, setHistory] = useState([])
 
@@ -1507,6 +1541,8 @@ function Train({ clientId, onWorkoutDone }) {
       <p className="eyebrow">Today’s session</p>
       <h1 className="h1">Train your way.</h1>
 
+      {THEME.features?.programs && <YourPlanCard clientId={clientId} />}
+
       <div className="seg">
         {THEME.features?.templates && <button type="button" className={tab === 'start' ? 'on' : ''} onClick={() => setTab('start')}>Start a workout</button>}
         <button type="button" className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>Generate with AI</button>
@@ -1515,14 +1551,14 @@ function Train({ clientId, onWorkoutDone }) {
 
       {tab === 'start' && <StartWorkout clientId={clientId} onStarted={onSaved} />}
       {tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
-      {tab === 'own' && <OwnPlan clientId={clientId} onSaved={onSaved} history={history} />}
+      {tab === 'own' && <OwnPlan clientId={clientId} trainerId={trainerId} onSaved={onSaved} history={history} />}
 
       <LiftProgress plans={history} clientId={clientId} canAdd title="Weights lifted" />
 
       {history.length > 0 && (
         <div className="stack">
           <p className="eyebrow">Your sessions</p>
-          {history.map((p) => <SessionCard key={p.id} plan={p} clientId={clientId} onWorkoutDone={onWorkoutDone} history={history} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
+          {history.map((p) => <SessionCard key={p.id} plan={p} clientId={clientId} trainerId={trainerId} onWorkoutDone={onWorkoutDone} history={history} onUpdate={(u) => setHistory((h) => h.map((x) => (x.id === u.id ? u : x)))} />)}
         </div>
       )}
     </div>
@@ -1580,7 +1616,7 @@ function AiPlan({ clientId, onSaved }) {
   )
 }
 
-function OwnPlan({ clientId, onSaved, history = [] }) {
+function OwnPlan({ clientId, trainerId, onSaved, history = [] }) {
   const [title, setTitle] = useState('')
   const [focus, setFocus] = useState('')
   const [rows, setRows] = useState([newExerciseRow()])
@@ -1612,7 +1648,7 @@ function OwnPlan({ clientId, onSaved, history = [] }) {
         <label className="field">Session name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leg day" /></label>
         <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Legs" /></label>
       </div>
-      <ExerciseRowsEditor rows={rows} setRows={setRows} lastByName={lastByName} />
+      <ExerciseRowsEditor rows={rows} setRows={setRows} lastByName={lastByName} coachId={trainerId} contributorId={clientId} />
       {error && <p className="error">{error}</p>}
       <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save session'}</button>
       {saved && <p className="logged-ok">Saved to your sessions ✓</p>}
@@ -1622,7 +1658,6 @@ function OwnPlan({ clientId, onSaved, history = [] }) {
 
 // Days a programme's whole plan gets mapped onto, Monday first (matches the
 // coach's weekly-schedule convention elsewhere) — values are JS getDay() (0-6).
-const PROGRAM_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
 
 // Programme library: browse the coach's multi-session programmes and either
 // start a single session on a day, or add the whole programme to your plan in
@@ -1782,39 +1817,6 @@ function ProgramLibrary({ clientId, trainerId, coachName, onBack }) {
             </div>
           )
         })}
-      </div>
-    </div>
-  )
-}
-
-// Pick which real weekdays a whole programme's sessions land on (Paul's ask) —
-// applies the same days across every week, so following a 12-week programme is
-// one action instead of adding each week's sessions individually.
-function ProgramDayPicker({ sessionsPerWeek, initialDays, onCancel, onConfirm }) {
-  const [days, setDays] = useState(initialDays || [])
-  const [start, setStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
-  const [busy, setBusy] = useState(false)
-  const toggle = (dow) => setDays((ds) => (ds.includes(dow) ? ds.filter((d) => d !== dow) : [...ds, dow].sort((a, b) => a - b)))
-  async function confirm() {
-    setBusy(true)
-    await onConfirm(days, start)
-    setBusy(false)
-  }
-  return (
-    <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
-      <p className="eyebrow">Which days do you want to train?</p>
-      <p className="muted-note">
-        {sessionsPerWeek ? `This program has ${sessionsPerWeek} session${sessionsPerWeek === 1 ? '' : 's'} a week — pick ${sessionsPerWeek} day${sessionsPerWeek === 1 ? '' : 's'} and it'll apply the same days across every week.` : 'Pick your training days and it applies across every week.'}
-      </p>
-      <div className="seg" style={{ flexWrap: 'wrap' }}>
-        {PROGRAM_WEEK_ORDER.map((dow) => (
-          <button type="button" key={dow} className={days.includes(dow) ? 'on' : ''} onClick={() => toggle(dow)}>{WEEKDAYS[dow]}</button>
-        ))}
-      </div>
-      <label className="field" style={{ marginTop: 8 }}>Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-      <div className="grid-2" style={{ marginTop: 10 }}>
-        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn primary" disabled={!days.length || busy} onClick={confirm}>{busy ? 'Adding…' : 'Confirm'}</button>
       </div>
     </div>
   )
@@ -2293,6 +2295,8 @@ function BarcodeScan({ onLog, onBack }) {
 // sessions so they can log it. Self-started => assigned_by stays null.
 function StartWorkout({ clientId, onStarted }) {
   const [templates, setTemplates] = useState(null)
+  const [planSessions, setPlanSessions] = useState([]) // sessions from the programme they're on
+  const [planTitle, setPlanTitle] = useState('')
   const [openId, setOpenId] = useState(null)
   const [startingId, setStartingId] = useState(null)
   const [startedId, setStartedId] = useState(null)
@@ -2301,6 +2305,25 @@ function StartWorkout({ clientId, onStarted }) {
     supabase.from('workout_templates').select('*').order('created_at', { ascending: false })
       .then(({ data }) => setTemplates(data || []))
   }, [])
+
+  // Paul: on a non-training day the client could only reach standalone
+  // templates, never the sessions of the programme they're actually following.
+  // Offer those first, so an extra or moved session comes from their own plan.
+  useEffect(() => {
+    if (!THEME.features?.programs) return
+    ;(async () => {
+      const { data: cp } = await supabase.from('client_programs')
+        .select('program_id, workout_programs(title)').eq('client_id', clientId).eq('active', true)
+        .order('created_at', { ascending: false }).limit(1)
+      const asg = cp && cp[0]
+      if (!asg) return
+      setPlanTitle(asg.workout_programs?.title || 'Your program')
+      const { data: ps } = await supabase.from('program_sessions')
+        .select('id, title, focus, exercises, finisher, week, position').eq('program_id', asg.program_id)
+        .order('week', { ascending: true }).order('position', { ascending: true })
+      setPlanSessions(ps || [])
+    })()
+  }, [clientId])
 
   async function start(t) {
     setStartingId(t.id)
@@ -2313,11 +2336,43 @@ function StartWorkout({ clientId, onStarted }) {
   }
 
   if (templates === null) return <Loader text="Loading sessions…" />
-  if (templates.length === 0) return <p className="muted-note">No sessions from your coach yet — they’ll appear here to start with one tap.</p>
+  if (templates.length === 0 && planSessions.length === 0) return <p className="muted-note">No sessions from your coach yet — they’ll appear here to start with one tap.</p>
 
   return (
     <div className="stack">
-      <p className="lead">Pick a session your coach has built and start it — it drops into your sessions to log as you go.</p>
+      <p className="lead">Pick a session and start it — it drops into your sessions to log as you go.</p>
+      {planSessions.length > 0 && (
+        <>
+          <p className="eyebrow">From {planTitle}</p>
+          {planSessions.map((t) => (
+            <div className="card session-card" key={t.id}>
+              <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
+                <div>
+                  <div className="session-title">{t.title}</div>
+                  <div className="session-sub">Week {t.week || 1}{t.focus ? ' · ' + t.focus : ''} · {(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}</div>
+                </div>
+                <span className="chev">{openId === t.id ? '−' : '+'}</span>
+              </button>
+              {openId === t.id && (
+                <>
+                  <ol className="ex-list">
+                    {(t.exercises || []).map((ex, i) => (
+                      <li className="ex" key={i}>
+                        <span className="ex-n">{i + 1}</span>
+                        <div><div className="ex-name">{ex.name}</div><ExSets ex={ex} /></div>
+                      </li>
+                    ))}
+                  </ol>
+                  <button type="button" className="btn primary" disabled={startingId === t.id} onClick={() => start(t)}>
+                    {startedId === t.id ? 'Added ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          {templates.length > 0 && <p className="eyebrow" style={{ marginTop: 4 }}>Other sessions</p>}
+        </>
+      )}
       {templates.map((t) => (
         <div className="card session-card" key={t.id}>
           <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
@@ -2358,8 +2413,11 @@ function StartWorkout({ clientId, onStarted }) {
 // a count rather than an array.
 function toPlayer(exercises) {
   return (exercises || []).map((ex) => {
+    // `drops` rides along untouched — the player doesn't edit it, but dropping
+    // it here would erase the coach's drop sets the moment a client hits Finish
+    // (fromPlayer rebuilds the stored sets from exactly these).
     const sets = Array.isArray(ex.sets)
-      ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? ''), done: false }))
+      ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? ''), done: false, ...(s.drops ? { drops: s.drops } : {}) }))
       : Array.from({ length: Math.max(1, Number(ex.sets) || 1) }, () => ({ reps: String(ex.reps ?? ''), weight: String(ex.weight ?? ''), done: false }))
     return { ...ex, sets }
   })
@@ -2367,7 +2425,7 @@ function toPlayer(exercises) {
 function fromPlayer(playerExs) {
   return playerExs.map((ex) => {
     const { reps, weight, sets, ...rest } = ex
-    return { ...rest, sets: (sets || []).map((s) => ({ reps: String(s.reps).trim(), weight: String(s.weight).trim() || null })) }
+    return { ...rest, sets: (sets || []).map((s) => ({ reps: String(s.reps).trim(), weight: String(s.weight).trim() || null, ...(s.drops ? { drops: s.drops } : {}) })) }
   })
 }
 
@@ -2454,7 +2512,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
               {ex.sets.map((s, si) => (
                 <label className={'gw-set' + (s.done ? ' done' : '')} key={si}>
                   <input type="checkbox" checked={s.done} onChange={() => toggleSet(ei, si)} />
-                  <span className="gw-set-n">Set {si + 1}</span>
+                  <span className="gw-set-n">Set {si + 1}{s.drops ? <span className="settype-chip drops">+{s.drops} drop{s.drops === 1 ? '' : 's'}</span> : null}</span>
                   <input className="gw-in" inputMode="numeric" placeholder="reps" value={s.reps} onChange={(e) => updateSet(ei, si, 'reps', e.target.value)} />
                   <input className="gw-in" inputMode="decimal" placeholder="kg" value={s.weight} onChange={(e) => updateSet(ei, si, 'weight', e.target.value)} />
                 </label>
@@ -2475,7 +2533,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
   )
 }
 
-function SessionCard({ plan, onUpdate, clientId, onWorkoutDone, history = [] }) {
+function SessionCard({ plan, onUpdate, clientId, trainerId, onWorkoutDone, history = [] }) {
   // If this session was mid-play when the app was backgrounded, reopen it so the
   // player comes straight back up with their saved sets.
   const resuming = (() => { try { return sessionStorage.getItem('cbk_gw_active') === plan.id } catch { return false } })()
@@ -2607,7 +2665,7 @@ function SessionCard({ plan, onUpdate, clientId, onWorkoutDone, history = [] }) 
       {open && editing && (
         <div className="stack" style={{ marginTop: 10 }}>
           <p className="muted-note">Log the reps and weight for each set — this feeds your weights-lifted progress.</p>
-          <ExerciseRowsEditor rows={rows} setRows={setRows} lastByName={lastByName} />
+          <ExerciseRowsEditor rows={rows} setRows={setRows} lastByName={lastByName} coachId={trainerId} contributorId={clientId} />
           <div className="nudge-actions">
             <button className="btn primary sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
             <button className="btn ghost sm" onClick={() => setEditing(false)}>Cancel</button>
@@ -3151,13 +3209,15 @@ function IGContent({ coachName, onBack }) {
 }
 
 /* ---------- Grouped hubs (brands with a grouped nav, e.g. ReDefine) ---------- */
-function TrainHub({ coachName, onGo }) {
+function TrainHub({ clientId, coachName, onGo }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   return (
     <div className="stack">
       <p className="eyebrow">Train</p>
       <h1 className="h1">Your training.</h1>
       <p className="lead">Everything for the gym floor in one place.</p>
+      {/* The plan they're on, right where they land on the Train tab. */}
+      {THEME.features?.programs && <YourPlanCard clientId={clientId} />}
       <div className="tiles">
         <button className="tile tile-hero" onClick={() => onGo('train')}>
           <IconTrain />

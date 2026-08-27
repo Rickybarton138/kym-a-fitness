@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
 import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob } from './lib.js'
-import { TrendChart, ExSets, Metric, CoachSection } from './ui.jsx'
-import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm } from './WorkoutRows.jsx'
+import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker } from './ui.jsx'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
@@ -2561,25 +2561,35 @@ function AssignProgram({ clientId, coachId, clientName }) {
   const [repeat, setRepeat] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [picking, setPicking] = useState(false) // day-picker open
+  const [sessCount, setSessCount] = useState(null) // sessions/week in the picked programme
   async function load() {
     const [{ data: progs }, { data: cur }] = await Promise.all([
       supabase.from('workout_programs').select('id, title, weeks, client_id').eq('coach_id', coachId).or(`client_id.is.null,client_id.eq.${clientId}`).order('created_at', { ascending: false }),
-      supabase.from('client_programs').select('id, program_id, start_date, repeat, workout_programs(title)').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1),
+      supabase.from('client_programs').select('id, program_id, start_date, repeat, day_map, coach_id, workout_programs(title)').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1),
     ])
     setPrograms(progs || [])
     setCurrent(cur?.[0] || null)
   }
   useEffect(() => { load() }, [])
-  async function assign() {
+  async function assign(days, startDate) {
     if (!pick) return
     setBusy(true); setMsg('')
     await supabase.from('client_programs').update({ active: false }).eq('client_id', clientId).eq('active', true)
     const { data, error } = await supabase.from('client_programs')
-      .insert({ client_id: clientId, coach_id: coachId, program_id: pick, start_date: start, repeat, active: true })
-      .select('id, program_id, start_date, repeat, workout_programs(title)').single()
+      .insert({ client_id: clientId, coach_id: coachId, program_id: pick, start_date: startDate || start, repeat, active: true, day_map: days && days.length ? days : null })
+      .select('id, program_id, start_date, repeat, day_map, coach_id, workout_programs(title)').single()
     setBusy(false)
     if (error) { setMsg('Could not assign: ' + error.message); return }
-    setCurrent(data); setPick(''); setMsg('Program assigned ✓')
+    setCurrent(data); setPick(''); setPicking(false); setMsg('Program assigned ✓')
+  }
+  // Same day-picking step the client gets in the library, so an Inner Circle
+  // client can be put on a programme with real training days (Paul's ask).
+  async function openPicker() {
+    if (!pick) return
+    const { data } = await supabase.from('program_sessions').select('week').eq('program_id', pick)
+    setSessCount((data || []).filter((x) => (x.week || 1) === 1).length || null)
+    setPicking(true)
   }
   async function stop() {
     setBusy(true)
@@ -2595,6 +2605,16 @@ function AssignProgram({ clientId, coachId, clientName }) {
         <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
           <div className="session-title">On: {current.workout_programs?.title || 'Program'}</div>
           <div className="session-sub">From {current.start_date}{current.repeat ? ' · repeats' : ''}</div>
+          {/* Paul: "at a coaching level I can't see what plan they are on or the
+              days they have assigned". day_map is set either by him here or by
+              the client self-assigning from the library — coach_id tells them
+              apart. */}
+          <div className="session-sub">
+            {(current.day_map || []).length
+              ? `Training ${(current.day_map || []).map((d) => WEEKDAYS[d]).join(', ')}`
+              : 'Following the program’s own days'}
+            {current.coach_id ? ' · assigned by you' : ' · chosen by them'}
+          </div>
           <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} disabled={busy} onClick={stop}>Stop program</button>
         </div>
       )}
@@ -2608,7 +2628,18 @@ function AssignProgram({ clientId, coachId, clientName }) {
         <label className="field">Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
         <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22 }}><input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} style={{ width: 'auto' }} /> Repeat when it ends</label>
       </div>
-      <button type="button" className="btn primary" disabled={!pick || busy} onClick={assign}>{busy ? '…' : (current ? 'Replace with this' : 'Assign program')}</button>
+      {picking ? (
+        <ProgramDayPicker
+          sessionsPerWeek={sessCount}
+          initialDays={current?.day_map || []}
+          onCancel={() => setPicking(false)}
+          onConfirm={(days, startDate) => assign(days, startDate)}
+        />
+      ) : (
+        <button type="button" className="btn primary" disabled={!pick || busy} onClick={openPicker}>
+          {busy ? '…' : (current ? 'Replace with this' : 'Assign program')}
+        </button>
+      )}
       {msg && <p className="logged-ok">{msg}</p>}
     </div>
   )
@@ -2837,6 +2868,19 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
       return { ...s, [programId]: next }
     })
+    // A session built from scratch also becomes a reusable template, so the same
+    // session can be dropped into the other weeks instead of being rebuilt
+    // (Paul: "3 of the weeks are the same but I have to create every workout").
+    // Any exercise name typed by hand is remembered too.
+    if (pickTpl === '__custom__') {
+      await rememberExercises(exercises, coachId, coachId)
+      const dupe = templates.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase())
+      if (!dupe) {
+        const { data: tpl } = await supabase.from('workout_templates')
+          .insert({ coach_id: coachId, title, focus, exercises, finisher }).select().single()
+        if (tpl) setTemplates((t) => [tpl, ...t])
+      }
+    }
     setPickTpl(''); setDayLabel(''); setPickDow(''); setAddError('')
     setCustomTitle(''); setCustomFocus(''); setCustomRows([newExerciseRow()])
   }
@@ -3121,7 +3165,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                         <label className="field">Session name<input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder="e.g. Upper Push A" /></label>
                         <label className="field">Focus<input value={customFocus} onChange={(e) => setCustomFocus(e.target.value)} placeholder="e.g. Push" /></label>
                       </div>
-                      <ExerciseRowsEditor rows={customRows} setRows={setCustomRows} />
+                      <ExerciseRowsEditor rows={customRows} setRows={setCustomRows} coachId={coachId} />
                     </div>
                   )}
 
@@ -3195,6 +3239,7 @@ function CoachTemplates({ coachId }) {
 
   async function save() {
     const exercises = rowsToExercises(rows, 'Coach plan')
+    await rememberExercises(exercises, coachId, coachId)
     if (exercises.length === 0) { setError('Add at least one exercise with a set.'); return }
     setSaving(true); setError('')
     const { data, error: err } = await supabase.from('workout_templates').insert({
@@ -3294,7 +3339,7 @@ function CoachTemplates({ coachId }) {
             <label className="field">Template name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Upper Push A" /></label>
             <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Push" /></label>
           </div>
-          <ExerciseRowsEditor rows={rows} setRows={setRows} />
+          <ExerciseRowsEditor rows={rows} setRows={setRows} coachId={coachId} />
           <label className="field">Only show to tag (optional)<input value={audienceTag} onChange={(e) => setAudienceTag(e.target.value)} placeholder="e.g. standard — blank shows to everyone" /></label>
           {error && <p className="error">{error}</p>}
           <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save template'}</button>
@@ -3316,6 +3361,7 @@ function AssignWorkout({ clientId, trainerId, onAssigned }) {
     const exercises = rowsToExercises(rows, 'Coach plan')
     if (exercises.length === 0) { setError('Add at least one exercise with a set.'); return }
     setSaving(true); setError('')
+    await rememberExercises(exercises, trainerId, trainerId)
     const { data, error: err } = await supabase.from('workout_plans').insert({
       client_id: clientId, title: title.trim() || 'Assigned session', focus: focus.trim() || 'Coach plan',
       exercises, finisher: null, assigned_by: trainerId,
@@ -3344,7 +3390,7 @@ function AssignWorkout({ clientId, trainerId, onAssigned }) {
             <label className="field">Session name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Lower body" /></label>
             <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Legs" /></label>
           </div>
-          <ExerciseRowsEditor rows={rows} setRows={setRows} />
+          <ExerciseRowsEditor rows={rows} setRows={setRows} coachId={trainerId} />
           {error && <p className="error">{error}</p>}
           <button className="btn primary big" disabled={saving} onClick={assign}>{saving ? 'Assigning…' : 'Assign to client'}</button>
           {saved && <p className="logged-ok">Assigned ✓ — it’s now in their app.</p>}

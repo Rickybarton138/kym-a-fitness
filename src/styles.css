@@ -605,3 +605,9 @@ input { font-family: inherit; }
 .sq-station-sets .gw-in { width: 56px; }
 .sq-rpe-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-weight: 600; }
 .sq-rpe-row .gw-in { width: 72px; }
+
+/* Drop-set column in the exercise editor (Paul: specify drops per working set). */
+.set-grid.with-drops .set-head, .set-grid.with-drops .set-row { grid-template-columns: 28px 1fr 1fr 64px 32px; }
+/* Superset rows read as one block: a shared accent edge down the group. */
+.ex-input.in-superset { border-left: 3px solid var(--accent); padding-left: 10px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
