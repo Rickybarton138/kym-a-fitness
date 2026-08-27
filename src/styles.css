@@ -542,6 +542,12 @@ input { font-family: inherit; }
 /* Food diary */
 .diary-nav { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }
 .diary-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+/* The diary's delete used .thumb-del, which is absolutely positioned for a photo
+   overlay — with no positioned ancestor here every row's button escaped its row,
+   so clients couldn't delete a mislogged item (Paul's report). Static flex child,
+   44px touch target. */
+.diary-del { flex: 0 0 auto; width: 44px; height: 44px; border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; border-radius: 50%; }
+.diary-del:hover, .diary-del:focus-visible { background: var(--surface-2); color: var(--text); }
 .diary-item:first-of-type { border-top: 0; }
 .diary-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
 .diary-macros { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }

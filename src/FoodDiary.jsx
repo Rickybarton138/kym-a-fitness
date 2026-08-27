@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js'
 import { sumMacros, mealByHour } from './lib.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { Metric } from './ui.jsx'
+import { THEME } from './themes.js'
 
 // Per-day food diary — itemised entries grouped by meal, with delete + daily totals
 // vs target, and a weekly-averages summary. Shared by the client (their own diary)
@@ -25,18 +26,43 @@ const isToday = (d) => d.toDateString() === new Date().toDateString()
 
 const MAX_AHEAD = 14 // days you can pre-log into the future
 
-export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diary', onBack }) {
+export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diary', onBack, onChanged }) {
   const [day, setDay] = useState(() => new Date())
   const [logs, setLogs] = useState(null)
   const [targets, setTargets] = useState(null)
   const [week, setWeek] = useState(null)
   const [adding, setAdding] = useState(false)
+  // "I've finished logging for today" — Paul's ask, so the agenda tick means the
+  // day is done rather than merely started. Flag-gated; brands without it never
+  // query the table and their agenda behaves exactly as before.
+  const dayComplete = THEME.features?.foodDayComplete
+  const [complete, setComplete] = useState(false)
+  const [marking, setMarking] = useState(false)
+  const dayKey = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 
   async function loadDay(d) {
     const [start, end] = dayBounds(d)
     const { data } = await supabase.from('nutrition_logs').select('*').eq('client_id', clientId)
       .gte('logged_at', start.toISOString()).lt('logged_at', end.toISOString()).order('logged_at', { ascending: true })
     setLogs(data || [])
+    if (dayComplete) {
+      const { data: c } = await supabase.from('food_day_complete').select('day')
+        .eq('client_id', clientId).eq('day', dayKey(d)).maybeSingle()
+      setComplete(!!c)
+    }
+  }
+
+  async function toggleComplete() {
+    setMarking(true)
+    if (complete) {
+      await supabase.from('food_day_complete').delete().eq('client_id', clientId).eq('day', dayKey(day))
+      setComplete(false)
+    } else {
+      await supabase.from('food_day_complete').upsert({ client_id: clientId, day: dayKey(day) })
+      setComplete(true)
+    }
+    setMarking(false)
+    onChanged?.()
   }
   async function loadWeek() {
     const from = new Date(); from.setDate(from.getDate() - 6); from.setHours(0, 0, 0, 0)
@@ -113,6 +139,19 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
         + Add food{isFuture ? ' (plan ahead)' : ''}
       </button>
 
+      {/* Only the client can finish their own day — the coach viewing this diary
+          can still add and amend entries, but RLS won't let them write the flag. */}
+      {dayComplete && !isFuture && contributorId === clientId && (
+        <>
+          <button type="button" className={'btn ' + (complete ? 'ghost' : 'primary')} style={{ marginTop: 8 }} disabled={marking} onClick={toggleComplete}>
+            {marking ? '…' : complete ? 'Logging complete ✓ · undo' : 'Complete logging for the day'}
+          </button>
+          {!complete && (logs || []).length > 0 && (
+            <p className="muted-note" style={{ marginTop: 6 }}>Tap this once you’ve logged everything — that’s what ticks it off on your home screen.</p>
+          )}
+        </>
+      )}
+
       {logs === null && <p className="muted-note" style={{ marginTop: 12 }}>Loading…</p>}
       {logs !== null && logs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>{isFuture || !isToday(day) ? 'Nothing here — plan the day by adding food above.' : 'Nothing logged yet — add food above.'}</p>}
       {grouped.map((g) => (
@@ -121,7 +160,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
           {g.items.map((l) => (
             <div className="diary-item" key={l.id}>
               <div className="diary-name">{l.name || 'Food'}<span className="diary-macros">{l.calories} kcal · {l.protein_g}P {l.carbs_g}C {l.fat_g}F</span></div>
-              <button type="button" className="thumb-del" onClick={() => del(l.id)} aria-label="Delete">×</button>
+              <button type="button" className="diary-del" onClick={() => del(l.id)} aria-label={`Delete ${l.name || 'entry'}`}>×</button>
             </div>
           ))}
         </div>

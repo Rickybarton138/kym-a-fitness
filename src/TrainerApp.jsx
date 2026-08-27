@@ -258,6 +258,10 @@ function timeAgo(iso) {
 function CoachActivity({ profile, clients, onOpenClient }) {
   const [items, setItems] = useState(null)
   const [seen, setSeen] = useState(profile.activity_seen_at || null)
+  // Paul: "clear them from my view after reading, or filter read/unread".
+  // Defaults to All so nobody's feed changes shape on load; "Mark all read"
+  // then empties the Unread view, which is the tidy-up he's after.
+  const [filter, setFilter] = useState('all') // all | unread
 
   async function load() {
     const { data } = await supabase.rpc('coach_activity', { p_limit: 40 })
@@ -273,6 +277,9 @@ function CoachActivity({ profile, clients, onOpenClient }) {
     await supabase.rpc('mark_activity_seen')
   }
   const openClient = (id) => { const c = (clients || []).find((x) => x.id === id); if (c) onOpenClient(c) }
+  const shown = filter === 'unread'
+    ? (items || []).filter((a) => new Date(a.at).getTime() > seenT)
+    : (items || [])
 
   if (items === null) return null
   return (
@@ -281,9 +288,14 @@ function CoachActivity({ profile, clients, onOpenClient }) {
         <b>Client activity{unread > 0 ? ` · ${unread} new` : ''}</b>
         {unread > 0 && <button className="link-btn inline" onClick={markRead}>Mark all read</button>}
       </div>
+      <div className="seg small" style={{ marginTop: 8 }}>
+        <button type="button" className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>All</button>
+        <button type="button" className={filter === 'unread' ? 'on' : ''} onClick={() => setFilter('unread')}>Unread{unread > 0 ? ` · ${unread}` : ''}</button>
+      </div>
       {items.length === 0 && <p className="muted-note">No client activity yet — it’ll show here as your clients use the app.</p>}
+      {items.length > 0 && shown.length === 0 && <p className="muted-note" style={{ marginTop: 8 }}>All caught up — nothing unread.</p>}
       <div className="stack" style={{ marginTop: 6, gap: 0 }}>
-        {items.map((a, i) => {
+        {shown.map((a, i) => {
           const isNew = new Date(a.at).getTime() > seenT
           const flag = a.kind === 'flag'
           return (
@@ -679,7 +691,7 @@ function ClientDetail({ client, trainerId, onBack }) {
 
               <FoodDiary clientId={client.id} coachId={trainerId} contributorId={trainerId} title="Food diary" />
 
-              <LiftProgress plans={plans} title="Weights lifted" />
+              <LiftProgress plans={plans} clientId={client.id} canAdd title="Weights lifted" />
 
               <div className="card">
                 <p className="eyebrow">Their sessions</p>

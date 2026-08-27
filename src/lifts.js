@@ -38,7 +38,11 @@ export function seedWeights(exercises, latestMap) {
   })
 }
 
-export function aggregateLifts(plans) {
+// `manual` = rows from lift_entries: weights typed in after the fact (a client
+// backdating their starting numbers when they move across from another coach).
+// They feed the chart only — never workout_plans — so nothing that reads plan
+// history by created_at is disturbed. Matched to a plan lift by trimmed name.
+export function aggregateLifts(plans, manual) {
   const byName = {}
   for (const p of plans || []) {
     const when = (p.created_at || '').slice(0, 10)
@@ -48,6 +52,12 @@ export function aggregateLifts(plans) {
       const key = ex.name.trim()
       ;(byName[key] = byName[key] || []).push({ weight: wt, date: when })
     }
+  }
+  for (const m of manual || []) {
+    const wt = parseWeight(m.weight)
+    if (wt == null || !m.name) continue
+    const key = m.name.trim()
+    ;(byName[key] = byName[key] || []).push({ weight: wt, date: (m.performed_on || '').slice(0, 10), manual: true })
   }
   return Object.entries(byName)
     .map(([name, points]) => {

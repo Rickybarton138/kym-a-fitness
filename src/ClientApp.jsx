@@ -73,8 +73,14 @@ const HUB_CHILDREN = {
 export default function ClientApp({ profile, onSignOut }) {
   // Persist the current screen so backgrounding the app (mobile often reloads the
   // page on return) drops them back where they were, not on the home screen.
-  const [screen, setScreen] = useState(() => { try { return sessionStorage.getItem('cbk_screen') || 'home' } catch { return 'home' } })
-  useEffect(() => { try { sessionStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
+  // localStorage, not sessionStorage: iOS drops sessionStorage when the PWA is
+  // backgrounded and relaunched, which is exactly the case this exists to
+  // survive (Paul's report: leaving the app mid-log and coming back to Home).
+  // Same fix already applied coach-side in 3cfdd72. Cleared on sign-out below.
+  // NOTE: cbk_gw_active stays sessionStorage on purpose — it distinguishes
+  // "resuming an interrupted workout" from "opening the plan fresh".
+  const [screen, setScreen] = useState(() => { try { return localStorage.getItem('cbk_screen') || 'home' } catch { return 'home' } })
+  useEffect(() => { try { localStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
   // Where the client came from, so a screen reachable two ways (My details: the
   // Nutrition tile, or the PAR-Q prompt on Home) sends them back where they were.
   const cameFrom = useRef('home')
@@ -186,7 +192,7 @@ export default function ClientApp({ profile, onSignOut }) {
           {THEME.logo ? <img className="mark-img" src={THEME.logo} alt="" /> : <span className="mark-badge">{THEME.mark}</span>}
           <span className="brand-name">{THEME.name}</span>
         </div>
-        <button className="link-btn" onClick={onSignOut}>Sign out</button>
+        <button className="link-btn" onClick={() => { try { localStorage.removeItem('cbk_screen') } catch { /* ignore */ } onSignOut() }}>Sign out</button>
       </header>
 
       <main className="screen">
@@ -240,7 +246,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'checkin' && (THEME.features?.checkinForms
           ? <CheckinFormRun clientId={profile.id} trainerId={profile.trainer_id} coachName={coachName} membershipTier={profile.membership_tier} onBack={() => setScreen('home')} />
           : <WeeklyCheckin clientId={profile.id} coachName={coachName} onBack={() => setScreen('home')} />)}
-        {screen === 'diary' && <FoodDiary clientId={profile.id} coachId={profile.trainer_id} contributorId={profile.id} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
+        {screen === 'diary' && <FoodDiary clientId={profile.id} coachId={profile.trainer_id} contributorId={profile.id} onChanged={() => setWorkoutTick((t) => t + 1)} onBack={() => setScreen(cameFrom.current === 'home' ? 'home' : (THEME.nav ? 'nutrition' : 'home'))} />}
         {screen === 'fridge' && <FridgeScan remaining={remaining} onLog={(m) => logFood(m, 'fridge')} />}
         {screen === 'meal' && <MealScan onLog={(m) => logFood(m, 'meal')} />}
         {screen === 'food' && (
@@ -492,6 +498,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
   const [remDone, setRemDone] = useState(() => new Set())
   const [tasks, setTasks] = useState([])                 // coach-scheduled recurring tasks
   const [parqMissing, setParqMissing] = useState(false)  // PAR-Q outstanding (existing clients)
+  const [foodDone, setFoodDone] = useState(false)        // client marked today's logging finished
 
   async function load() {
     const dow = new Date().getDay()
@@ -560,6 +567,12 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
     // Clients who joined before the PAR-Q existed never saw it in onboarding —
     // prompt them here until it's on record, then it drops off for good.
     if (THEME.features?.parq) setParqMissing(!(await latestParq(profile.id)))
+
+    if (THEME.features?.foodDayComplete) {
+      const { data: fc } = await supabase.from('food_day_complete').select('day')
+        .eq('client_id', profile.id).eq('day', today).maybeSingle()
+      setFoodDone(!!fc)
+    }
   }
   useEffect(() => { load() }, [foodLoggedToday, workoutTick])
 
@@ -622,9 +635,28 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
           </AgendaItem>
         )}
 
-        <AgendaItem done={foodLoggedToday} label="Log your food" sub={foodLoggedToday ? 'Logged for today' : 'Keep your calories on track'}>
-          {!foodLoggedToday && <button className="btn ghost sm" onClick={() => onGo(THEME.nav ? 'nutrition' : 'meal')}>Log</button>}
-        </AgendaItem>
+        {/* With foodDayComplete the tick means "I've finished logging", not
+            "I logged one thing" (Paul's ask). Logging stays reachable from Home
+            either way; the finish button itself lives in the diary. Brands
+            without the flag keep the original one-log-ticks-it behaviour. */}
+        {THEME.features?.foodDayComplete ? (
+          <AgendaItem
+            done={foodDone}
+            label="Log your food"
+            sub={foodDone ? 'All logged for today' : foodLoggedToday ? 'Logged so far — mark it complete when you’re done' : 'Keep your calories on track'}
+          >
+            {!foodDone && (
+              <span className="agenda-steps">
+                <button className="btn ghost sm" onClick={() => onGo(THEME.nav ? 'nutrition' : 'meal')}>Log</button>
+                {foodLoggedToday && <button className="btn primary sm" onClick={() => onGo('diary')}>Finish</button>}
+              </span>
+            )}
+          </AgendaItem>
+        ) : (
+          <AgendaItem done={foodLoggedToday} label="Log your food" sub={foodLoggedToday ? 'Logged for today' : 'Keep your calories on track'}>
+            {!foodLoggedToday && <button className="btn ghost sm" onClick={() => onGo(THEME.nav ? 'nutrition' : 'meal')}>Log</button>}
+          </AgendaItem>
+        )}
 
         <AgendaItem done={stepsVal >= target} label={`Steps · ${stepsVal.toLocaleString()} / ${target.toLocaleString()}`} sub={stepsVal >= target ? 'Target hit — nice one' : 'Log your step count'}>
           <span className="agenda-steps">
@@ -1485,7 +1517,7 @@ function Train({ clientId, onWorkoutDone }) {
       {tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
       {tab === 'own' && <OwnPlan clientId={clientId} onSaved={onSaved} history={history} />}
 
-      <LiftProgress plans={history} title="Weights lifted" />
+      <LiftProgress plans={history} clientId={clientId} canAdd title="Weights lifted" />
 
       {history.length > 0 && (
         <div className="stack">
@@ -2731,8 +2763,9 @@ function Body({ measurements, onAdd, clientId, coachName }) {
       {tab === 'scan' && <BodyScan clientId={clientId} coachName={coachName} />}
       {tab === 'log' && <BodyLog measurements={measurements} onAdd={onAdd} />}
       {tab === 'train' && (
-        plans.length ? <LiftProgress plans={plans} title="Weights lifted" />
-          : <p className="muted-note">Log some weights in your sessions and your strength trend shows here.</p>
+        // Always rendered now: a client with no logged sessions still needs a
+        // way in to backdate their starting weights.
+        <LiftProgress plans={plans} clientId={clientId} canAdd title="Weights lifted" />
       )}
     </div>
   )
