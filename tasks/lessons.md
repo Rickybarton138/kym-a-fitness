@@ -129,3 +129,20 @@ while testing — a few max_tokens:8000 calls in seconds trips the key's TPM rat
 Custom domains behind Cloudflare (e.g. app.redefineacademy.com) block plain curl.
 Verify the deployed bundle via the raw `<site>.netlify.app` subdomain instead, then
 grep the /assets/index-*.js for the new symbol.
+
+## "The update hasn't landed" is usually a resumed PWA, not a failed deploy (2026-08-28)
+Paul reported three shipped batches (PAR-Q, round 9, round 10) as missing. All three
+were live: published deploy correct, every feature marker present in the live bundle,
+all migrations applied, every `features.*` flag on for his brand, and all four e2e
+suites passing against app.redefineacademy.com. Nothing had failed to ship.
+Cause: an INSTALLED PWA that is resumed (app-switched back to) never performs a
+navigation, so it keeps running the JS bundle already in memory — indefinitely.
+`public/sw.js` is NOT to blame: navigations are network-first and only `/` plus
+hashed `/assets/*` are ever cached, so a genuine reload always gets the new build.
+A byte-identical sw.js across deploys is fine and needs no bump.
+Rule: before debugging a "missing feature", diagnose in this order — published deploy
+id, feature markers grepped from the LIVE bundle, migrations, brand feature flags,
+e2e against production. If all pass, it is the user's client. Ask them to force-close
+(swipe away, not switch away) and reopen before touching any code. The real fix is a
+build-version check that prompts a reload on resume — a PWA has no other way to tell
+a long-resumed client that a new build exists.

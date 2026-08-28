@@ -265,7 +265,11 @@ export function planToRows(exercises) {
 // seeds title, focus and exercise rows from the saved object, then hands the
 // cleaned { title, focus, exercises } back via onSave (which does the DB update
 // and can throw to surface an error). Shared by the coach's Edit buttons.
-export function WorkoutEditForm({ initial, showFocus = true, titleLabel = 'Session name', focusLabel = 'Focus', equipment = 'Coach plan', saveLabel = 'Save changes', onSave, onCancel }) {
+// `extra` renders between the name/focus row and the exercises — used by the
+// programme builder to let the coach move a session to a different week/day
+// without rebuilding it. `coachId` surfaces their saved exercises here too;
+// without it the edit form showed only the static catalogue.
+export function WorkoutEditForm({ initial, showFocus = true, titleLabel = 'Session name', focusLabel = 'Focus', equipment = 'Coach plan', saveLabel = 'Save changes', onSave, onCancel, coachId, extra }) {
   const [title, setTitle] = useState(initial?.title || '')
   const [focus, setFocus] = useState(initial?.focus || '')
   const [rows, setRows] = useState(() => {
@@ -279,6 +283,7 @@ export function WorkoutEditForm({ initial, showFocus = true, titleLabel = 'Sessi
     if (!exercises.length) { setError('Add at least one exercise with a set.'); return }
     setSaving(true); setError('')
     try {
+      if (coachId) await rememberExercises(exercises, coachId, coachId)
       await onSave({ title: title.trim(), focus: focus.trim(), exercises })
     } catch (e) {
       setError(e?.message || 'Save failed.'); setSaving(false); return
@@ -291,7 +296,8 @@ export function WorkoutEditForm({ initial, showFocus = true, titleLabel = 'Sessi
         <label className="field">{titleLabel}<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
         {showFocus && <label className="field">{focusLabel}<input value={focus} onChange={(e) => setFocus(e.target.value)} /></label>}
       </div>
-      <ExerciseRowsEditor rows={rows} setRows={setRows} />
+      {extra}
+      <ExerciseRowsEditor rows={rows} setRows={setRows} coachId={coachId} />
       {error && <p className="error">{error}</p>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
         <button type="button" className="btn primary" disabled={saving} onClick={submit}>{saving ? 'Saving…' : saveLabel}</button>

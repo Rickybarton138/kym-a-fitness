@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
+import UpdatePrompt from './UpdatePrompt.jsx'
 import { THEME, applyTheme } from './themes.js'
 import './styles.css'
 
@@ -9,6 +10,7 @@ applyTheme(THEME)
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
+    <UpdatePrompt />
   </React.StrictMode>,
 )
 

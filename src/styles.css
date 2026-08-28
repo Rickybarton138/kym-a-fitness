@@ -611,3 +611,40 @@ input { font-family: inherit; }
 /* Superset rows read as one block: a shared accent edge down the group. */
 .ex-input.in-superset { border-left: 3px solid var(--accent); padding-left: 10px; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Build-update prompt (src/UpdatePrompt.jsx). Sits above everything, including
+   the camera overlay, so a client running a stale bundle always sees it. */
+.update-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 70;
+  max-width: 460px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 14px; font-weight: 600;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.28);
+}
+.update-bar button {
+  flex: 0 0 auto; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px;
+  background: var(--on-accent); color: var(--accent);
+  font-size: 14px; font-weight: 700; cursor: pointer;
+}
+
+/* Programme builder: collapsed session header (tap the name to open it) */
+.sess-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 44px; padding: 0; border: 0;
+  background: none; color: inherit; text-align: left; cursor: pointer;
+}
+
+/* Week x day placement grid (SlotGrid in TrainerApp) */
+.slot-grid { display: flex; flex-direction: column; gap: 6px; }
+.slot-row { display: flex; align-items: center; gap: 8px; }
+.slot-wk { flex: 0 0 58px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.slot-days { display: flex; flex-wrap: wrap; gap: 4px; }
+.slot-days button {
+  min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--surface); color: var(--muted);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.slot-days button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.slot-days button.slot-clear { border-color: transparent; background: none; text-decoration: underline; }

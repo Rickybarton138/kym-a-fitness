@@ -1827,6 +1827,41 @@ function ClientReminders({ clientId, coachId }) {
 // getDay() (0=Sun..6=Sat); rendered Mon-first.
 const SCHED_DOW = [[1, 'Monday'], [2, 'Tuesday'], [3, 'Wednesday'], [4, 'Thursday'], [5, 'Friday'], [6, 'Saturday'], [0, 'Sunday']]
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+// Week x day grid for placing a session. Paul builds a session once and drops it
+// on every slot it should occupy — a 2-week rota that trains different days each
+// week, or weeks 1-3 identical with a different week 4 — instead of rebuilding
+// the same workout per week. Each ticked slot becomes its own program_sessions
+// row, so any single week can still be tweaked afterwards without touching the
+// others.
+function SlotGrid({ weeks, slots, setSlots }) {
+  const total = Math.max(Number(weeks) || 1, 1)
+  const has = (w, d) => slots.some((x) => x.week === w && x.dow === d)
+  const toggle = (w, d) => setSlots((cur) => (
+    cur.some((x) => x.week === w && x.dow === d)
+      ? cur.filter((x) => !(x.week === w && x.dow === d))
+      : [...cur, { week: w, dow: d }]
+  ))
+  const wholeWeek = (w) => setSlots((cur) => cur.filter((x) => x.week !== w))
+  return (
+    <div className="slot-grid">
+      {Array.from({ length: total }, (_, i) => i + 1).map((w) => (
+        <div className="slot-row" key={w}>
+          <span className="slot-wk">Week {w}</span>
+          <div className="slot-days">
+            <button type="button" className={has(w, null) ? 'on' : ''} onClick={() => toggle(w, null)}>Any</button>
+            {SCHED_DOW.map(([d]) => (
+              <button type="button" key={d} className={has(w, d) ? 'on' : ''} onClick={() => toggle(w, d)}>{DOW_SHORT[d]}</button>
+            ))}
+            {slots.some((x) => x.week === w) && (
+              <button type="button" className="slot-clear" onClick={() => wholeWeek(w)} aria-label={`Clear week ${w}`}>Clear</button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 // Default training days for an N-day week, spread Mon-outwards (0=Sun..6=Sat).
 // Used when the AI builder expands a base week across the whole programme; the
 // coach can drag any session to a different day per week afterwards (shift work).
@@ -2791,8 +2826,9 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
   const [addFor, setAddFor] = useState(null) // program_id we're adding a session to
   const [pickTpl, setPickTpl] = useState('') // template id, or '__custom__' to build from scratch
   const [dayLabel, setDayLabel] = useState('')
-  const [pickWeek, setPickWeek] = useState(1)
-  const [pickDow, setPickDow] = useState('')
+  const [slots, setSlots] = useState([]) // [{week, dow}] a new session gets placed on
+  const [openSess, setOpenSess] = useState(null) // program_session id expanded
+  const [editSched, setEditSched] = useState({ week: 1, dow: '', label: '' })
   const [customTitle, setCustomTitle] = useState('')
   const [customFocus, setCustomFocus] = useState('')
   const [customRows, setCustomRows] = useState([newExerciseRow()])
@@ -2856,15 +2892,21 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       if (!tpl) { setAddError('Pick a template, or build a custom session.'); return }
       title = tpl.title; focus = tpl.focus; exercises = tpl.exercises || []; finisher = tpl.finisher || null
     }
+    if (!slots.length) { setAddError('Pick at least one week and day for this session.'); return }
+    // One row per ticked slot: the same session placed on several weeks/days at
+    // once, each independently editable later.
     const pos = (sessions[programId] || []).length
-    const { data, error: err } = await supabase.from('program_sessions').insert({
-      program_id: programId, position: pos, label: dayLabel.trim() || null,
-      week: Number(pickWeek) || 1, dow: pickDow === '' ? null : Number(pickDow),
-      title, focus, exercises, finisher,
-    }).select().single()
+    const rows = slots
+      .slice()
+      .sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)))
+      .map((sl, i) => ({
+        program_id: programId, position: pos + i, label: dayLabel.trim() || null,
+        week: sl.week, dow: sl.dow, title, focus, exercises, finisher,
+      }))
+    const { data, error: err } = await supabase.from('program_sessions').insert(rows).select()
     if (err) { setAddError(err.message); return }
     setSessions((s) => {
-      const next = [...(s[programId] || []), data]
+      const next = [...(s[programId] || []), ...(data || [])]
       next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
       return { ...s, [programId]: next }
     })
@@ -2881,7 +2923,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
         if (tpl) setTemplates((t) => [tpl, ...t])
       }
     }
-    setPickTpl(''); setDayLabel(''); setPickDow(''); setAddError('')
+    setPickTpl(''); setDayLabel(''); setSlots([]); setAddError('')
     setCustomTitle(''); setCustomFocus(''); setCustomRows([newExerciseRow()])
   }
 
@@ -3104,22 +3146,50 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
 
                   {(sessions[pr.id] || []).map((ps) => (
                     <div className="card" key={ps.id} style={{ background: 'var(--surface-2)' }}>
-                      <div className="session-title"><span style={{ color: 'var(--accent)' }}>Wk{ps.week || 1}{ps.dow != null ? ' · ' + DOW_SHORT[ps.dow] : ''}</span>{ps.label ? ' · ' + ps.label : ''} · {ps.title}</div>
+                      {/* Collapsed by default — a 4-week programme is a dozen sessions,
+                          and every exercise of every one expanded made it unreadable.
+                          Tap the name to open the session. */}
+                      <button type="button" className="sess-head" onClick={() => { setOpenSess((o) => (o === ps.id ? null : ps.id)); if (editSess === ps.id) setEditSess(null) }}>
+                        <span className="session-title"><span style={{ color: 'var(--accent)' }}>Wk{ps.week || 1}{ps.dow != null ? ' · ' + DOW_SHORT[ps.dow] : ''}</span>{ps.label ? ' · ' + ps.label : ''} · {ps.title}</span>
+                        <span className={'tile-group-chev' + (openSess === ps.id || editSess === ps.id ? ' open' : '')}>▾</span>
+                      </button>
                       {editSess === ps.id ? (
                         <WorkoutEditForm
                           initial={{ title: ps.title, focus: ps.focus, exercises: ps.exercises }}
                           saveLabel="Save session"
+                          coachId={coachId}
+                          extra={(
+                            <div className="grid-2">
+                              <label className="field">Week<input type="number" min="1" inputMode="numeric" value={editSched.week} onChange={(e) => setEditSched((x) => ({ ...x, week: e.target.value }))} /></label>
+                              <label className="field">Day
+                                <select className="ex-select" value={editSched.dow} onChange={(e) => setEditSched((x) => ({ ...x, dow: e.target.value }))}>
+                                  <option value="">Any day</option>
+                                  {SCHED_DOW.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+                                </select>
+                              </label>
+                            </div>
+                          )}
                           onCancel={() => setEditSess(null)}
                           onSave={async ({ title, focus, exercises }) => {
                             const { data, error: err } = await supabase.from('program_sessions')
-                              .update({ title: title || ps.title, focus: focus || ps.focus, exercises })
+                              .update({
+                                title: title || ps.title, focus: focus || ps.focus, exercises,
+                                week: Number(editSched.week) || 1,
+                                dow: editSched.dow === '' ? null : Number(editSched.dow),
+                                label: editSched.label.trim() || null,
+                              })
                               .eq('id', ps.id).select().single()
                             if (err) throw err
-                            setSessions((s) => ({ ...s, [pr.id]: (s[pr.id] || []).map((x) => (x.id === data.id ? data : x)) }))
+                            setSessions((s) => {
+                              const next = (s[pr.id] || []).map((x) => (x.id === data.id ? data : x))
+                              // the week/day may have moved — keep the list in schedule order
+                              next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
+                              return { ...s, [pr.id]: next }
+                            })
                             setEditSess(null)
                           }}
                         />
-                      ) : (
+                      ) : openSess === ps.id ? (
                         <>
                           <ol className="ex-list" style={{ marginTop: 6 }}>
                             {(ps.exercises || []).map((ex, i) => (
@@ -3130,11 +3200,11 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                             ))}
                           </ol>
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button type="button" className="btn ghost sm" onClick={() => setEditSess(ps.id)}>Edit</button>
+                            <button type="button" className="btn ghost sm" onClick={() => { setEditSched({ week: ps.week || 1, dow: ps.dow == null ? '' : String(ps.dow), label: ps.label || '' }); setEditSess(ps.id) }}>Edit</button>
                             <button type="button" className="btn ghost sm" onClick={() => delSession(pr.id, ps.id)}>Remove</button>
                           </div>
                         </>
-                      )}
+                      ) : null}
                     </div>
                   ))}
                   {(sessions[pr.id] || []).length === 0 && <p className="muted-note">No sessions yet — add one below.</p>}
@@ -3147,16 +3217,12 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                         {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
                       </select>
                     </label>
-                    <label className="field">Week<input type="number" min="1" inputMode="numeric" value={addFor === pr.id ? pickWeek : 1} onChange={(e) => { setPickWeek(e.target.value); setAddFor(pr.id) }} /></label>
-                  </div>
-                  <div className="grid-2">
-                    <label className="field">Day
-                      <select className="ex-select" value={addFor === pr.id ? pickDow : ''} onChange={(e) => { setPickDow(e.target.value); setAddFor(pr.id) }}>
-                        <option value="">Any day</option>
-                        {SCHED_DOW.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
-                      </select>
-                    </label>
                     <label className="field">Label (optional)<input value={addFor === pr.id ? dayLabel : ''} onChange={(e) => { setDayLabel(e.target.value); setAddFor(pr.id) }} placeholder="e.g. Push A" /></label>
+                  </div>
+                  <div className="field" style={{ marginTop: 2 }}>
+                    <span>Put it on these weeks &amp; days</span>
+                    <p className="muted-note" style={{ margin: '2px 0 6px' }}>Tick every slot this session should run — build it once and place it across the weeks. Each one can be edited on its own afterwards.</p>
+                    <SlotGrid weeks={pr.weeks} slots={addFor === pr.id ? slots : []} setSlots={(fn) => { setSlots(fn); setAddFor(pr.id) }} />
                   </div>
 
                   {addFor === pr.id && pickTpl === '__custom__' && (

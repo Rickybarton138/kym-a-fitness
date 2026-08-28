@@ -102,6 +102,8 @@ await drop.locator('input[placeholder="Drops"]').fill('2')
 const perSet = await dRows.nth(0).locator('input').nth(2).inputValue()
 ok('apply-to-all fills every set', perSet === '2', `set 1 drops = ${perSet}`)
 
+// placement is now a week x day grid rather than two dropdowns
+await page.locator('.slot-row').first().getByRole('button', { name: 'Any' }).click()
 await page.getByRole('button', { name: 'Add to program' }).click()
 await page.waitForSelector('text=E2E Superset Session', { timeout: 20000 })
 
@@ -135,6 +137,7 @@ const { data: ce } = await api.from('coach_exercises').select('name').eq('coach_
 ok('typed exercise name remembered', (ce || []).length === 1)
 
 // --- THE ROUND TRIP: reopen the saved session and check nothing was lost ---
+await page.locator('.sess-head').first().click()
 await page.getByRole('button', { name: /^Edit$/ }).first().click()
 await page.waitForSelector('.ex-input')
 const reGroups = page.locator('input[placeholder="Group (e.g. A)"]')
