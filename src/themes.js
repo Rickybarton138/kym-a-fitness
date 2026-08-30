@@ -61,6 +61,8 @@ export const BRANDS = {
       { id: 'body', label: 'Check-ins & Progress' },
       { id: 'coachhub', label: 'Coach' },
     ],
+    // Paul's members know the gym as ReDefine, not as "Paul".
+    communityName: 'The ReDefine Community.',
     trainGymName: 'your gym',
     equipment: [
       'Squat racks & Olympic benches',

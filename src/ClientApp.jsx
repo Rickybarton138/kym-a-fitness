@@ -266,7 +266,7 @@ export default function ClientApp({ profile, onSignOut }) {
           <div className="stack">
             {nav.some((n) => n.id === 'coachhub') && <button className="link-btn" onClick={backFromCoach}>‹ Back</button>}
             <p className="eyebrow">Community</p>
-            <h1 className="h1">The {coachName?.split(' ')[0] || 'Kim'} community.</h1>
+            <h1 className="h1">{THEME.communityName || `The ${coachName?.split(' ')[0] || 'Kim'} community.`}</h1>
             <p className="lead">Share your wins and cheer each other on.</p>
             <CommunityFeed communityCoachId={profile.trainer_id} me={profile.id} myName={profile.full_name} isCoach={false} />
           </div>
@@ -1532,8 +1532,19 @@ function Train({ clientId, trainerId, onWorkoutDone }) {
   }
   useEffect(() => { loadHistory() }, [])
 
-  function onSaved(plan) {
-    if (plan) setHistory((h) => [plan, ...h])
+  function onSaved(plan, opts) {
+    if (!plan) return
+    setHistory((h) => [plan, ...h])
+    if (!opts?.play) return
+    // Starting a session used to insert the plan, flash "Added to your
+    // sessions", and leave you on the list — the session appeared further down
+    // the page with no way of knowing it was there. Mark it active (the same
+    // flag GuidedWorkout uses to survive a backgrounded app) so its card mounts
+    // straight into the player, then scroll to it.
+    try { sessionStorage.setItem('cbk_gw_active', plan.id) } catch { /* private mode */ }
+    setTimeout(() => {
+      document.getElementById('session-' + plan.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 120)
   }
 
   return (
@@ -2332,7 +2343,7 @@ function StartWorkout({ clientId, onStarted }) {
       exercises: t.exercises || [], finisher: t.finisher || null, assigned_by: null,
     }).select().single()
     setStartingId(null)
-    if (data) { onStarted && onStarted(data); setStartedId(t.id); setTimeout(() => setStartedId(null), 2500) }
+    if (data) { onStarted && onStarted(data, { play: true }); setStartedId(t.id); setTimeout(() => setStartedId(null), 2500) }
   }
 
   if (templates === null) return <Loader text="Loading sessions…" />
@@ -2364,7 +2375,7 @@ function StartWorkout({ clientId, onStarted }) {
                     ))}
                   </ol>
                   <button type="button" className="btn primary" disabled={startingId === t.id} onClick={() => start(t)}>
-                    {startedId === t.id ? 'Added ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
+                    {startedId === t.id ? 'Started ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
                   </button>
                 </>
               )}
@@ -2398,7 +2409,7 @@ function StartWorkout({ clientId, onStarted }) {
             </ol>
           )}
           <button type="button" className="btn primary sm" disabled={startingId === t.id} onClick={() => start(t)}>
-            {startedId === t.id ? 'Added to your sessions ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
+            {startedId === t.id ? 'Started ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
           </button>
         </div>
       ))}
@@ -2596,7 +2607,7 @@ function SessionCard({ plan, onUpdate, clientId, trainerId, onWorkoutDone, histo
   }
 
   return (
-    <div className="card session-card">
+    <div className="card session-card" id={'session-' + plan.id}>
       <button type="button" className="session-head" onClick={() => setOpen((o) => !o)}>
         <div>
           <div className="session-title">{plan.title}</div>
@@ -2817,7 +2828,7 @@ function Body({ measurements, onAdd, clientId, coachName }) {
         <button type="button" className={tab === 'log' ? 'on' : ''} onClick={() => setTab('log')}>Measurements</button>
         <button type="button" className={tab === 'train' ? 'on' : ''} onClick={() => setTab('train')}>Training</button>
       </div>
-      {tab === 'photos' && <ProgressPhotos clientId={clientId} />}
+      {tab === 'photos' && <ProgressPhotos clientId={clientId} canEdit />}
       {tab === 'scan' && <BodyScan clientId={clientId} coachName={coachName} />}
       {tab === 'log' && <BodyLog measurements={measurements} onAdd={onAdd} />}
       {tab === 'train' && (

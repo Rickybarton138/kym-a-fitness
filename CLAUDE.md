@@ -25,7 +25,17 @@
 ## Run
 - `npm run dev` (port 5220) — UI + auth/DB work (AI needs the function)
 - `netlify dev` (port 8899) — everything, needs `ANTHROPIC_API_KEY` in `.env`
-- `npm run build`
+- **`npm run build:paul`** (or `build:kim` / `build:pph` / `build:elev8`) — ALWAYS build
+  with the per-brand script before deploying. `npx vite build` skips
+  `scripts/brand-html.mjs`, and plain `npm run build` defaults to BRAND=kim, so
+  either one ships Kim's title, icon, link preview and PWA install name to
+  whichever site you deploy to. The runtime brand still comes from the hostname
+  (HOST_BRAND in `src/themes.js`) — this only stamps the static metadata that
+  crawlers and "add to home screen" read.
+- Deploy Paul: `npm run build:paul` then
+  `npx netlify deploy --dir dist --site bda91296-2224-4923-b91c-d6482971eab1`
+  (this folder is linked to Kim's site, so `--site` is not optional), then promote
+  the draft with `npx netlify api restoreSiteDeploy`.
 
 ## Agent rules
 Plan for 3+ steps; verify before done (build + drive it); simplicity first; after corrections update `tasks/lessons.md`.

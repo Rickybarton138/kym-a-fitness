@@ -146,3 +146,17 @@ e2e against production. If all pass, it is the user's client. Ask them to force-
 (swipe away, not switch away) and reopen before touching any code. The real fix is a
 build-version check that prompts a reload on resume — a PWA has no other way to tell
 a long-resumed client that a new build exists.
+
+## Check for an existing script before building the capability (2026-08-30)
+Paul's shared link previewed as "Coached by Kim" with Kim's logo. I diagnosed it
+correctly (crawlers read static HTML, which was hardcoded to Kim) and then built a
+Vite plugin to stamp per-brand metadata — but `scripts/brand-html.mjs` already did
+exactly that, wired into `npm run build`, driven by a BRAND env var. The real bug
+was that deploys ran `npx vite build` directly, skipping the post-build step, and
+BRAND was never set. Two competing implementations nearly shipped.
+Rule: when adding build/deploy behaviour, read `package.json` scripts AND the
+`scripts/` directory FIRST. "The output is wrong" usually means an existing step
+was skipped or misconfigured, not that the step is missing.
+Fix in place: `npm run build:<brand>` (scripts/build-brand.mjs) sets BRAND
+cross-platform — `BRAND=paul npm run build` does not work in PowerShell, which is
+how the wrong branding shipped from a Windows machine in the first place.
