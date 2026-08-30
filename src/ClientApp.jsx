@@ -21,6 +21,7 @@ import { FoodDiary } from './FoodDiary.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
+import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
 import { WEEKDAYS } from './booking.js'
@@ -64,7 +65,7 @@ const DEFAULT_NAV = [
 ]
 // So a hub tab stays lit while you're inside one of its screens.
 const HUB_CHILDREN = {
-  trainhub:  ['train', 'programs', 'muscles', 'testing', 'strava'],
+  trainhub:  ['train', 'programs', 'myprogram', 'muscles', 'testing', 'strava'],
   nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert', 'health'],
   body:      ['body', 'growth', 'monitoring'],
   coachhub:  ['ask', 'form', 'content', 'community', 'mygroups', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
@@ -199,6 +200,7 @@ export default function ClientApp({ profile, onSignOut }) {
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} onGo={setScreen} />}
+        {screen === 'myprogram' && <MyProgram clientId={profile.id} onBack={() => setScreen(THEME.nav ? 'trainhub' : 'train')} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
         {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
         {screen === 'health' && (
@@ -453,11 +455,17 @@ function TargetEditor({ targets, onSave }) {
 }
 
 /* ---------- Daily agenda ("Today's plan") ---------- */
-function AgendaItem({ done, label, sub, children }) {
+function AgendaItem({ done, label, sub, onTap, children }) {
+  const body = <><b>{label}</b><span>{sub}</span></>
   return (
     <div className={'agenda-item' + (done ? ' done' : '')}>
       <span className="agenda-dot" aria-hidden="true" />
-      <div className="agenda-body"><b>{label}</b><span>{sub}</span></div>
+      {/* Tapping the row itself does the obvious thing, not just the small
+          button on the right (Paul: "if it is showing the day's session when you
+          click on that it takes them into the session"). */}
+      {onTap
+        ? <button type="button" className="agenda-body agenda-body-tap" onClick={onTap}>{body}</button>
+        : <div className="agenda-body">{body}</div>}
       {children && <div className="agenda-action">{children}</div>}
     </div>
   )
@@ -514,45 +522,10 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
     ])
     setScheduledPlan((sp && sp[0]) || null)
 
-    // Active multi-week programme → compute which session lands today (advances by
-    // week from the start date; wraps if set to repeat).
-    let progToday = null
-    const { data: cp } = await supabase.from('client_programs')
-      .select('program_id, start_date, repeat, day_map, workout_programs(title)')
-      .eq('client_id', profile.id).eq('active', true).order('created_at', { ascending: false }).limit(1)
-    if (cp && cp[0]) {
-      const asg = cp[0]
-      const { data: psess } = await supabase.from('program_sessions').select('week, dow, position, title, focus, exercises, finisher').eq('program_id', asg.program_id)
-      const list = psess || []
-      const cycleWeeks = list.reduce((mx, s) => Math.max(mx, s.week || 1), 1)
-      const startMid = new Date(asg.start_date + 'T00:00:00')
-      const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0)
-      const diffDays = Math.floor((todayMid - startMid) / 86400000)
-      if (diffDays >= 0) {
-        let weekNum = Math.floor(diffDays / 7) + 1
-        if (weekNum > cycleWeeks) weekNum = asg.repeat ? ((weekNum - 1) % cycleWeeks) + 1 : null
-        if (weekNum) {
-          const todayDow = new Date().getDay()
-          let sess = null
-          // Client picked their own training days (day_map) rather than following
-          // the programme's authored dow — map that week's sessions onto their
-          // chosen days by position, so it still works whatever dow the coach
-          // originally set when building the programme.
-          if (asg.day_map && asg.day_map.length) {
-            const slot = asg.day_map.indexOf(todayDow)
-            if (slot !== -1) {
-              const weekSessions = list.filter((s) => (s.week || 1) === weekNum)
-                .sort((a, b) => (a.dow ?? 99) - (b.dow ?? 99) || (a.position ?? 0) - (b.position ?? 0))
-              sess = weekSessions[slot] || null
-            }
-          } else {
-            sess = list.find((s) => (s.week || 1) === weekNum && s.dow === todayDow) || null
-          }
-          if (sess) progToday = { sess, weekNum, title: asg.workout_programs?.title || 'Your program' }
-        }
-      }
-    }
-    setProgramToday(progToday)
+    // Active multi-week programme → which session lands today. The resolution
+    // lives in todaySession.js so the Train tab gives the same answer.
+    const prog = await loadClientProgram(profile.id)
+    setProgramToday(sessionForDay(prog))
     setSteps(ds || null); if (ds && ds.steps != null) setStepInput(String(ds.steps))
     setTrainedToday((comps || []).length > 0)
     setLastCheckin(ci && ci[0] ? ci[0].created_at : null)
@@ -580,10 +553,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
     // Prefer the assigned programme's session for today, else the weekly-scheduled template.
     const src = programToday?.sess || todaySession
     if (!src) { onGo(THEME.nav ? 'trainhub' : 'train'); return }
-    await supabase.from('workout_plans').insert({
-      client_id: profile.id, title: src.title, focus: src.focus || 'Session',
-      exercises: src.exercises || [], finisher: src.finisher || null, assigned_by: null,
-    })
+    await startSessionNow(profile.id, src)
     onGo('train')
   }
 
@@ -667,6 +637,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
 
         <AgendaItem
           done={trainedToday}
+          onTap={trainedToday ? undefined : ((programToday || todaySession) ? startTodaySession : () => onGo(THEME.nav ? 'trainhub' : 'train'))}
           label={!trainedToday && (programToday || todaySession || scheduledPlan) ? `Today: ${(programToday?.sess || todaySession || scheduledPlan).title}` : 'Train'}
           sub={trainedToday ? 'Session done — great work'
             : programToday ? `Week ${programToday.weekNum} · ${programToday.title}`
@@ -1492,7 +1463,7 @@ function NutritionExpert({ clientId, onBack }) {
 // there (Paul: "it would be good if the client can see the program they have
 // picked clearly in their training section... either the programme they chose or
 // the one assigned by me"). Renders nothing when they aren't on one.
-function YourPlanCard({ clientId }) {
+function YourPlanCard({ clientId, onOpen }) {
   const [plan, setPlan] = useState(undefined)
   useEffect(() => {
     supabase.from('client_programs')
@@ -1509,8 +1480,8 @@ function YourPlanCard({ clientId }) {
   let week = diffDays >= 0 ? Math.floor(diffDays / 7) + 1 : null
   if (week && weeks && week > weeks) week = plan.repeat ? ((week - 1) % weeks) + 1 : null
 
-  return (
-    <div className="card" style={{ borderColor: 'var(--accent)' }}>
+  const body = (
+    <>
       <p className="eyebrow accent">Your plan</p>
       <div className="session-title" style={{ marginTop: 4 }}>{plan.workout_programs?.title || 'Your program'}</div>
       <div className="session-sub">
@@ -1518,7 +1489,16 @@ function YourPlanCard({ clientId }) {
         {(plan.day_map || []).length ? ' · ' + plan.day_map.map((d) => WEEKDAYS[d]).join(', ') : ''}
       </div>
       <p className="muted-note">{plan.coach_id ? 'Set for you by your coach.' : 'You picked this one from the library.'}</p>
-    </div>
+    </>
+  )
+  if (!onOpen) return <div className="card" style={{ borderColor: 'var(--accent)' }}>{body}</div>
+  // Tappable on the Train tab — Paul wanted the plan at the top to open into
+  // the full programme rather than just sitting there as a label.
+  return (
+    <button type="button" className="card plan-card-btn" style={{ borderColor: 'var(--accent)' }} onClick={onOpen}>
+      <div style={{ flex: 1 }}>{body}</div>
+      <span className="chev" aria-hidden="true">›</span>
+    </button>
   )
 }
 
@@ -1529,6 +1509,12 @@ function Train({ clientId, trainerId, onWorkoutDone }) {
   async function loadHistory() {
     const { data } = await supabase.from('workout_plans').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(50)
     setHistory(data || [])
+    // Arriving from "start today's session": that card mounts straight into the
+    // player, so bring it into view instead of leaving them at the top of the
+    // screen wondering where the session went.
+    let active = null
+    try { active = sessionStorage.getItem('cbk_gw_active') } catch { /* ignore */ }
+    if (active) setTimeout(() => document.getElementById('session-' + active)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
   }
   useEffect(() => { loadHistory() }, [])
 
@@ -2306,8 +2292,8 @@ function BarcodeScan({ onLog, onBack }) {
 // sessions so they can log it. Self-started => assigned_by stays null.
 function StartWorkout({ clientId, onStarted }) {
   const [templates, setTemplates] = useState(null)
-  const [planSessions, setPlanSessions] = useState([]) // sessions from the programme they're on
-  const [planTitle, setPlanTitle] = useState('')
+  const [prog, setProg] = useState(null)       // the programme they're on
+  const [weekSel, setWeekSel] = useState(null) // which week of it they're picking from
   const [openId, setOpenId] = useState(null)
   const [startingId, setStartingId] = useState(null)
   const [startedId, setStartedId] = useState(null)
@@ -2319,22 +2305,19 @@ function StartWorkout({ clientId, onStarted }) {
 
   // Paul: on a non-training day the client could only reach standalone
   // templates, never the sessions of the programme they're actually following.
-  // Offer those first, so an extra or moved session comes from their own plan.
+  // Offer those first, defaulting to the week they're actually on but letting
+  // them pick any week — an extra or moved session comes from their own plan.
   useEffect(() => {
     if (!THEME.features?.programs) return
-    ;(async () => {
-      const { data: cp } = await supabase.from('client_programs')
-        .select('program_id, workout_programs(title)').eq('client_id', clientId).eq('active', true)
-        .order('created_at', { ascending: false }).limit(1)
-      const asg = cp && cp[0]
-      if (!asg) return
-      setPlanTitle(asg.workout_programs?.title || 'Your program')
-      const { data: ps } = await supabase.from('program_sessions')
-        .select('id, title, focus, exercises, finisher, week, position').eq('program_id', asg.program_id)
-        .order('week', { ascending: true }).order('position', { ascending: true })
-      setPlanSessions(ps || [])
-    })()
+    loadClientProgram(clientId).then((p) => {
+      if (!p) return
+      setProg(p)
+      setWeekSel(weekFor(p) || 1)
+    })
   }, [clientId])
+
+  const planTitle = prog?.title || ''
+  const planSessions = prog && weekSel ? sessionsInWeek(prog, weekSel) : []
 
   async function start(t) {
     setStartingId(t.id)
@@ -2347,20 +2330,32 @@ function StartWorkout({ clientId, onStarted }) {
   }
 
   if (templates === null) return <Loader text="Loading sessions…" />
-  if (templates.length === 0 && planSessions.length === 0) return <p className="muted-note">No sessions from your coach yet — they’ll appear here to start with one tap.</p>
+  // Only truly empty when there's no programme AND no templates — an empty
+  // week of a real programme is a different message, handled below.
+  if (templates.length === 0 && !prog) return <p className="muted-note">No sessions from your coach yet — they’ll appear here to start with one tap.</p>
 
   return (
     <div className="stack">
       <p className="lead">Pick a session and start it — it drops into your sessions to log as you go.</p>
-      {planSessions.length > 0 && (
+      {prog && (
         <>
           <p className="eyebrow">From {planTitle}</p>
+          {prog.cycleWeeks > 1 && (
+            <>
+              <div className="seg" style={{ flexWrap: 'wrap' }}>
+                {Array.from({ length: prog.cycleWeeks }, (_, i) => i + 1).map((w) => (
+                  <button type="button" key={w} className={weekSel === w ? 'on' : ''} onClick={() => { setWeekSel(w); setOpenId(null) }}>Wk {w}</button>
+                ))}
+              </div>
+              <p className="muted-note">{weekSel === weekFor(prog) ? 'The week you’re on.' : 'Looking at a different week of your plan.'}</p>
+            </>
+          )}
           {planSessions.map((t) => (
             <div className="card session-card" key={t.id}>
               <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
                 <div>
                   <div className="session-title">{t.title}</div>
-                  <div className="session-sub">Week {t.week || 1}{t.focus ? ' · ' + t.focus : ''} · {(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}</div>
+                  <div className="session-sub">{t.focus ? t.focus + ' · ' : ''}{(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}</div>
                 </div>
                 <span className="chev">{openId === t.id ? '−' : '+'}</span>
               </button>
@@ -2381,6 +2376,7 @@ function StartWorkout({ clientId, onStarted }) {
               )}
             </div>
           ))}
+          {planSessions.length === 0 && <p className="muted-note">Nothing built for week {weekSel} yet — try another week.</p>}
           {templates.length > 0 && <p className="eyebrow" style={{ marginTop: 4 }}>Other sessions</p>}
         </>
       )}
@@ -3220,20 +3216,141 @@ function IGContent({ coachName, onBack }) {
 }
 
 /* ---------- Grouped hubs (brands with a grouped nav, e.g. ReDefine) ---------- */
+// The client's whole programme — every week, what's in each session, and which
+// one is today. Reached by tapping the plan card at the top of the Train tab
+// (Paul: "have the program details at the top of the training tab as clickable
+// so they can see the details of their program").
+function MyProgram({ clientId, onBack, onGo }) {
+  const [prog, setProg] = useState(undefined)
+  const [openId, setOpenId] = useState(null)
+  const [starting, setStarting] = useState(null)
+  useEffect(() => { loadClientProgram(clientId).then(setProg) }, [clientId])
+
+  async function start(sess) {
+    setStarting(sess.id)
+    await startSessionNow(clientId, sess)
+    onGo('train')
+  }
+
+  if (prog === undefined) return <Loader text="Loading your plan…" />
+  if (!prog) {
+    return (
+      <div className="stack">
+        <button className="link-btn" onClick={onBack}>‹ Back</button>
+        <p className="eyebrow">Your plan</p>
+        <h1 className="h1">No plan yet.</h1>
+        <p className="lead">You’re not on a programme yet — you can still start a session whenever you want.</p>
+        <button type="button" className="btn primary" onClick={() => onGo('train')}>Start a workout</button>
+      </div>
+    )
+  }
+
+  const thisWeek = weekFor(prog)
+  const todayS = sessionForDay(prog)
+
+  return (
+    <div className="stack">
+      <button className="link-btn" onClick={onBack}>‹ Back</button>
+      <p className="eyebrow">Your plan</p>
+      <h1 className="h1">{prog.title}</h1>
+      <p className="lead">
+        {thisWeek ? `You’re on week ${thisWeek} of ${prog.programWeeks}.` : `Starts ${prog.asg.start_date}.`}
+        {prog.dayMap.length ? ` Training ${prog.dayMap.map((d) => WEEKDAYS[d]).join(', ')}.` : ''}
+      </p>
+      <p className="muted-note">{prog.byCoach ? 'Set for you by your coach.' : 'You picked this one from the library.'}</p>
+
+      {Array.from({ length: prog.cycleWeeks }, (_, i) => i + 1).map((w) => {
+        const list = sessionsInWeek(prog, w)
+        if (!list.length) return null
+        return (
+          <div className="stack" key={w}>
+            <p className="eyebrow" style={{ marginTop: 6 }}>Week {w}{w === thisWeek ? ' · this week' : ''}</p>
+            {list.map((sess, i) => {
+              // Their chosen training days take precedence over the day the
+              // coach authored — same mapping the agenda uses.
+              const dayLabel = prog.dayMap.length ? WEEKDAYS[prog.dayMap[i]] : (sess.dow != null ? WEEKDAYS[sess.dow] : null)
+              const isToday = todayS?.sess?.id === sess.id
+              const n = (sess.exercises || []).length
+              return (
+                <div className="card session-card" key={sess.id} style={isToday ? { borderColor: 'var(--accent)' } : undefined}>
+                  <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === sess.id ? null : sess.id))}>
+                    <div>
+                      <div className="session-title">{sess.title}</div>
+                      <div className="session-sub">{dayLabel ? dayLabel + ' · ' : ''}{n} exercise{n === 1 ? '' : 's'}{isToday ? ' · today' : ''}</div>
+                    </div>
+                    <span className="chev">{openId === sess.id ? '−' : '+'}</span>
+                  </button>
+                  {openId === sess.id && (
+                    <>
+                      <ol className="ex-list">
+                        {(sess.exercises || []).map((ex, k) => (
+                          <li className="ex" key={k}>
+                            <span className="ex-n">{k + 1}</span>
+                            <div className="ex-body">
+                              <div className="ex-name">{ex.name}</div>
+                              <ExSets ex={ex} />
+                              {ex.cue && <div className="ex-cue">{ex.cue}</div>}
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                      {sess.finisher && <p className="finisher"><b>Finisher:</b> {sess.finisher}</p>}
+                      <button type="button" className="btn primary" disabled={starting === sess.id} onClick={() => start(sess)}>
+                        {starting === sess.id ? 'Opening…' : 'Start this session'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function TrainHub({ clientId, coachName, onGo }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
+  const [prog, setProg] = useState(null)
+  const [today, setToday] = useState(null)
+  const [starting, setStarting] = useState(false)
+
+  useEffect(() => {
+    if (!THEME.features?.programs) return
+    loadClientProgram(clientId).then((p) => { setProg(p); setToday(sessionForDay(p)) })
+  }, [clientId])
+
+  // Straight into the session, not into a chooser.
+  async function startToday() {
+    if (!today?.sess) return
+    setStarting(true)
+    await startSessionNow(clientId, today.sess)
+    onGo('train')
+  }
+
   return (
     <div className="stack">
       <p className="eyebrow">Train</p>
       <h1 className="h1">Your training.</h1>
       <p className="lead">Everything for the gym floor in one place.</p>
       {/* The plan they're on, right where they land on the Train tab. */}
-      {THEME.features?.programs && <YourPlanCard clientId={clientId} />}
+      {THEME.features?.programs && <YourPlanCard clientId={clientId} onOpen={() => onGo('myprogram')} />}
       <div className="tiles">
-        <button className="tile tile-hero" onClick={() => onGo('train')}>
-          <IconTrain />
-          <div><b>Today’s session</b><span>Start a workout, generate one, or build your own</span></div>
-        </button>
+        {today ? (
+          <button className="tile tile-hero" onClick={startToday} disabled={starting}>
+            <IconTrain />
+            <div><b>{starting ? 'Opening…' : today.sess.title}</b><span>Today’s session · week {today.weekNum} — tap to start</span></div>
+          </button>
+        ) : (
+          <button className="tile tile-hero" onClick={() => onGo('train')}>
+            <IconTrain />
+            <div>
+              <b>{prog ? 'No session scheduled today' : 'Today’s session'}</b>
+              <span>{prog ? 'Train anyway — pick one from your plan, or build your own' : 'Start a workout, generate one, or build your own'}</span>
+            </div>
+          </button>
+        )}
         {THEME.features?.programs && (
           <button className="tile" onClick={() => onGo('programs')}>
             <IconTrain />

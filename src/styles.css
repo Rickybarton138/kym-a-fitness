@@ -664,3 +664,13 @@ input { font-family: inherit; }
 }
 .compare-modal-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .compare-modal .compare-col .shot { aspect-ratio: 3 / 4; }
+
+/* Tappable "Your plan" card at the top of the Train tab */
+.plan-card-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left; cursor: pointer; color: inherit;
+}
+.plan-card-btn .chev { flex: 0 0 auto; font-size: 22px; color: var(--muted); }
+
+/* Agenda rows whose whole body is the tap target */
+.agenda-body-tap { border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }

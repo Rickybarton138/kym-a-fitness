@@ -75,9 +75,13 @@ ok('shows their training days', planText.includes('Mon') && planText.includes('W
 ok('says who set it', planText.includes('coach'), planText.replace(/\n/g, ' | '))
 
 // --- item 8: programme sessions offered alongside standalone templates ---
-await page.getByText('Today’s session').first().click()
+// Reached from Home now: the Train tab's hero tile starts today's session
+// directly, so the ad-hoc chooser lives behind Home's "Start a workout" — which
+// is also deterministic whatever weekday this runs on.
+await page.locator('.tab', { hasText: 'Home' }).click()
+await page.waitForSelector('.agenda-card', { timeout: 20000 })
+await page.getByRole('button', { name: 'Start a workout' }).first().click()
 await page.waitForSelector('text=Train your way', { timeout: 20000 })
-await page.getByRole('button', { name: 'Start a workout' }).click()
 const fromPlan = page.getByText(`From ${PROG}`)
 ok('programme sessions offered off-schedule', await fromPlan.waitFor({ timeout: 15000 }).then(() => true, () => false))
 ok('the session itself is listed', await page.getByText('E2E Plan Session').count() > 0)
