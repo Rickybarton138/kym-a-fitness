@@ -160,3 +160,15 @@ was skipped or misconfigured, not that the step is missing.
 Fix in place: `npm run build:<brand>` (scripts/build-brand.mjs) sets BRAND
 cross-platform — `BRAND=paul npm run build` does not work in PowerShell, which is
 how the wrong branding shipped from a Windows machine in the first place.
+
+## Async-loaded UI needs waitFor, not count() (2026-08-30)
+Six of eight failures in the round-13 nav suite were my own assertions firing before
+the data arrived: the agenda card paints immediately and fills in today's session
+after a query, and the Train hub's hero tile does the same. `count() > 0` right after
+`waitForSelector('.agenda-card')` is always a race.
+Rule: assert on a locator scoped to the CONTENT (`page.locator('.agenda-item',
+{ hasText: NAME }).waitFor()`), never a bare count on a container that renders early.
+Two other traps from the same run: `.eyebrow` is uppercased in CSS and `innerText`
+returns the transformed text (match case-insensitively), and a session title can
+appear twice on the Train screen — once in the plan list, once in "Your sessions"
+history — so scope to the first `.session-card` rather than counting page-wide.
