@@ -1613,6 +1613,15 @@ function AiPlan({ clientId, onSaved }) {
   )
 }
 
+// An exercise name that opens the how-to guide. Paul: clients could only reach
+// the guide once they'd STARTED a session — not while looking at what's coming.
+function ExName({ ex, onGuide }) {
+  if (THEME.features?.exerciseGuides && onGuide) {
+    return <button type="button" className="ex-name eg-tap" onClick={() => onGuide(ex)}>{ex.name}</button>
+  }
+  return <div className="ex-name">{ex.name}</div>
+}
+
 function OwnPlan({ clientId, trainerId, onSaved, history = [] }) {
   // Kept in localStorage as it's typed. A client building a session set by set
   // while she trains must not lose it to a reload or a backgrounded app — which
@@ -2301,6 +2310,7 @@ function StartWorkout({ clientId, onStarted }) {
   const [openId, setOpenId] = useState(null)
   const [startingId, setStartingId] = useState(null)
   const [startedId, setStartedId] = useState(null)
+  const [guideEx, setGuideEx] = useState(null)
 
   useEffect(() => {
     supabase.from('workout_templates').select('*').order('created_at', { ascending: false })
@@ -2369,7 +2379,7 @@ function StartWorkout({ clientId, onStarted }) {
                     {(t.exercises || []).map((ex, i) => (
                       <li className="ex" key={i}>
                         <span className="ex-n">{i + 1}</span>
-                        <div><div className="ex-name">{ex.name}</div><ExSets ex={ex} /></div>
+                        <div><ExName ex={ex} onGuide={setGuideEx} /><ExSets ex={ex} /></div>
                       </li>
                     ))}
                   </ol>
@@ -2384,6 +2394,7 @@ function StartWorkout({ clientId, onStarted }) {
           {templates.length > 0 && <p className="eyebrow" style={{ marginTop: 4 }}>Other sessions</p>}
         </>
       )}
+      {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
       {templates.map((t) => (
         <div className="card session-card" key={t.id}>
           <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
@@ -2399,7 +2410,7 @@ function StartWorkout({ clientId, onStarted }) {
                 <li className="ex" key={i}>
                   <span className="ex-n">{i + 1}</span>
                   <div className="ex-body">
-                    <div className="ex-name">{ex.name}</div>
+                    <ExName ex={ex} onGuide={setGuideEx} />
                     <ExSets ex={ex} />
                     {ex.cue && <div className="ex-cue">{ex.cue}</div>}
                   </div>
@@ -3228,6 +3239,7 @@ function MyProgram({ clientId, onBack, onGo }) {
   const [prog, setProg] = useState(undefined)
   const [openId, setOpenId] = useState(null)
   const [starting, setStarting] = useState(null)
+  const [guideEx, setGuideEx] = useState(null)
   useEffect(() => { loadClientProgram(clientId).then(setProg) }, [clientId])
 
   async function start(sess) {
@@ -3262,6 +3274,7 @@ function MyProgram({ clientId, onBack, onGo }) {
         {prog.dayMap.length ? ` Training ${prog.dayMap.map((d) => WEEKDAYS[d]).join(', ')}.` : ''}
       </p>
       <p className="muted-note">{prog.byCoach ? 'Set for you by your coach.' : 'You picked this one from the library.'}</p>
+      {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
 
       {Array.from({ length: prog.cycleWeeks }, (_, i) => i + 1).map((w) => {
         const list = sessionsInWeek(prog, w)
@@ -3291,7 +3304,7 @@ function MyProgram({ clientId, onBack, onGo }) {
                           <li className="ex" key={k}>
                             <span className="ex-n">{k + 1}</span>
                             <div className="ex-body">
-                              <div className="ex-name">{ex.name}</div>
+                              <ExName ex={ex} onGuide={setGuideEx} />
                               <ExSets ex={ex} />
                               {ex.cue && <div className="ex-cue">{ex.cue}</div>}
                             </div>
@@ -3776,6 +3789,53 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
       </div>
       <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
       {saved && <p className="logged-ok">Saved ✓</p>}
+      <ChangePassword />
+        </>
+      )}
+    </div>
+  )
+}
+
+// Somewhere for a client to change their own password. There was nowhere at all
+// before, which mattered once a coach could hand them a temporary one.
+function ChangePassword() {
+  const [open, setOpen] = useState(false)
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [done, setDone] = useState(false)
+
+  async function save() {
+    if (pw.length < 8) { setErr('Use at least 8 characters.'); return }
+    if (pw !== pw2) { setErr('The two passwords don’t match.'); return }
+    setBusy(true); setErr('')
+    const { error } = await supabase.auth.updateUser({ password: pw })
+    setBusy(false)
+    if (error) { setErr(error.message || 'Could not change your password.'); return }
+    setPw(''); setPw2(''); setDone(true); setOpen(false)
+    setTimeout(() => setDone(false), 4000)
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Password</p>
+      {done && <p className="logged-ok">Password changed ✓</p>}
+      {!open ? (
+        <button type="button" className="btn ghost sm" style={{ marginTop: 6 }} onClick={() => { setOpen(true); setErr('') }}>Change my password</button>
+      ) : (
+        <>
+          <label className="field" style={{ marginTop: 6 }}>New password
+            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} autoComplete="new-password" />
+          </label>
+          <label className="field" style={{ marginTop: 8 }}>Confirm it
+            <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} minLength={8} autoComplete="new-password" />
+          </label>
+          {err && <p className="error">{err}</p>}
+          <div className="nudge-actions" style={{ marginTop: 10 }}>
+            <button type="button" className="btn primary sm" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save password'}</button>
+            <button type="button" className="btn ghost sm" onClick={() => { setOpen(false); setErr('') }}>Cancel</button>
+          </div>
         </>
       )}
     </div>

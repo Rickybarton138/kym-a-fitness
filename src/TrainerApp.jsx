@@ -477,6 +477,82 @@ function ClientHealthContext({ client }) {
   )
 }
 
+
+// Let a locked-out client back in without email. Supabase auth email has never
+// reached a real client on this project (no custom SMTP), so "forgot password"
+// goes nowhere and new signups get stranded. The coach sets a temporary
+// password, reads it out, and the client changes it in My details.
+// The server-side authorisation is in netlify/functions/coach-reset-password.mjs.
+function ResetClientPassword({ client }) {
+  const [open, setOpen] = useState(false)
+  const [pw, setPw] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [doneFor, setDoneFor] = useState('')
+
+  // Readable over the phone or in a message, and still hard to guess.
+  function suggest() {
+    const words = ['Squat', 'Lunge', 'Sprint', 'Plank', 'Deadlift', 'Press']
+    const w = words[Math.floor(Math.random() * words.length)]
+    setPw(`${w}-${Math.floor(1000 + Math.random() * 9000)}`)
+    setErr('')
+  }
+
+  async function reset() {
+    if (pw.trim().length < 8) { setErr('Use at least 8 characters.'); return }
+    setBusy(true); setErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/.netlify/functions/coach-reset-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ clientId: client.id, password: pw.trim() }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) { setErr(j.error || 'Could not reset that password.'); setBusy(false); return }
+      setDoneFor(pw.trim())
+      setOpen(false)
+    } catch {
+      setErr('Could not reach the server — try again.')
+    }
+    setBusy(false)
+  }
+
+  const first = (client.full_name || 'They').split(' ')[0]
+  return (
+    <div className="card">
+      <p className="eyebrow">Password</p>
+      {doneFor ? (
+        <>
+          <p className="logged-ok">Password set ✓</p>
+          <p className="muted-note" style={{ marginTop: 6 }}>
+            Give {first} this to sign in with: <b>{doneFor}</b><br />
+            They can change it themselves under My details.
+          </p>
+          <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => { setDoneFor(''); setPw('') }}>Done</button>
+        </>
+      ) : !open ? (
+        <>
+          <p className="muted-note">Locked out? Set a temporary password and pass it on.</p>
+          <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => { setOpen(true); suggest() }}>Reset {first}’s password</button>
+        </>
+      ) : (
+        <>
+          <label className="field" style={{ marginTop: 6 }}>Temporary password
+            <input value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="off" />
+          </label>
+          <button type="button" className="link-btn" style={{ marginTop: 6 }} onClick={suggest}>Suggest another</button>
+          {err && <p className="error">{err}</p>}
+          <div className="nudge-actions" style={{ marginTop: 10 }}>
+            <button type="button" className="btn primary sm" disabled={busy} onClick={reset}>{busy ? 'Setting…' : 'Set this password'}</button>
+            <button type="button" className="btn ghost sm" onClick={() => { setOpen(false); setErr('') }}>Cancel</button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ClientDetail({ client, trainerId, onBack }) {
   const [targets, setTargets] = useState(null)
   const [today, setToday] = useState({ protein_g: 0, carbs_g: 0, fat_g: 0, calories: 0 })
@@ -570,6 +646,8 @@ function ClientDetail({ client, trainerId, onBack }) {
                     : 'Self-serve tier — calculator, programs and tracking.'}
                 </p>
               </div>
+
+              <ResetClientPassword client={client} />
 
               {THEME.features?.tags && <ClientTags clientId={client.id} coachId={trainerId} />}
 
