@@ -2598,6 +2598,7 @@ function AssignProgram({ clientId, coachId, clientName }) {
   const [msg, setMsg] = useState('')
   const [picking, setPicking] = useState(false) // day-picker open
   const [sessCount, setSessCount] = useState(null) // sessions/week in the picked programme
+  const [ownDays, setOwnDays] = useState(false)   // programme already sets its own weekdays
   async function load() {
     const [{ data: progs }, { data: cur }] = await Promise.all([
       supabase.from('workout_programs').select('id, title, weeks, client_id').eq('coach_id', coachId).or(`client_id.is.null,client_id.eq.${clientId}`).order('created_at', { ascending: false }),
@@ -2622,8 +2623,11 @@ function AssignProgram({ clientId, coachId, clientName }) {
   // client can be put on a programme with real training days (Paul's ask).
   async function openPicker() {
     if (!pick) return
-    const { data } = await supabase.from('program_sessions').select('week').eq('program_id', pick)
+    const { data } = await supabase.from('program_sessions').select('week, dow').eq('program_id', pick)
     setSessCount((data || []).filter((x) => (x.week || 1) === 1).length || null)
+    // If the coach authored a weekday on the sessions, day-picking is optional —
+    // an empty day_map means "use the programme's own days".
+    setOwnDays((data || []).some((x) => x.dow != null))
     setPicking(true)
   }
   async function stop() {
@@ -2667,6 +2671,7 @@ function AssignProgram({ clientId, coachId, clientName }) {
         <ProgramDayPicker
           sessionsPerWeek={sessCount}
           initialDays={current?.day_map || []}
+          ownDays={ownDays}
           onCancel={() => setPicking(false)}
           onConfirm={(days, startDate) => assign(days, startDate)}
         />
@@ -2828,10 +2833,16 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
   const [dayLabel, setDayLabel] = useState('')
   const [slots, setSlots] = useState([]) // [{week, dow}] a new session gets placed on
   const [openSess, setOpenSess] = useState(null) // program_session id expanded
+  const [confirmDel, setConfirmDel] = useState(null) // programme id pending delete confirmation
   const [editSched, setEditSched] = useState({ week: 1, dow: '', label: '' })
-  const [customTitle, setCustomTitle] = useState('')
-  const [customFocus, setCustomFocus] = useState('')
-  const [customRows, setCustomRows] = useState([newExerciseRow()])
+  // Persisted as it's typed: a long session build must survive a reload or a
+  // backgrounded tab (Paul: "a couple of times when building programs it
+  // randomly refreshed and sent me back to the home page").
+  const {
+    title: customTitle, focus: customFocus, rows: customRows,
+    setTitle: setCustomTitle, setFocus: setCustomFocus, setRows: setCustomRows,
+    clear: clearCustom, hasDraft: hasCustomDraft,
+  } = useWorkoutDraft('progsess:' + coachId)
   const [addError, setAddError] = useState('') // scoped to the add-session flow, so it doesn't get lost below a long programme card
   const [editSess, setEditSess] = useState(null) // program_session id being edited
   // AI whole-programme edit: one instruction rewrites all sessions.
@@ -2887,9 +2898,16 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       exercises = rowsToExercises(customRows, 'Coach plan')
       if (exercises.length === 0) { setAddError('Add at least one exercise with a set.'); return }
       title = customTitle.trim() || 'Custom session'; focus = customFocus.trim() || null; finisher = null
+    } else if (pickTpl.startsWith('ps:')) {
+      // A session already in this programme. Sessions built before they were
+      // also saved as templates never appear in the template list, and this is
+      // how the same session gets placed on more weeks without rebuilding it.
+      const src = (sessions[programId] || []).find((x) => x.id === pickTpl.slice(3))
+      if (!src) { setAddError('That session is no longer in this program.'); return }
+      title = src.title; focus = src.focus; exercises = src.exercises || []; finisher = src.finisher || null
     } else {
       const tpl = templates.find((t) => t.id === pickTpl)
-      if (!tpl) { setAddError('Pick a template, or build a custom session.'); return }
+      if (!tpl) { setAddError('Pick a session, or build a custom one.'); return }
       title = tpl.title; focus = tpl.focus; exercises = tpl.exercises || []; finisher = tpl.finisher || null
     }
     if (!slots.length) { setAddError('Pick at least one week and day for this session.'); return }
@@ -2924,7 +2942,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       }
     }
     setPickTpl(''); setDayLabel(''); setSlots([]); setAddError('')
-    setCustomTitle(''); setCustomFocus(''); setCustomRows([newExerciseRow()])
+    clearCustom()
   }
 
   async function delSession(programId, id) {
@@ -3212,9 +3230,28 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                   <div className="grid-2">
                     <label className="field">Add session
                       <select className="ex-select" value={addFor === pr.id ? pickTpl : ''} onChange={(e) => { setPickTpl(e.target.value); setAddFor(pr.id) }}>
-                        <option value="">Choose a template…</option>
+                        <option value="">Choose a session…</option>
                         <option value="__custom__">+ Build a custom session</option>
-                        {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                        {(() => {
+                          // Distinct sessions already in this programme — one entry
+                          // however many weeks it's placed on.
+                          const seen = new Set()
+                          const own = (sessions[pr.id] || []).filter((x) => {
+                            const k = (x.title || '').trim().toLowerCase()
+                            if (!k || seen.has(k)) return false
+                            seen.add(k); return true
+                          })
+                          return own.length ? (
+                            <optgroup label="Sessions in this program">
+                              {own.map((x) => <option key={x.id} value={'ps:' + x.id}>{x.title}</option>)}
+                            </optgroup>
+                          ) : null
+                        })()}
+                        {templates.length > 0 && (
+                          <optgroup label="Your templates">
+                            {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
+                          </optgroup>
+                        )}
                       </select>
                     </label>
                     <label className="field">Label (optional)<input value={addFor === pr.id ? dayLabel : ''} onChange={(e) => { setDayLabel(e.target.value); setAddFor(pr.id) }} placeholder="e.g. Push A" /></label>
@@ -3227,6 +3264,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
 
                   {addFor === pr.id && pickTpl === '__custom__' && (
                     <div className="stack" style={{ marginTop: 4 }}>
+                      {hasCustomDraft && <p className="muted-note">Picked up where you left off — nothing you typed was lost.</p>}
                       <div className="grid-2">
                         <label className="field">Session name<input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder="e.g. Upper Push A" /></label>
                         <label className="field">Focus<input value={customFocus} onChange={(e) => setCustomFocus(e.target.value)} placeholder="e.g. Push" /></label>
@@ -3239,7 +3277,17 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                   <button type="button" className="btn ghost" onClick={() => addSession(pr.id)}>Add to program</button>
                   <ProgramMetaEditor program={pr} onSaved={(up) => setPrograms((ps) => ps.map((x) => (x.id === up.id ? up : x)))} />
                   <ProgramSchedule program={pr} onSaved={(up) => setPrograms((ps) => ps.map((x) => (x.id === up.id ? up : x)))} />
-                  <button type="button" className="link-btn" onClick={() => delProgram(pr.id)}>Delete program</button>
+                  {confirmDel === pr.id ? (
+                    <div className="card" style={{ background: 'var(--surface-2)' }}>
+                      <p className="muted-note" style={{ marginBottom: 8 }}>Delete “{pr.title}” and all {(sessions[pr.id] || []).length} of its sessions? This can’t be undone.</p>
+                      <div className="nudge-actions">
+                        <button type="button" className="btn primary sm" onClick={() => { setConfirmDel(null); delProgram(pr.id) }}>Yes, delete it</button>
+                        <button type="button" className="btn ghost sm" onClick={() => setConfirmDel(null)}>Keep it</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" className="btn ghost sm" onClick={() => setConfirmDel(pr.id)}>Delete program</button>
+                  )}
                 </div>
               )}
             </div>

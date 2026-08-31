@@ -41,13 +41,21 @@ export default function App() {
     }
   }
 
+  // Key off the user id, NOT the session object. Supabase hands us a brand-new
+  // session object on every TOKEN_REFRESHED (roughly hourly, and on tab focus),
+  // and depending on the object re-ran loadProfile every time — which flipped
+  // loadingProfile and unmounted the whole app behind the loading screen.
+  // Everything in progress went with it: a client's half-built session, a
+  // coach's half-built programme. That is the "it randomly refreshed and sent
+  // me back to the home page" report, and the session that "disappeared".
+  const userId = session?.user?.id || null
   useEffect(() => {
-    if (!session?.user) {
+    if (!userId) {
       setProfile(null)
       return
     }
-    loadProfile(session.user.id)
-  }, [session])
+    loadProfile(userId)
+  }, [userId])
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -57,7 +65,9 @@ export default function App() {
   if (session === undefined) return <FullScreen>Loading…</FullScreen>
   if (recovery) return <ResetPassword onDone={() => setRecovery(false)} />
   if (!session) return <AuthScreen />
-  if (loadingProfile || !profile) return <FullScreen>Setting up your account…</FullScreen>
+  // Only block on the FIRST load. A background refetch must never take the app
+  // away from someone mid-session — see the userId effect above.
+  if (!profile) return <FullScreen>Setting up your account…</FullScreen>
 
   if (!gymActive) return <Suspended onSignOut={signOut} />
 

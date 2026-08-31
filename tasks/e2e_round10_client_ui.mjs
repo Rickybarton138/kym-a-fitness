@@ -87,9 +87,13 @@ ok('programme sessions offered off-schedule', await fromPlan.waitFor({ timeout: 
 ok('the session itself is listed', await page.getByText('E2E Plan Session').count() > 0)
 
 // --- the dangerous one: finishing must not wipe drops ---
-await page.getByText('E2E Drop Session').first().click()
-const startBtn = page.getByRole('button', { name: /Start session|Start this session|Resume/ }).first()
-if (await startBtn.count()) await startBtn.click()
+// Scope to THIS session's card. A page-wide `.first()` picked up whichever
+// "Start this session" button happened to be highest in the DOM, which played a
+// different session entirely and made the drops assertion below vacuous.
+const dropCard = page.locator('.session-card', { hasText: 'E2E Drop Session' }).first()
+await dropCard.locator('.session-head').first().click()
+const startBtn = dropCard.getByRole('button', { name: /Start session|Start this session|Resume/ }).first()
+await startBtn.click()
 await page.waitForSelector('.gw-set', { timeout: 20000 })
 ok('drops shown to the client in the player', await page.getByText(/\+2 drops/).count() > 0)
 await page.locator('.gw-set input[type="checkbox"]').first().check()

@@ -172,3 +172,14 @@ Two other traps from the same run: `.eyebrow` is uppercased in CSS and `innerTex
 returns the transformed text (match case-insensitively), and a session title can
 appear twice on the Train screen — once in the plan list, once in "Your sessions"
 history — so scope to the first `.session-card` rather than counting page-wide.
+
+## A page-wide `.first()` can turn a real assertion into a vacuous one (2026-08-31)
+`e2e_round10_client_ui` clicked `getByRole('button', {name: /Start session|.../}).first()`
+page-wide. After the chooser gained more session cards, `.first()` matched a different
+card's button, so the player opened the WRONG session — and the follow-up check
+("drops survive finishing the session") then read an untouched row and passed for the
+wrong reason. Only the display assertion failed, which is what exposed it.
+Rule: scope an action to the container it belongs to
+(`page.locator('.session-card', { hasText: NAME })`), never a page-wide `.first()`.
+And treat a passing assertion next to a failing one in the same flow as suspect —
+if the failure means the flow went somewhere else, the "pass" is meaningless.

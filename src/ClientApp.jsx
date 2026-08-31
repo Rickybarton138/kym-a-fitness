@@ -8,7 +8,7 @@ import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
 import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
-import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel, lastTimeLabel } from './WorkoutRows.jsx'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel, lastTimeLabel, useWorkoutDraft } from './WorkoutRows.jsx'
 import { lastSetsByName } from './lifts.js'
 import { ParqSection } from './Parq.jsx'
 import { latestParq } from './parq.js'
@@ -1614,9 +1614,10 @@ function AiPlan({ clientId, onSaved }) {
 }
 
 function OwnPlan({ clientId, trainerId, onSaved, history = [] }) {
-  const [title, setTitle] = useState('')
-  const [focus, setFocus] = useState('')
-  const [rows, setRows] = useState([newExerciseRow()])
+  // Kept in localStorage as it's typed. A client building a session set by set
+  // while she trains must not lose it to a reload or a backgrounded app — which
+  // is exactly what happened before.
+  const { title, focus, rows, setTitle, setFocus, setRows, clear, hasDraft } = useWorkoutDraft('own:' + clientId)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -1626,21 +1627,24 @@ function OwnPlan({ clientId, trainerId, onSaved, history = [] }) {
     const exercises = rowsToExercises(rows, 'Own choice')
     if (exercises.length === 0) { setError('Add at least one exercise with a set.'); return }
     setSaving(true); setError('')
-    const { data } = await supabase.from('workout_plans').insert({
+    const { data, error: err } = await supabase.from('workout_plans').insert({
       client_id: clientId, title: title.trim() || 'My session', focus: focus.trim() || 'Custom', exercises, finisher: null,
     }).select().single()
     setSaving(false)
-    if (data) {
-      onSaved(data)
-      setSaved(true)
-      setTitle(''); setFocus(''); setRows([newExerciseRow()])
-      setTimeout(() => setSaved(false), 2500)
-    }
+    // The error used to be discarded, so a failed save looked identical to
+    // nothing happening — and the work looked like it had vanished. Say so, and
+    // keep the draft so nothing is lost either way.
+    if (err || !data) { setError((err?.message || 'Could not save that session') + ' — your session is still here, try again.'); return }
+    onSaved(data)
+    setSaved(true)
+    clear()
+    setTimeout(() => setSaved(false), 2500)
   }
 
   return (
     <div className="stack">
       <p className="lead">Add your own session — your exercises, sets and reps.</p>
+      {hasDraft && <p className="muted-note">Picked up where you left off — nothing you typed was lost.</p>}
       <div className="grid-2">
         <label className="field">Session name<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leg day" /></label>
         <label className="field">Focus<input value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="e.g. Legs" /></label>
@@ -3219,7 +3223,7 @@ function IGContent({ coachName, onBack }) {
 // The client's whole programme — every week, what's in each session, and which
 // one is today. Reached by tapping the plan card at the top of the Train tab
 // (Paul: "have the program details at the top of the training tab as clickable
-// so they can see the details of their program").
+// so they can see the details of their programme").
 function MyProgram({ clientId, onBack, onGo }) {
   const [prog, setProg] = useState(undefined)
   const [openId, setOpenId] = useState(null)

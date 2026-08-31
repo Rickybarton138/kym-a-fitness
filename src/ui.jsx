@@ -158,7 +158,11 @@ const PROGRAM_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
 
 // Shared by the client (self-assigning from the library) and the coach
 // (AssignProgram) so both flows pick training days the same way.
-export function ProgramDayPicker({ sessionsPerWeek, initialDays, onCancel, onConfirm }) {
+// `ownDays` = the programme's sessions already carry their own weekdays, so
+// picking days here is optional and only overrides them. Without this the
+// Confirm button was disabled until you picked days you didn't need (Paul: "if
+// the programme specifies the days ... I don't then need to pick training days").
+export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, onCancel, onConfirm }) {
   const [days, setDays] = useState(initialDays || [])
   const [start, setStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
   const [busy, setBusy] = useState(false)
@@ -170,9 +174,11 @@ export function ProgramDayPicker({ sessionsPerWeek, initialDays, onCancel, onCon
   }
   return (
     <div className="card" style={{ background: 'var(--surface-2)', marginTop: 8 }}>
-      <p className="eyebrow">Which days do you want to train?</p>
+      <p className="eyebrow">{ownDays ? 'Training days (optional)' : 'Which days do you want to train?'}</p>
       <p className="muted-note">
-        {sessionsPerWeek ? `This program has ${sessionsPerWeek} session${sessionsPerWeek === 1 ? '' : 's'} a week — pick ${sessionsPerWeek} day${sessionsPerWeek === 1 ? '' : 's'} and it'll apply the same days across every week.` : 'Pick your training days and it applies across every week.'}
+        {ownDays
+          ? 'This program already sets which day each session falls on — just pick a start date. Only choose days here if you want to override them.'
+          : sessionsPerWeek ? `This program has ${sessionsPerWeek} session${sessionsPerWeek === 1 ? '' : 's'} a week — pick ${sessionsPerWeek} day${sessionsPerWeek === 1 ? '' : 's'} and it'll apply the same days across every week.` : 'Pick your training days and it applies across every week.'}
       </p>
       <div className="seg" style={{ flexWrap: 'wrap' }}>
         {PROGRAM_WEEK_ORDER.map((dow) => (
@@ -182,7 +188,7 @@ export function ProgramDayPicker({ sessionsPerWeek, initialDays, onCancel, onCon
       <label className="field" style={{ marginTop: 8 }}>Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
       <div className="grid-2" style={{ marginTop: 10 }}>
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn primary" disabled={!days.length || busy} onClick={confirm}>{busy ? 'Adding…' : 'Confirm'}</button>
+        <button type="button" className="btn primary" disabled={(!days.length && !ownDays) || busy} onClick={confirm}>{busy ? 'Adding…' : 'Confirm'}</button>
       </div>
     </div>
   )

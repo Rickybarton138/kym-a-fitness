@@ -48,7 +48,10 @@ export function useWorkoutDraft(key) {
       const raw = localStorage.getItem(storeKey)
       if (raw) {
         const d = JSON.parse(raw)
-        if (d && Array.isArray(d.rows) && d.rows.some(rowHasContent)) return d
+        // Restore on the same condition the draft is SAVED on below. These
+        // disagreed: a draft with a name but no exercises yet was written to
+        // storage and then silently ignored on the way back in.
+        if (d && Array.isArray(d.rows) && (d.title || d.focus || d.rows.some(rowHasContent))) return d
       }
     } catch { /* ignore */ }
     return null
