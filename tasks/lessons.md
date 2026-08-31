@@ -183,3 +183,16 @@ Rule: scope an action to the container it belongs to
 (`page.locator('.session-card', { hasText: NAME })`), never a page-wide `.first()`.
 And treat a passing assertion next to a failing one in the same flow as suspect —
 if the failure means the flow went somewhere else, the "pass" is meaningless.
+
+## "Feature X is broken" can mean it never worked (2026-08-31)
+Paul reported forgotten-password as broken. It was never working: 43 users,
+`confirmation_sent_at` null on all of them, one `recovery_sent_at` ever and that to
+a test address. No custom SMTP, so Supabase's built-in mailer had never delivered to
+a real person. `/recover` returns 200 either way, which is why nobody noticed.
+Rule: before hunting a regression in an auth/email/webhook path, check whether it has
+EVER succeeded — one aggregate query over the relevant timestamp columns settles it
+in seconds and reframes the whole job. Volume matters too: two locked-out clients
+produced exactly one `/recover` request in 24h, which itself said their attempts
+weren't reaching the API the way the report implied.
+Also: a build-time secret you don't have is a hard dependency, not a blocker to the
+whole task — ship the code with a clean 503 and hand over exact instructions.
