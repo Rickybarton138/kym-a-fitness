@@ -2861,6 +2861,7 @@ function BodyScan({ clientId, coachName }) {
   const [pose, setPose] = useState('front')
   const [date, setDate] = useState('')
   const [showCam, setShowCam] = useState(false)
+  const [pending, setPending] = useState(null) // { file, preview } awaiting its date
   const today = new Date().toISOString().slice(0, 10)
 
   async function load() {
@@ -2869,6 +2870,11 @@ function BodyScan({ clientId, coachName }) {
   }
   useEffect(() => { load() }, [])
 
+  // The date is asked for AFTER the photo is in hand, never before. Picking an
+  // old photo opens the OS gallery, which backgrounds the tab — and a
+  // memory-constrained phone can reload the PWA while it's away, wiping any date
+  // typed beforehand. Every photo then saved as "today", which is exactly the
+  // case backdating exists for. Choosing the date at save time closes that gap.
   async function handleFile(file) {
     if (!file) return
     setError(''); setSummary(''); setState('scanning')
@@ -2897,7 +2903,7 @@ function BodyScan({ clientId, coachName }) {
       if (up.error) throw new Error(up.error.message)
       const { data } = await supabase.from('body_scans').insert({ client_id: clientId, photo_path: path, summary: s || null, pose, created_at: takenAt }).select().single()
       if (data) setScans((c) => [...c, data].sort((a, b) => b.created_at.localeCompare(a.created_at)))
-      setDate('')
+      setDate(''); setPending(null)
       setState('done')
     } catch (err) { setError(err.message); setState('error') }
   }
@@ -2913,14 +2919,28 @@ function BodyScan({ clientId, coachName }) {
       <div className="seg" style={{ marginBottom: 4 }}>
         {BODY_POSES.map(([v, l]) => <button type="button" key={v} className={pose === v ? 'on' : ''} onClick={() => setPose(v)}>{l}</button>)}
       </div>
-      <label className="field">Date<input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></label>
-      <p className="muted-note">Uploading an old photo to mark your real starting point? Set the date above so your timeline stays accurate.</p>
-      {state !== 'scanning' && <button className="btn primary big" onClick={() => setShowCam(true)}>Add {poseLabel.toLowerCase()} photo</button>}
+      {pending && (
+        <div className="card" style={{ borderColor: 'var(--accent)' }}>
+          <p className="eyebrow accent">When was this taken?</p>
+          <div className="shot" style={{ maxHeight: 240, marginBottom: 10 }}><img src={pending.preview} alt="Photo to save" /></div>
+          <label className="field">Date taken
+            <input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <p className="muted-note">Leave it blank for today, or set the real date if this is an older photo.</p>
+          <div className="nudge-actions" style={{ marginTop: 10 }}>
+            <button type="button" className="btn primary sm" disabled={state === 'scanning'} onClick={() => handleFile(pending.file)}>
+              {state === 'scanning' ? 'Saving…' : 'Save photo'}
+            </button>
+            <button type="button" className="btn ghost sm" disabled={state === 'scanning'} onClick={() => { setPending(null); setDate('') }}>Discard</button>
+          </div>
+        </div>
+      )}
+      {state !== 'scanning' && !pending && <button className="btn primary big" onClick={() => setShowCam(true)}>Add {poseLabel.toLowerCase()} photo</button>}
       {state === 'scanning' && <Loader text="Scanning your progress…" />}
       {summary && <div className="card"><div className="fc-block"><b>{first ? 'Your baseline' : 'Since your last scan'}</b><p>{summary}</p></div></div>}
       {state === 'error' && <p className="error">{error}</p>}
       <p className="disclaimer-note">Photos are private to you and {coachFirst}. AI reads visible change only — it can’t measure exact inches or body-fat, so treat figures as estimates.</p>
-      {showCam && <CameraCapture onCapture={(file) => { setShowCam(false); handleFile(file) }} onClose={() => setShowCam(false)} />}
+      {showCam && <CameraCapture onCapture={(file) => { setShowCam(false); setPending({ file, preview: URL.createObjectURL(file) }) }} onClose={() => setShowCam(false)} />}
       {scans.map((sc) => <BodyScanCard key={sc.id} scan={sc} />)}
     </div>
   )

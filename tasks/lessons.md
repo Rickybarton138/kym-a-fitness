@@ -206,3 +206,18 @@ like an authorisation bug. Fixed by probing with an all-zeros UUID that belongs 
 nobody: configured answers 403, unconfigured answers 503, and nothing is changed.
 Rule: a probe that asks "does this work?" must be addressed at a target where the
 answer costs nothing — never at live data.
+
+## Ask for a value AFTER the thing that can destroy it (2026-09-01)
+Progress-photo backdating never worked: not one photo in 43 users' data had ever
+been backdated, while measurements backdated fine. The date field sat BEFORE the
+"add photo" button, and picking an old photo opens the OS gallery, which backgrounds
+the tab — a phone under memory pressure reloads the PWA and the typed date is gone,
+so the insert falls back to now(). Measurements never open a file picker, which is
+why only photos were affected.
+Rule: if a user-entered value has to survive a trip through the OS (file picker,
+camera, OAuth, payment sheet), either persist it or — better — ask for it AFTER the
+trip, in the same uninterrupted interaction. The database honoured the explicit
+created_at all along; the value simply never arrived.
+Diagnostic that settled it in one query: compare the stored timestamps against the
+signature the backdate path would leave (a fixed 12:00 local time). Every row had an
+arbitrary clock time, proving the backdate branch had never once run.
