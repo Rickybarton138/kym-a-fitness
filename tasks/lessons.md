@@ -221,3 +221,29 @@ created_at all along; the value simply never arrived.
 Diagnostic that settled it in one query: compare the stored timestamps against the
 signature the backdate path would leave (a fixed 12:00 local time). Every row had an
 arbitrary clock time, proving the backdate branch had never once run.
+
+## A convenience write inherits the destination's audience (2026-09-01)
+Paul's client: "every session I have built for any client is showing in his list
+of sessions ... I lost my shit and just went home." True. To spare Paul rebuilding
+week 1 four times, addSession was made to also save each custom-built session into
+workout_templates. The reuse worked. What was missed is that workout_templates is
+not a private scratch pad: wt_client_read makes an untagged row readable by EVERY
+client of that coach. So 13 sessions built inside individual clients' programs
+became a shared library, and each client's "Start a workout" led with 13 sessions
+that were not theirs, burying the four that were.
+Rule: before writing to a table as a convenience, read its RLS policy and ask who
+can now see this. A table is an audience, not just a shape. The insert was correct
+in every column it set; the harm was in the column it left NULL.
+Two corollaries, both of which bit:
+- A permissive column default is a leak waiting to happen. visible_to_clients
+  defaults true (right for a library the coach builds on purpose), so the other
+  insert path states `visible_to_clients: false` explicitly rather than relying on
+  a default that means the opposite of what it needs. Asserted in both directions.
+- Hiding a row can break the client it was assigned to. A template on a client's
+  weekday is read by id; making it invisible blanks that day. The policy therefore
+  keeps an "assigned to me" branch. Jamie already had such a row, tagged out of his
+  own reach — his Sunday had been silently empty and the fix repaired it.
+Also: the reuse this was built for had already been solved properly by the
+"Sessions in this program" picker added in the same batch. The auto-save was dead
+weight carrying a leak. When a later change makes an earlier workaround redundant,
+delete the workaround.
