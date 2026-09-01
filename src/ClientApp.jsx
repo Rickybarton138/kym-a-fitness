@@ -493,8 +493,10 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
   // One client-side date basis for the whole card (matches AccountabilityCard).
   const today = new Date().toISOString().slice(0, 10)
   const target = profile.step_target || 10000
+  const waterTarget = profile.water_target_ml || 2500
   const [steps, setSteps] = useState(null)
   const [stepInput, setStepInput] = useState('')
+  const [savingWater, setSavingWater] = useState(false)
   const [savingSteps, setSavingSteps] = useState(false)
   const [trainedToday, setTrainedToday] = useState(false)
   const [marking, setMarking] = useState(false)
@@ -563,6 +565,19 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
     if (r.kind === 'reply' || r.kind === 'evidence') onGo('ask') // open the coach chat
   }
 
+  // Fluid intake shares the daily_steps row — one row per client per day. The
+  // upsert only names the column it changes, so saving water never clears steps
+  // and vice versa.
+  async function addWater(ml) {
+    const next = Math.max(0, (steps?.water_ml || 0) + ml)
+    setSavingWater(true)
+    const { data } = await supabase.from('daily_steps')
+      .upsert({ client_id: profile.id, day: today, water_ml: next, updated_at: new Date().toISOString() }, { onConflict: 'client_id,day' })
+      .select().single()
+    if (data) setSteps(data)
+    setSavingWater(false)
+  }
+
   async function saveSteps() {
     const n = Math.max(0, parseInt(stepInput, 10) || 0)
     setSavingSteps(true)
@@ -580,6 +595,7 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
   }
 
   const stepsVal = steps?.steps || 0
+  const waterVal = steps?.water_ml || 0
   const checkedInToday = lastCheckin ? lastCheckin.slice(0, 10) === today : false
   const daysSince = lastCheckin ? (Date.now() - new Date(lastCheckin).getTime()) / 86400000 : 999
   // If the coach scheduled the check-in onto a day, honour that; else weekly/Monday default.
@@ -634,6 +650,20 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
             <button className="btn ghost sm" disabled={savingSteps} onClick={saveSteps}>{savingSteps ? '…' : 'Save'}</button>
           </span>
         </AgendaItem>
+
+        {THEME.features?.water && (
+          <AgendaItem
+            done={waterVal >= waterTarget}
+            label={`Water · ${(waterVal / 1000).toFixed(1)}L / ${(waterTarget / 1000).toFixed(1)}L`}
+            sub={waterVal >= waterTarget ? 'Target hit — nice one' : 'Tap as you drink through the day'}
+          >
+            <span className="agenda-water">
+              <button className="btn ghost sm" disabled={savingWater || waterVal === 0} onClick={() => addWater(-250)} aria-label="Remove 250ml">−</button>
+              <button className="btn ghost sm" disabled={savingWater} onClick={() => addWater(250)}>+250</button>
+              <button className="btn ghost sm" disabled={savingWater} onClick={() => addWater(500)}>+500</button>
+            </span>
+          </AgendaItem>
+        )}
 
         <AgendaItem
           done={trainedToday}
@@ -2193,8 +2223,40 @@ function BarcodeScan({ onLog, onBack }) {
   const [error, setError] = useState('')
   const [logged, setLogged] = useState(false)
   const [camOn, setCamOn] = useState(false)
+  const [showShot, setShowShot] = useState(false) // photo-a-barcode path (iOS and anything without BarcodeDetector)
   const videoRef = useRef(null)
   const canScan = typeof window !== 'undefined' && 'BarcodeDetector' in window
+
+  // Reading the number off a photo. BarcodeDetector is Chromium-only, so on an
+  // iPhone the screen said "scan the barcode" with no way to scan one — this is
+  // the path that works everywhere.
+  async function lookupPhoto(file) {
+    setShowShot(false)
+    setState('loading'); setError(''); setProduct(null); setLogged(false)
+    try {
+      const image = await scaleImageToBase64(file, 1200)
+      const res = await fetch('/.netlify/functions/barcode', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ image, mediaType: 'image/jpeg' }),
+      })
+      const j = await res.json()
+      if (j.status === 'unreadable') {
+        setState('idle')
+        setError('Couldn’t read that barcode — try again with the number in shot, or type it below.')
+        return
+      }
+      if (j.barcode) setCode(String(j.barcode))
+      applyLookup(j)
+    } catch {
+      setState('idle'); setError('Couldn’t read that photo — type the number instead.')
+    }
+  }
+
+  function applyLookup(j) {
+    if (j.status === 'found') { setProduct(j.product); setState('found') }
+    else if (j.status === 'not_found') setState('notfound')
+    else { setError(j.error || 'Lookup failed.'); setState('error') }
+  }
 
   async function lookup(barcode) {
     setState('loading'); setError(''); setProduct(null); setLogged(false)
@@ -2266,6 +2328,12 @@ function BarcodeScan({ onLog, onBack }) {
           <button className="btn primary big" style={{ marginTop: 12 }} onClick={startCam}>Scan with camera</button>
         )
       )}
+      {!camOn && (
+        <button className={'btn ' + (canScan ? 'ghost' : 'primary big')} style={{ marginTop: canScan ? 8 : 12 }} onClick={() => setShowShot(true)}>
+          {canScan ? 'Or take a photo of the barcode' : 'Take a photo of the barcode'}
+        </button>
+      )}
+      {showShot && <CameraCapture onCapture={lookupPhoto} onClose={() => setShowShot(false)} />}
 
       <form className="auth-form" onSubmit={submitManual} style={{ marginTop: 14 }}>
         <label>Barcode number

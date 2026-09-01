@@ -674,3 +674,10 @@ input { font-family: inherit; }
 
 /* Agenda rows whose whole body is the tap target */
 .agenda-body-tap { border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+
+/* Fluid intake quick-add buttons on the agenda */
+.agenda-water { display: flex; gap: 4px; }
+.agenda-water .btn { padding: 0 8px; min-width: 34px; }
+
+/* Food diary entry name doubles as the way in to editing it */
+.diary-edit { border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }

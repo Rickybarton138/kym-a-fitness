@@ -29,6 +29,12 @@ const MAX_AHEAD = 14 // days you can pre-log into the future
 export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diary', onBack, onChanged }) {
   const [day, setDay] = useState(() => new Date())
   const [logs, setLogs] = useState(null)
+  const [editing, setEditing] = useState(null) // nutrition_logs row being corrected
+  const [mult, setMult] = useState('1')
+  const [eMeal, setEMeal] = useState('')
+  const [eDate, setEDate] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editErr, setEditErr] = useState('')
   const [targets, setTargets] = useState(null)
   const [week, setWeek] = useState(null)
   const [adding, setAdding] = useState(false)
@@ -79,6 +85,33 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     supabase.from('macro_targets').select('*').eq('client_id', clientId).maybeSingle().then(({ data }) => setTargets(data))
     loadWeek()
   }, [])
+
+  // Correcting an entry after the fact: the portion it was logged at, which meal
+  // it belongs to, and which day. Macros are stored as absolutes, so a portion
+  // change is a multiplier applied to what's there now.
+  function openEdit(l) {
+    setEditing(l)
+    setMult('1')
+    setEMeal(l.meal_type || mealOf(l.logged_at))
+    setEDate(dayKey(new Date(l.logged_at)))
+  }
+  async function saveEdit() {
+    const f = Math.max(0.05, Number(mult) || 1)
+    const scale = (n) => Math.round((n || 0) * f)
+    const when = new Date(editing.logged_at)
+    const [y, m, d] = eDate.split('-').map(Number)
+    when.setFullYear(y, m - 1, d) // keep the time of day, move the date
+    setSavingEdit(true)
+    const { error } = await supabase.from('nutrition_logs').update({
+      calories: scale(editing.calories), protein_g: scale(editing.protein_g),
+      carbs_g: scale(editing.carbs_g), fat_g: scale(editing.fat_g), fibre_g: scale(editing.fibre_g),
+      meal_type: eMeal, logged_at: when.toISOString(),
+    }).eq('id', editing.id)
+    setSavingEdit(false)
+    if (error) { setEditErr(error.message); return }
+    setEditing(null)
+    loadDay(day); loadWeek(); onChanged && onChanged()
+  }
 
   async function del(id) {
     await supabase.from('nutrition_logs').delete().eq('id', id)
@@ -159,12 +192,51 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
           <p className="eyebrow">{g.meal}</p>
           {g.items.map((l) => (
             <div className="diary-item" key={l.id}>
-              <div className="diary-name">{l.name || 'Food'}<span className="diary-macros">{l.calories} kcal · {l.protein_g}P {l.carbs_g}C {l.fat_g}F</span></div>
+              <button type="button" className="diary-name diary-edit" onClick={() => openEdit(l)} aria-label={`Edit ${l.name || 'entry'}`}>
+                {l.name || 'Food'}<span className="diary-macros">{l.calories} kcal · {l.protein_g}P {l.carbs_g}C {l.fat_g}F</span>
+              </button>
               <button type="button" className="diary-del" onClick={() => del(l.id)} aria-label={`Delete ${l.name || 'entry'}`}>×</button>
             </div>
           ))}
         </div>
       ))}
+
+      {editing && (
+        <div className="sheet-overlay" onClick={() => setEditing(null)}>
+          <div className="card sheet" onClick={(e) => e.stopPropagation()}>
+            <p className="eyebrow accent">Edit entry</p>
+            <div className="session-title" style={{ marginTop: 2 }}>{editing.name || 'Food'}</div>
+            <p className="muted-note">Currently {editing.calories} kcal · {editing.protein_g}P {editing.carbs_g}C {editing.fat_g}F</p>
+
+            <label className="field" style={{ marginTop: 10 }}>Portion
+              <input type="number" step="0.25" min="0.05" inputMode="decimal" value={mult} onChange={(e) => setMult(e.target.value)} />
+            </label>
+            <div className="seg" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+              {['0.5', '1', '1.5', '2'].map((v) => (
+                <button type="button" key={v} className={mult === v ? 'on' : ''} onClick={() => setMult(v)}>{v}×</button>
+              ))}
+            </div>
+            <p className="muted-note" style={{ marginTop: 6 }}>
+              {Number(mult) === 1 ? 'Leave at 1× to keep the amounts as they are.' : `Saves as ${Math.round((editing.calories || 0) * (Number(mult) || 1))} kcal.`}
+            </p>
+
+            <div className="grid-2" style={{ marginTop: 10 }}>
+              <label className="field">Meal
+                <select className="ex-select" value={eMeal} onChange={(e) => setEMeal(e.target.value)}>
+                  {MEALS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="field">Day<input type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} /></label>
+            </div>
+
+            {editErr && <p className="error">{editErr}</p>}
+            <div className="nudge-actions" style={{ marginTop: 12 }}>
+              <button type="button" className="btn primary sm" disabled={savingEdit || !eDate} onClick={saveEdit}>{savingEdit ? 'Saving…' : 'Save changes'}</button>
+              <button type="button" className="btn ghost sm" onClick={() => setEditing(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card week-snapshot">
         <p className="eyebrow">This week</p>

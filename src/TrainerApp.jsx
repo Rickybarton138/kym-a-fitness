@@ -39,7 +39,7 @@ export default function TrainerApp({ profile, onSignOut }) {
 
   async function loadClients() {
     const { data } = await supabase
-      .from('profiles').select('id, full_name, created_at, membership_tier, goal, step_target, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note')
+      .from('profiles').select('id, full_name, created_at, membership_tier, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note')
       .eq('trainer_id', profile.id).order('created_at', { ascending: true })
     setClients(data || [])
     setLoading(false)
@@ -564,6 +564,7 @@ function ClientDetail({ client, trainerId, onBack }) {
   const [tier, setTier] = useState(client.membership_tier || 'standard')
   const [tierBusy, setTierBusy] = useState(false)
   const [stepTarget, setStepTarget] = useState(client.step_target != null ? String(client.step_target) : '')
+  const [waterTarget, setWaterTarget] = useState(client.water_target_ml != null ? String(client.water_target_ml) : '')
   const [stepSaved, setStepSaved] = useState(false)
 
   async function changeTier(t) {
@@ -572,6 +573,12 @@ function ClientDetail({ client, trainerId, onBack }) {
     const { error } = await supabase.rpc('set_member_tier', { p_client: client.id, p_tier: t })
     if (!error) setTier(t)
     setTierBusy(false)
+  }
+
+  async function saveWaterTarget() {
+    const n = Math.max(0, parseInt(waterTarget, 10) || 0)
+    const { error } = await supabase.rpc('set_water_target', { p_client: client.id, p_ml: n })
+    if (!error) { setWaterTarget(String(n)); setStepSaved(true); setTimeout(() => setStepSaved(false), 1500) }
   }
 
   async function saveStepTarget() {
@@ -673,6 +680,17 @@ function ClientDetail({ client, trainerId, onBack }) {
                     <label className="field">Steps / day<input type="number" inputMode="numeric" value={stepTarget} onChange={(e) => setStepTarget(e.target.value)} placeholder="10000" /></label>
                   </div>
                   <button className="btn primary" onClick={saveStepTarget}>{stepSaved ? 'Saved ✓' : 'Save step target'}</button>
+                </div>
+              )}
+
+              {THEME.features?.water && (
+                <div className="card">
+                  <p className="eyebrow">Daily fluid target</p>
+                  <p className="muted-note" style={{ marginBottom: 8 }}>Shows on {(client.full_name || 'your client').split(' ')[0]}’s daily plan, logged in glasses as they drink. Leave blank for the default 2.5L.</p>
+                  <div className="grid-2">
+                    <label className="field">Millilitres / day<input type="number" inputMode="numeric" step="250" value={waterTarget} onChange={(e) => setWaterTarget(e.target.value)} placeholder="2500" /></label>
+                  </div>
+                  <button className="btn primary" onClick={saveWaterTarget}>{stepSaved ? 'Saved ✓' : 'Save fluid target'}</button>
                 </div>
               )}
             </CoachSection>
