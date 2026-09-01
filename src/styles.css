@@ -681,3 +681,8 @@ input { font-family: inherit; }
 
 /* Food diary entry name doubles as the way in to editing it */
 .diary-edit { border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+
+/* Checkbox with a label and a line of explanation under it. */
+.check-row { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; font-size: 14px; color: var(--text); cursor: pointer; }
+.check-row input[type="checkbox"] { width: 18px; height: 18px; margin-top: 1px; flex: none; accent-color: var(--accent); }
+.check-row em { display: block; font-style: normal; margin-top: 2px; }

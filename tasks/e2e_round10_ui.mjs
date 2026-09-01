@@ -117,20 +117,48 @@ ok('superset pair stored with a shared group', supers.length === 2 && supers[0].
 const dropEx = ex.find((e) => e.set_type === 'dropset')
 ok('drops stored per set', !!dropEx && dropEx.sets.every((s) => s.drops === 2), JSON.stringify(dropEx?.sets))
 
-// --- item 3: the custom session became a reusable template ---
-// The template insert follows the session insert, so poll rather than sample.
-let tplCount = 0
-for (let i = 0; i < 20 && tplCount === 0; i++) {
-  const { data } = await api.from('workout_templates').select('title').eq('coach_id', paulId).eq('title', 'E2E Superset Session')
-  tplCount = (data || []).length
-  if (!tplCount) await new Promise((r) => setTimeout(r, 500))
+// --- item 3: keeping the custom session as a template is OPT-IN ---
+// It used to be automatic. That published every session built inside a client's
+// program to the coach-wide library, where an untagged template is readable by
+// every client of that coach — so Paul's clients all saw each other's sessions
+// (round 18). The box above was left unticked, so nothing should have been
+// published. Waiting first, so this is a real absence and not a race.
+await new Promise((r) => setTimeout(r, 4000))
+const { data: unasked } = await api.from('workout_templates').select('title').eq('coach_id', paulId).eq('title', 'E2E Superset Session')
+ok('an unticked custom session is NOT published to the library', (unasked || []).length === 0, JSON.stringify(unasked))
+
+// ...and ticking it keeps the session, still unshared. Asserted rather than
+// left to the column default, because a template that defaults to visible is
+// exactly how the leak happened.
+await page.locator('select').filter({ hasText: 'Build a custom session' }).first().selectOption('__custom__')
+await page.locator('input[placeholder="e.g. Upper Push A"]').fill('E2E Kept Session')
+const keepRow = page.locator('.ex-input').first()
+await keepRow.locator('select.ex-select').first().selectOption('Leg Press')
+const keepSets = keepRow.locator('.set-row')
+for (let k = 0; k < await keepSets.count(); k++) {
+  await keepSets.nth(k).locator('input').nth(0).fill('10')
+  await keepSets.nth(k).locator('input').nth(1).fill('50')
 }
-ok('custom session saved as a reusable template', tplCount === 1)
+const keepBox = page.locator('.check-row', { hasText: 'Keep this in my session templates' }).first()
+ok('the builder offers to keep it as a template', await keepBox.waitFor({ timeout: 15000 }).then(() => true, () => false))
+ok('and it is off unless asked for', (await keepBox.locator('input[type="checkbox"]').isChecked()) === false)
+await keepBox.locator('input[type="checkbox"]').check()
+await page.locator('.slot-row').nth(1).getByRole('button', { name: 'Any' }).click()
+await page.getByRole('button', { name: 'Add to program' }).click()
+
+let kept = null
+for (let i = 0; i < 20 && !kept; i++) {
+  const { data } = await api.from('workout_templates').select('title, visible_to_clients')
+    .eq('coach_id', paulId).eq('title', 'E2E Kept Session').maybeSingle()
+  kept = data
+  if (!kept) await new Promise((r) => setTimeout(r, 500))
+}
+ok('ticking it does keep the session as a template', !!kept)
+ok('and that template starts private, not shared with clients', kept?.visible_to_clients === false, JSON.stringify(kept))
+
 await page.reload()
-await page.waitForSelector(`text=${PROG}`)
+await page.waitForSelector(`text=${PROG}`, { timeout: 25000 })
 await page.getByText(PROG).first().click()
-const tplOptions = await page.locator('select').filter({ hasText: 'Build a custom session' }).first().innerText()
-ok('and appears in the template dropdown for other weeks', tplOptions.includes('E2E Superset Session'), tplOptions.replace(/\n/g, ' | ').slice(0, 120))
 
 // --- item 4: the typed exercise persisted ---
 const { data: ce } = await api.from('coach_exercises').select('name').eq('coach_id', paulId).eq('name', EX_NAME)

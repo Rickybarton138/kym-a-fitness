@@ -2939,6 +2939,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
     setTitle: setCustomTitle, setFocus: setCustomFocus, setRows: setCustomRows,
     clear: clearCustom, hasDraft: hasCustomDraft,
   } = useWorkoutDraft('progsess:' + coachId)
+  const [keepTpl, setKeepTpl] = useState(false) // also keep this custom session in the template library
   const [addError, setAddError] = useState('') // scoped to the add-session flow, so it doesn't get lost below a long programme card
   const [editSess, setEditSess] = useState(null) // program_session id being edited
   // AI whole-programme edit: one instruction rewrites all sessions.
@@ -3024,20 +3025,25 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
       return { ...s, [programId]: next }
     })
-    // A session built from scratch also becomes a reusable template, so the same
-    // session can be dropped into the other weeks instead of being rebuilt
-    // (Paul: "3 of the weeks are the same but I have to create every workout").
-    // Any exercise name typed by hand is remembered too.
+    // Any exercise name typed by hand is remembered.
+    //
+    // Keeping the session as a template is OPT-IN. It used to happen on every
+    // custom build, which quietly published sessions built inside one client's
+    // programme into the coach-wide library — and an untagged template shows to
+    // every client, so they all saw each other's sessions. Placing a session on
+    // more weeks never needed this anyway: "Sessions in this program" above
+    // does that. Saved here it starts unshared, for the coach to reuse.
     if (pickTpl === '__custom__') {
       await rememberExercises(exercises, coachId, coachId)
       const dupe = templates.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase())
-      if (!dupe) {
+      if (keepTpl && !dupe) {
         const { data: tpl } = await supabase.from('workout_templates')
-          .insert({ coach_id: coachId, title, focus, exercises, finisher }).select().single()
+          .insert({ coach_id: coachId, title, focus, exercises, finisher, visible_to_clients: false })
+          .select().single()
         if (tpl) setTemplates((t) => [tpl, ...t])
       }
     }
-    setPickTpl(''); setDayLabel(''); setSlots([]); setAddError('')
+    setPickTpl(''); setDayLabel(''); setSlots([]); setAddError(''); setKeepTpl(false)
     clearCustom()
   }
 
@@ -3366,6 +3372,13 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                         <label className="field">Focus<input value={customFocus} onChange={(e) => setCustomFocus(e.target.value)} placeholder="e.g. Push" /></label>
                       </div>
                       <ExerciseRowsEditor rows={customRows} setRows={setCustomRows} coachId={coachId} />
+                      <label className="check-row">
+                        <input type="checkbox" checked={keepTpl} onChange={(e) => setKeepTpl(e.target.checked)} />
+                        <span>
+                          Keep this in my session templates
+                          <em className="muted-note">For reusing in other programs. Stays private to you until you share it — to place it on more weeks of this one, just pick it under “Sessions in this program”.</em>
+                        </span>
+                      </label>
                     </div>
                   )}
 
@@ -3440,6 +3453,7 @@ function CoachTemplates({ coachId }) {
   const [tagEditId, setTagEditId] = useState(null)
   const [tagDraft, setTagDraft] = useState('')
   const [tagSaving, setTagSaving] = useState(false)
+  const [shareBusy, setShareBusy] = useState(null)
 
   async function load() {
     const { data } = await supabase.from('workout_templates').select('*').eq('coach_id', coachId).order('created_at', { ascending: false })
@@ -3455,6 +3469,10 @@ function CoachTemplates({ coachId }) {
     const { data, error: err } = await supabase.from('workout_templates').insert({
       coach_id: coachId, title: title.trim() || 'Session template', focus: focus.trim() || null, exercises,
       audience_tag: audienceTag.trim().toLowerCase() || null,
+      // Built here on purpose, for clients to start themselves — so shared.
+      // Stated rather than left to the column default, because the other
+      // insert path (a programme's custom session) must stay private.
+      visible_to_clients: true,
     }).select().single()
     setSaving(false)
     if (err) { setError(err.message); return }
@@ -3462,6 +3480,17 @@ function CoachTemplates({ coachId }) {
       setItems((i) => [data, ...i])
       clear(); setAudienceTag(''); setOpen(false)
     }
+  }
+
+  // Whether a template is offered to clients at all, kept separate from the tag
+  // (which answers "which group", not "shared or not"). Sessions saved out of a
+  // programme builder start private; this is how they get shared on purpose.
+  async function setShared(t, share) {
+    setShareBusy(t.id)
+    const { data, error: err } = await supabase.from('workout_templates')
+      .update({ visible_to_clients: share }).eq('id', t.id).select().single()
+    setShareBusy(null)
+    if (!err && data) setItems((i) => i.map((x) => (x.id === data.id ? data : x)))
   }
 
   function startTagEdit(t) { setTagEditId(t.id); setTagDraft(t.audience_tag || '') }
@@ -3490,7 +3519,7 @@ function CoachTemplates({ coachId }) {
               <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
                 <div>
                   <div className="session-title">{t.title}</div>
-                  <div className="session-sub">{t.focus ? t.focus + ' · ' : ''}{(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}{t.audience_tag ? ` · only "${t.audience_tag}"` : ' · shows to everyone'}</div>
+                  <div className="session-sub">{t.focus ? t.focus + ' · ' : ''}{(t.exercises || []).length} exercise{(t.exercises || []).length === 1 ? '' : 's'}{t.visible_to_clients === false ? ' · private to you' : t.audience_tag ? ` · only "${t.audience_tag}"` : ' · shows to everyone'}</div>
                 </div>
                 <span className="chev">{openId === t.id ? '−' : '+'}</span>
               </button>
@@ -3531,6 +3560,9 @@ function CoachTemplates({ coachId }) {
                   </ol>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" className="btn ghost sm" onClick={() => setEditId(t.id)}>Edit template</button>
+                    <button type="button" className="btn ghost sm" disabled={shareBusy === t.id} onClick={() => setShared(t, t.visible_to_clients === false)}>
+                      {shareBusy === t.id ? 'Saving…' : t.visible_to_clients === false ? 'Share with my clients' : 'Hide from my clients'}
+                    </button>
                     <button type="button" className="btn ghost sm" onClick={() => startTagEdit(t)}>Edit visibility</button>
                     <button type="button" className="btn ghost sm" onClick={() => del(t.id)}>Delete template</button>
                   </div>
