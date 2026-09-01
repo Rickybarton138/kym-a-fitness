@@ -41,7 +41,13 @@ ok('anonymous callers are refused', anon.status === 401, `${anon.status} ${JSON.
 const getReq = await fetch(FN).then((r) => r.status)
 ok('GET is refused', getReq === 405 || getReq === 404, String(getReq))
 
-const configured = (await call(coachToken, { clientId: jamieId, password: 'Squat-1234' })).status !== 503
+// Probe with an id that belongs to nobody: configured answers 403 (not your
+// client), unconfigured answers 503. Aiming this at a real client would ACTUALLY
+// reset their password and revoke their sessions, which is what made the
+// client-cannot-reset check below fail with a stale token.
+const configured = (await call(coachToken, {
+  clientId: '00000000-0000-0000-0000-000000000000', password: 'ProbeOnly-12345',
+})).status !== 503
 console.log(configured
   ? '      (service-role key IS configured — running the full authorisation checks)'
   : '      (service-role key NOT configured yet — the reset itself cannot work until it is)')

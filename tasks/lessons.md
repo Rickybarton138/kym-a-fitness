@@ -196,3 +196,13 @@ produced exactly one `/recover` request in 24h, which itself said their attempts
 weren't reaching the API the way the report implied.
 Also: a build-time secret you don't have is a hard dependency, not a blocker to the
 whole task — ship the code with a clean 503 and hand over exact instructions.
+
+## A capability probe must not have side effects (2026-09-01)
+e2e_round15 decided "is the service-role key configured?" by calling the reset
+endpoint with a REAL client id and a real password. Once the key was actually set,
+that probe reset Jamie's password for real and revoked his sessions — so the very
+next assertion ("a client cannot reset anyone") failed with a stale token and looked
+like an authorisation bug. Fixed by probing with an all-zeros UUID that belongs to
+nobody: configured answers 403, unconfigured answers 503, and nothing is changed.
+Rule: a probe that asks "does this work?" must be addressed at a target where the
+answer costs nothing — never at live data.
