@@ -114,3 +114,22 @@ Shipped 2026-08-02 (all 4 sites):
 - [ ] Phase 2 polish: progress photos (Supabase Storage) on body scan; workout history view for clients
 - [ ] Phase 4: PWA manifest + install prompt + app icons; onboarding for Kym + first clients
 - [ ] Nice-to-have: client messaging to coach; weekly check-in summary for Kym
+
+## Pending: template-visibility fix on the sibling brands (2026-09-01)
+`c4b0885` is live on ReDefine only. Kim, PPH and Elev8 run the same `TrainerApp`
+and still have the old builder, so the next custom session a coach there builds
+inside a program gets auto-published to that coach's whole client list.
+
+No existing leak on those sites: the backfill was scoped to Paul's coach_id, and
+Elev8's four demo templates are still shared exactly as before. The schema and
+policy change are global and already applied.
+
+To finish: `npm run build:<brand>` then deploy + `restoreSiteDeploy` for
+- coached-by-kim `08a2f0ba-f0a8-4ee9-80f5-cd314abacce3` (real clients)
+- the-physical-performance-hub `5e998585-cfd2-4e16-a272-b5ceac659c95`
+- elev8-hyrox `a7852fc7-7d64-429c-a9d5-041084399b9d`
+
+Unrelated, found while deploying: the PPH site serves "Coached by Kim" as its
+title, og: tags and install name, on production and on a fresh draft built with
+`build:pph` — even though that build stamps dist/index.html correctly. So it is
+the site, not the build script. Not diagnosed; not touched.
