@@ -65,17 +65,25 @@ page.setDefaultTimeout(25000)
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 
-const email = `e2e_onb_${Date.now()}@redefine.app`
-// A separate client: signUp signs the new user IN on whichever client makes the
-// call, which would quietly demote `coach` from Paul to a brand-new client and
-// make every later coach-side assertion fail on RLS.
+// ONE fixed fixture, reset before each run, rather than a fresh signup every
+// time: a coach cannot delete a profile through RLS, so the old approach left
+// an undeletable orphan client on Paul's roster on every single run.
+const email = 'e2e-onboard@redefine.app'
 const signupClient = createClient(SUPA, KEY)
-const { data: signUp, error: suErr } = await signupClient.auth.signUp({
-  email, password: 'TestPass123',
-  options: { data: { full_name: 'E2E Onboard', role: 'client', trainer_code: 'REDEF1' } },
-})
-ok('a test client can be created', !suErr, suErr?.message)
-const newId = signUp?.user?.id
+let signIn = await signupClient.auth.signInWithPassword({ email, password: 'TestPass123' })
+if (signIn.error) {
+  const su = await signupClient.auth.signUp({
+    email, password: 'TestPass123',
+    options: { data: { full_name: 'E2E Onboard', role: 'client', trainer_code: 'REDEF1' } },
+  })
+  ok('the onboarding fixture exists', !su.error, su.error?.message)
+  signIn = await signupClient.auth.signInWithPassword({ email, password: 'TestPass123' })
+} else {
+  ok('the onboarding fixture exists', true)
+}
+// Put it back to a brand-new client so the first step is the stats screen again.
+await signupClient.from('profiles').update({ onboarded_at: null, height_cm: null }).eq('id', signIn.data.user.id)
+await signupClient.auth.signOut()
 
 await page.goto(base)
 await page.locator('input[type="email"]').fill(email)
@@ -183,7 +191,7 @@ ok('no page errors', errors.length === 0, errors.join(' | '))
 
 // cleanup
 await coach.from('coach_exercises').delete().eq('coach_id', paulId).like('name', 'E2E %')
-try { if (newId) await coach.from('profiles').delete().eq('id', newId) } catch { /* best effort */ }
+// the fixture is reused, not deleted -- see the note where it is created
 await browser.close()
 console.log(failures ? '\n' + failures + ' FAILED' : '\nall passed')
 process.exit(failures ? 1 : 0)
