@@ -73,11 +73,38 @@ export default function Onboarding({ profile, onDone }) {
 
   const parqReady = parqComplete(parqAnswers) && parqAgreed && parqName.trim().length > 1
 
+  const [statsErr, setStatsErr] = useState('')
+
   const first = (profile.full_name || '').split(' ')[0]
   const statsValid =
     Number(age) >= 13 && Number(age) <= 100 &&
     Number(height) >= 120 && Number(height) <= 230 &&
     Number(weight) >= 30 && Number(weight) <= 300
+
+  // Paul, 2 Sept: "One of my clients is stuck on this page and they can't click
+  // continue". She had typed her height in inches (67). Continue was correctly
+  // disabled, but a disabled button is only dimmed slightly — on the dark theme
+  // it still looks tappable, and nothing said which field was wrong. Two clients
+  // had been sitting on this screen, one of them for five days.
+  //
+  // So the button always works now, and says what is wrong. Imperial input is
+  // recognised rather than rejected, because that is what people actually type.
+  const CM_PER_IN = 2.54
+  const KG_PER_ST = 6.35029
+  function statsProblem() {
+    const a = Number(age); const h = Number(height); const w = Number(weight)
+    if (!age.trim() || !(a >= 13 && a <= 100)) return 'Enter your age in years (13–100).'
+    if (!height.trim()) return 'Enter your height in centimetres — for example 170.'
+    if (h >= 48 && h <= 96) {
+      return `Height is in centimetres, not inches. ${h}in is about ${Math.round(h * CM_PER_IN)}cm — try that.`
+    }
+    if (h >= 4 && h <= 8) return 'Height is in centimetres — 5ft 7 is about 170cm.'
+    if (!(h >= 120 && h <= 230)) return 'That height looks off. Enter it in centimetres, between 120 and 230.'
+    if (!weight.trim()) return 'Enter your current weight in kilograms — for example 75.'
+    if (w >= 5 && w < 30) return `Weight is in kilograms, not stone. ${w}st is about ${Math.round(w * KG_PER_ST)}kg — try that.`
+    if (!(w >= 30 && w <= 300)) return 'That weight looks off. Enter it in kilograms, between 30 and 300.'
+    return ''
+  }
   const targets = statsValid
     ? computeTargets({ sex, age: Number(age), height_cm: Number(height), weight_kg: Number(weight), activity, goal })
     : null
@@ -147,13 +174,13 @@ export default function Onboarding({ profile, onDone }) {
               <button type="button" className={sex === 'female' ? 'on' : ''} onClick={() => setSex('female')}>Female</button>
             </div>
             <label>Age
-              <input type="number" inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value)} placeholder="years" />
+              <input type="number" inputMode="numeric" value={age} onChange={(e) => { setAge(e.target.value); setStatsErr('') }} placeholder="years" />
             </label>
-            <label>Height
-              <input type="number" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="cm" />
+            <label>Height (cm)
+              <input type="number" inputMode="numeric" value={height} onChange={(e) => { setHeight(e.target.value); setStatsErr('') }} placeholder="e.g. 170" />
             </label>
-            <label>Current weight
-              <input type="number" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="kg" />
+            <label>Current weight (kg)
+              <input type="number" inputMode="decimal" value={weight} onChange={(e) => { setWeight(e.target.value); setStatsErr('') }} placeholder="e.g. 75" />
             </label>
             <p className="muted-note" style={{ marginTop: 4 }}>How active are you day to day?</p>
             {ACTIVITY.map((a) => (
@@ -162,7 +189,16 @@ export default function Onboarding({ profile, onDone }) {
                 <span className="muted" style={{ display: 'block', fontSize: 13 }}>{a.sub}</span>
               </button>
             ))}
-            <button className="btn primary big" style={{ marginTop: 16 }} disabled={!statsValid} onClick={() => setStep('goal')}>
+            {statsErr && <p className="error" style={{ marginTop: 12 }}>{statsErr}</p>}
+            <button
+              className="btn primary big"
+              style={{ marginTop: statsErr ? 8 : 16 }}
+              onClick={() => {
+                const problem = statsProblem()
+                if (problem) { setStatsErr(problem); return }
+                setStatsErr(''); setStep('goal')
+              }}
+            >
               Continue
             </button>
           </div>

@@ -1,52 +1,16 @@
 // On-demand exercise how-to: returns an AI-written description + coaching cues and
 // a correct-form demo (start/end images from the free, MIT-licensed free-exercise-db).
 // Generated once per exercise name, cached in exercise_guides, then reused by everyone.
+//
+// The images are cached with the version of the matcher that chose them, so a
+// matcher fix re-matches old rows instead of serving the old answer forever.
+
+import { matchImages, nameKey, MATCHER_V } from './_exercise-match.mjs'
 
 const SUPABASE_URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 const SUPABASE_KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
 const SECRET = process.env.NUDGE_CRON_SECRET
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
-const LIB_JSON = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/dist/exercises.json'
-const LIB_IMG = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/'
-
-const nameKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
-
-let LIB = null // cached across warm invocations
-async function library() {
-  if (LIB) return LIB
-  try {
-    const res = await fetch(LIB_JSON)
-    const arr = await res.json()
-    LIB = arr.map((e) => ({ key: nameKey(e.name), tokens: nameKey(e.name).split(' '), images: e.images || [] }))
-  } catch { LIB = [] }
-  return LIB
-}
-
-// Best demo match: exact normalised name, else score by shared tokens — the movement
-// word (last token) must match, prefer real free-weight equipment over machines.
-const GOOD_EQUIP = ['barbell', 'dumbbell', 'bodyweight', 'cable', 'kettlebell']
-const BAD_EQUIP = ['machine', 'smith', 'lever', 'sled', 'car', 'band', 'assisted', 'roller']
-async function matchImages(name) {
-  const lib = await library()
-  const key = nameKey(name)
-  const exact = lib.find((e) => e.key === key)
-  if (exact) return exact.images.map((i) => LIB_IMG + i)
-  const q = key.split(' ').filter(Boolean)
-  if (!q.length) return []
-  const move = q[q.length - 1]
-  let best = null, bs = -1
-  for (const e of lib) {
-    const shared = q.filter((t) => e.tokens.includes(t)).length
-    if (shared === 0 || !e.tokens.includes(move)) continue
-    let s = shared * 10 - Math.abs(e.tokens.length - q.length)
-    if (e.tokens.some((t) => t === 'barbell' || t === 'dumbbell')) s += 5
-    else if (e.tokens.some((t) => GOOD_EQUIP.includes(t))) s += 2
-    if (e.tokens.some((t) => BAD_EQUIP.includes(t))) s -= 5
-    if (s > bs) { bs = s; best = e }
-  }
-  return best ? best.images.map((i) => LIB_IMG + i) : []
-}
-
 async function rpc(fn, args) {
   return fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: 'POST', headers: { 'content-type': 'application/json', apikey: SUPABASE_KEY, authorization: `Bearer ${SUPABASE_KEY}` },
@@ -86,12 +50,21 @@ export const handler = async (event) => {
     const key = nameKey(name)
 
     const cached = await getCached(key)
-    if (cached && cached.how_to) {
+    // Only a full hit short-circuits: the text AND images from the current
+    // matcher. An older row keeps its text (no need to pay for it again) but
+    // has its demo re-matched. An empty image list at the current version is a
+    // real answer -- "nothing in the library is this exercise" -- and is kept.
+    if (cached && cached.how_to && (cached.images_v || 0) >= MATCHER_V) {
       return { statusCode: 200, headers: cors, body: JSON.stringify({ how_to: cached.how_to, cues: cached.cues || [], image_urls: cached.image_urls || [], cached: true }) }
     }
 
-    const [guide, images] = await Promise.all([generate(name), matchImages(name)])
-    await rpc('exercise_guide_put', { p_secret: SECRET, p_name_key: key, p_name: name, p_how_to: guide.how_to, p_cues: guide.cues, p_images: images }).catch(() => {})
+    const [guide, images] = await Promise.all([
+      cached && cached.how_to
+        ? Promise.resolve({ how_to: cached.how_to, cues: cached.cues || [] })
+        : generate(name),
+      matchImages(name),
+    ])
+    await rpc('exercise_guide_put', { p_secret: SECRET, p_name_key: key, p_name: name, p_how_to: guide.how_to, p_cues: guide.cues, p_images: images, p_images_v: MATCHER_V }).catch(() => {})
     return { statusCode: 200, headers: cors, body: JSON.stringify({ ...guide, image_urls: images, cached: false }) }
   } catch (e) {
     return { statusCode: 200, headers: cors, body: JSON.stringify({ how_to: '', cues: [], image_urls: [], error: String(e.message || e) }) }

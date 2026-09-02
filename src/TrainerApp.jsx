@@ -4,6 +4,7 @@ import { THEME } from './themes.js'
 import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob } from './lib.js'
 import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
+import { EXERCISE_GROUPS } from './exercises.js'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
@@ -191,6 +192,7 @@ export default function TrainerApp({ profile, onSignOut }) {
           {THEME.features?.vald && <CoachVald coachId={profile.id} clients={clients} />}
 
           {THEME.features?.templates && <CoachTemplates coachId={profile.id} />}
+          {THEME.features?.programs && <CoachExerciseTags coachId={profile.id} />}
           {THEME.features?.programs && <CoachPrograms coachId={profile.id} />}
           {THEME.features?.recipes && <CoachRecipes coachId={profile.id} />}
           {THEME.features?.coachMealPlans && <CoachMealPlans coachId={profile.id} clients={clients} />}
@@ -3433,6 +3435,93 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
           {!personal && <label className="field">Only show to tag (optional)<input value={meta.audience_tag || ''} onChange={(e) => setMeta((m) => ({ ...m, audience_tag: e.target.value }))} placeholder="e.g. standard — blank shows to everyone" /></label>}
           <button className="btn primary big" onClick={createProgram}>{personal ? `Create for ${clientFirst}` : 'Create program'}</button>
           <button type="button" className="link-btn" onClick={() => { setCreating(false); setError('') }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Paul: "I've got a list of my created exercises, and then all the other
+// exercises are listed by muscle group. I wonder if it'd be easier just to have
+// the ability to tag them so they get listed against the muscle group they're
+// working ... I don't know if that's an easy fix now there's a load created."
+//
+// So: a suggestion is pre-selected for every untagged one and he confirms it,
+// rather than the app deciding silently. Several of his are genuinely ambiguous
+// ("Cable Pull Through", "Glute Focused Dumbbell Box Step Up") and a wrong
+// muscle group would be a new wrong-data problem dressed up as a fix.
+const GROUP_HINTS = [
+  ['Legs & Glutes', /squat|leg press|hack|deadlift|lunge|glute|hip thrust|calf|quad|hamstring|abduct|adduct|step up|leg extension|leg curl|pull through/i],
+  ['Chest & Shoulders', /chest|bench|pec|fly|flye|press|shoulder|delt|lateral raise|front raise|overhead|tricep|dip|pushdown/i],
+  ['Back & Biceps', /row|pulldown|pull up|pull-up|chin|lat|bicep|curl|face pull|shrug|straight arm/i],
+  ['Core', /crunch|plank|ab |abs|oblique|russian twist|leg raise|rollout|back extension/i],
+  ['Conditioning', /bike|row erg|treadmill|run|sprint|ski|battle rope|carry|sled|burpee/i],
+]
+function suggestGroup(name) {
+  for (const [label, re] of GROUP_HINTS) if (re.test(name || '')) return label
+  return ''
+}
+
+function CoachExerciseTags({ coachId }) {
+  const [items, setItems] = useState([])
+  const [draft, setDraft] = useState({})
+  const [busy, setBusy] = useState(null)
+  const [open, setOpen] = useState(false)
+
+  async function load() {
+    const { data } = await supabase.from('coach_exercises')
+      .select('id, name, muscle_group').eq('coach_id', coachId).order('name')
+    setItems(data || [])
+    const d = {}
+    for (const x of data || []) d[x.id] = x.muscle_group || suggestGroup(x.name)
+    setDraft(d)
+  }
+  useEffect(() => { load() }, [coachId])
+
+  async function save(x) {
+    const g = draft[x.id] || ''
+    setBusy(x.id)
+    const { data, error } = await supabase.from('coach_exercises')
+      .update({ muscle_group: g || null }).eq('id', x.id).select().single()
+    setBusy(null)
+    if (!error && data) setItems((i) => i.map((y) => (y.id === data.id ? data : y)))
+  }
+
+  const untagged = items.filter((x) => !x.muscle_group)
+  if (!items.length) return null
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Your exercises</p>
+      <p className="muted-note">
+        Tag an exercise with the muscle group it works and it lists there when you
+        build a session, instead of in one long list of its own.
+        {untagged.length > 0 ? ` ${untagged.length} still to tag — a suggestion is filled in for each.` : ' All tagged.'}
+      </p>
+      {!open ? (
+        <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => setOpen(true)}>
+          {untagged.length > 0 ? `Tag ${untagged.length} exercise${untagged.length === 1 ? '' : 's'}` : 'Review tags'}
+        </button>
+      ) : (
+        <div className="stack" style={{ marginTop: 12 }}>
+          {items.map((x) => (
+            <div className="card ex-tag-row" key={x.id} style={{ background: 'var(--surface-2)' }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{x.name}</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                <select className="ex-select" style={{ flex: 1 }} value={draft[x.id] || ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, [x.id]: e.target.value }))}>
+                  <option value="">Leave untagged</option>
+                  {EXERCISE_GROUPS.map((g) => <option key={g.label} value={g.label}>{g.label}</option>)}
+                </select>
+                <button type="button" className="btn primary sm" disabled={busy === x.id || (draft[x.id] || '') === (x.muscle_group || '')}
+                  onClick={() => save(x)}>
+                  {busy === x.id ? 'Saving…' : (x.muscle_group ? 'Update' : 'Save')}
+                </button>
+              </div>
+              {x.muscle_group && <p className="muted-note" style={{ marginTop: 6 }}>Filed under {x.muscle_group}.</p>}
+            </div>
+          ))}
+          <button type="button" className="link-btn" onClick={() => setOpen(false)}>Done</button>
         </div>
       )}
     </div>

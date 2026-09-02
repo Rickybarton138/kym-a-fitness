@@ -2379,6 +2379,7 @@ function StartWorkout({ clientId, onStarted }) {
   const [startingId, setStartingId] = useState(null)
   const [startedId, setStartedId] = useState(null)
   const [guideEx, setGuideEx] = useState(null)
+  const [showOther, setShowOther] = useState(false)
 
   useEffect(() => {
     supabase.from('workout_templates').select('*').order('created_at', { ascending: false })
@@ -2459,11 +2460,20 @@ function StartWorkout({ clientId, onStarted }) {
             </div>
           ))}
           {planSessions.length === 0 && <p className="muted-note">Nothing built for week {weekSel} yet — try another week.</p>}
-          {templates.length > 0 && <p className="eyebrow" style={{ marginTop: 4 }}>Other sessions</p>}
         </>
       )}
       {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
-      {templates.map((t) => (
+      {/* Paul: "it's kind of got the sessions that they've done previously ...
+          I wonder if there's a way we can have those under a button or a drop
+          down". Folded away by default so the plan they are actually on is what
+          they see; the count is on the button so it still reads as available. */}
+      {templates.length > 0 && (
+        <button type="button" className="disclosure" onClick={() => setShowOther((v) => !v)}>
+          <span>Other sessions <span className="muted">({templates.length})</span></span>
+          <span className="chev">{showOther ? '−' : '+'}</span>
+        </button>
+      )}
+      {showOther && templates.map((t) => (
         <div className="card session-card" key={t.id}>
           <button type="button" className="session-head" onClick={() => setOpenId((o) => (o === t.id ? null : t.id))}>
             <div>
@@ -2487,9 +2497,11 @@ function StartWorkout({ clientId, onStarted }) {
               {t.finisher && <p className="finisher"><b>Finisher:</b> {t.finisher}</p>}
             </ol>
           )}
-          <button type="button" className="btn primary sm" disabled={startingId === t.id} onClick={() => start(t)}>
-            {startedId === t.id ? 'Started ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
-          </button>
+          {openId === t.id && (
+            <button type="button" className="btn primary sm" disabled={startingId === t.id} onClick={() => start(t)}>
+              {startedId === t.id ? 'Started ✓' : startingId === t.id ? 'Starting…' : 'Start this session'}
+            </button>
+          )}
         </div>
       ))}
     </div>

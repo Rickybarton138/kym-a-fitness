@@ -94,12 +94,18 @@ export function lastTimeLabel(last) {
 // offers them back in the dropdown, so a name is typed once and then reusable —
 // same idea as coach_foods for manually added foods.
 export function ExerciseRowsEditor({ rows, setRows, lastByName, coachId, contributorId }) {
+  // Paul: a created exercise could only ever land in one flat "Your exercises"
+  // list. Tagged ones now file under the muscle group they work, alongside the
+  // stock catalogue; untagged ones keep their own group so nothing a coach made
+  // can disappear from the picker part-way through building a session.
   const [coachEx, setCoachEx] = useState([])
   useEffect(() => {
     if (!coachId) return
-    supabase.from('coach_exercises').select('name').eq('coach_id', coachId).order('name')
-      .then(({ data }) => setCoachEx((data || []).map((x) => x.name)))
+    supabase.from('coach_exercises').select('name, muscle_group').eq('coach_id', coachId).order('name')
+      .then(({ data }) => setCoachEx(data || []))
   }, [coachId])
+  const untagged = coachEx.filter((x) => !x.muscle_group)
+  const byGroup = (label) => coachEx.filter((x) => x.muscle_group === label)
 
   const update = (i, k, v) => setRows((r) => r.map((row, j) => (j === i ? { ...row, [k]: v } : row)))
   const addRow = () => setRows((r) => [...r, newExerciseRow()])
@@ -143,14 +149,15 @@ export function ExerciseRowsEditor({ rows, setRows, lastByName, coachId, contrib
             <div className="ex-top">
               <select className="ex-select" value={r.custom ? '__other__' : r.name || ''} onChange={(e) => onSelect(i, e.target.value)}>
                 <option value="" disabled>Choose an exercise…</option>
-                {coachEx.length > 0 && (
+                {untagged.length > 0 && (
                   <optgroup label="Your exercises">
-                    {coachEx.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {untagged.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
                   </optgroup>
                 )}
                 {EXERCISE_GROUPS.map((g) => (
                   <optgroup key={g.label} label={g.label}>
                     {g.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {byGroup(g.label).map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
                   </optgroup>
                 ))}
                 <option value="__other__">Other (type your own)…</option>
@@ -160,7 +167,13 @@ export function ExerciseRowsEditor({ rows, setRows, lastByName, coachId, contrib
               <button type="button" className="row-del" onClick={() => removeRow(i)} aria-label="Remove exercise">×</button>
             </div>
             {r.custom && (
-              <input className="ex-name-in" placeholder="Exercise name" value={r.name} onChange={(e) => update(i, 'name', e.target.value)} />
+              <>
+                <input className="ex-name-in" placeholder="Exercise name" value={r.name} onChange={(e) => update(i, 'name', e.target.value)} />
+                <select className="ex-select" value={r.muscle_group || ''} onChange={(e) => update(i, 'muscle_group', e.target.value)}>
+                  <option value="">Which muscle group? (so it files itself)</option>
+                  {EXERCISE_GROUPS.map((g) => <option key={g.label} value={g.label}>{g.label}</option>)}
+                </select>
+              </>
             )}
 
             <input className="ex-name-in" list="wr-sections" placeholder="Section (optional) — e.g. Warm-up, Strength"
@@ -237,6 +250,13 @@ const KNOWN_NAMES = new Set(EXERCISE_GROUPS.flatMap((g) => g.options))
 // never block saving the actual session.
 export async function rememberExercises(exercises, coachId, contributorId) {
   if (!coachId) return
+  // Keep the muscle group the coach picked when they typed the name, so it
+  // files itself the next time instead of landing in a flat list.
+  const groupFor = new Map()
+  for (const ex of exercises || []) {
+    const n = (ex.name || '').trim()
+    if (n && ex.muscle_group && !groupFor.has(n.toLowerCase())) groupFor.set(n.toLowerCase(), ex.muscle_group)
+  }
   const names = [...new Set((exercises || [])
     .map((ex) => (ex.name || '').trim())
     .filter((n) => n && !KNOWN_NAMES.has(n)))]
@@ -249,7 +269,10 @@ export async function rememberExercises(exercises, coachId, contributorId) {
     const fresh = names.filter((n) => !known.has(n.toLowerCase()))
     if (!fresh.length) return
     await supabase.from('coach_exercises')
-      .insert(fresh.map((name) => ({ coach_id: coachId, created_by: contributorId || coachId, name })))
+      .insert(fresh.map((name) => ({
+        coach_id: coachId, created_by: contributorId || coachId, name,
+        muscle_group: groupFor.get(name.toLowerCase()) || null,
+      })))
   } catch { /* never block the save */ }
 }
 
@@ -321,11 +344,15 @@ export function rowsToExercises(rows, equipmentLabel) {
       const rpe = r.rpe !== '' && r.rpe != null && rpeNum >= 1 && rpeNum <= 10 ? rpeNum : undefined
       const video = (r.video || '').trim() || undefined
       const section = (r.section || '').trim() || undefined
+      // Carried so rememberExercises can file a newly typed exercise under the
+      // group the coach picked; harmless on the stored session.
+      const muscle_group = (r.muscle_group || '').trim() || undefined
       return {
         name: r.name.trim(),
         equipment: equipmentLabel || 'Own choice',
         cue: (r.cue || '').trim(),
         ...(section ? { section } : {}),
+        ...(muscle_group ? { muscle_group } : {}),
         ...(set_type ? { set_type } : {}),
         ...(group ? { group } : {}),
         ...(rpe ? { rpe } : {}),

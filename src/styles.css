@@ -686,3 +686,7 @@ input { font-family: inherit; }
 .check-row { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; font-size: 14px; color: var(--text); cursor: pointer; }
 .check-row input[type="checkbox"] { width: 18px; height: 18px; margin-top: 1px; flex: none; accent-color: var(--accent); }
 .check-row em { display: block; font-style: normal; margin-top: 2px; }
+
+/* Fold-away section header, e.g. "Other sessions (13)" on the Train screen. */
+.disclosure { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 13px 15px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; }
+.disclosure .chev { color: var(--muted); font-size: 17px; }
