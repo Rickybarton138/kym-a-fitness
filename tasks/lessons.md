@@ -247,3 +247,39 @@ Also: the reuse this was built for had already been solved properly by the
 "Sessions in this program" picker added in the same batch. The auto-save was dead
 weight carrying a leak. When a later change makes an earlier workaround redundant,
 delete the workaround.
+
+## A disabled button is a dead end unless it says why (2026-09-02)
+"One of my clients is stuck on this page and they can't click continue." She had
+typed her height in inches. `disabled={!statsValid}` was correct; the failure was
+that nothing told her so. `.btn:disabled` is `opacity: .6`, and .6 of a saturated
+green on a dark surface still looks like a live button — her screenshot shows it
+looking perfectly tappable. Two clients were sitting on that screen, one for five
+days, and his unstarted program was blamed on the client rather than on signup.
+Rule: never gate progress on a silent `disabled`. Let the button respond, and on
+press say which field is wrong and what a right answer looks like. Where a value
+has units, accept the other unit and convert it — 67 for a height in cm is not a
+typo, it is inches, and telling someone "67in is about 170cm" is one line of code.
+Diagnostic worth repeating: `onboarded_at is null` found everyone stuck on the
+same screen, including one nobody had reported.
+
+## Fuzzy matching must be allowed to answer "I don't know" (2026-09-02)
+"A seated cable row, and it's showing a standing cable upright row." The library
+entry is "Seated Cable Rows" — plural — and the matcher required the movement
+word to match exactly, so `row != rows` EXCLUDED the correct entry and left a
+wrong one to win on an equipment bonus. It also assumed the movement was the last
+word, so "Lat Pulldown (cable)" searched for "cable" and returned "Cable Chest
+Press". Both were invisible because the function always returned its best
+candidate, however poor.
+Rules:
+- A scorer with no floor will always return something. Give it a confidence
+  threshold and an empty result below it. Nothing beats something wrong — the
+  same call as the barcode check digit.
+- Do not put body parts in a movement vocabulary. Listing "chest" made
+  "Cable Chest Fly" match "Cable Chest Press"; a fly is not a press.
+- Build the before/after table over every real input (`tasks/match_report.mjs`)
+  and read it. Every tuning mistake I made showed up there in one run, including
+  two of my own introduced while fixing it.
+- Cached results make a fix invisible. `exercise_guides.images_v` stores which
+  matcher produced a row so old rows re-match on read, and the RPC's version
+  parameter defaults to 0 so functions still deployed elsewhere mark their writes
+  stale rather than poisoning the cache. Prefer self-healing over a manual purge.
