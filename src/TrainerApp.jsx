@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob } from './lib.js'
-import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker } from './ui.jsx'
+import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays } from './lib.js'
+import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { EXERCISE_GROUPS } from './exercises.js'
 import { LEVELS } from './accountability.js'
@@ -779,11 +779,10 @@ function ClientDetail({ client, trainerId, onBack }) {
               {latest && (
                 <div className="card">
                   <p className="eyebrow">Body progress</p>
-                  <div className="metrics-2">
-                    {latest.weight_kg != null && <Metric k="Weight" v={`${latest.weight_kg}kg`} d={first?.weight_kg != null ? `${(latest.weight_kg - first.weight_kg).toFixed(1)}kg` : ''} />}
-                    {latest.body_fat != null && <Metric k="Body fat" v={`${latest.body_fat}%`} d={first?.body_fat != null ? `${(latest.body_fat - first.body_fat).toFixed(1)}%` : ''} />}
-                  </div>
-                  <TrendChart data={measurements.filter((m) => m.weight_kg != null)} field="weight_kg" />
+                  {/* Whatever they logged — weight, body fat and the five tape
+                      sites — with a switchable trend. Same component the client
+                      sees, so the two views cannot drift. */}
+                  <BodyTrends measurements={measurements} />
                 </div>
               )}
 
@@ -2748,7 +2747,7 @@ function AssignProgram({ clientId, coachId, clientName }) {
               apart. */}
           <div className="session-sub">
             {(current.day_map || []).length
-              ? `Training ${(current.day_map || []).map((d) => WEEKDAYS[d]).join(', ')}`
+              ? `Training ${sortDays(current.day_map).map((d) => WEEKDAYS[d]).join(', ')}`
               : 'Following the program’s own days'}
             {current.coach_id ? ' · assigned by you' : ' · chosen by them'}
           </div>
@@ -2761,21 +2760,24 @@ function AssignProgram({ clientId, coachId, clientName }) {
           {programs.map((p) => <option key={p.id} value={p.id}>{p.title}{p.weeks ? ` · ${p.weeks}wk` : ''}{p.client_id ? ' · 1-2-1' : ''}</option>)}
         </select>
       </label>
-      <div className="grid-2">
-        <label className="field">Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22 }}><input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} style={{ width: 'auto' }} /> Repeat when it ends</label>
-      </div>
+      {/* The start date lives on the NEXT step and nowhere else. A second date
+          box here read as the real one, so a backdated start was set, ignored,
+          and — if he never pressed the confirm below it — nothing was written at
+          all: "when I refresh it disappears". */}
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}><input type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} style={{ width: 'auto' }} /> Repeat when it ends</label>
       {picking ? (
         <ProgramDayPicker
           sessionsPerWeek={sessCount}
           initialDays={current?.day_map || []}
           ownDays={ownDays}
+          initialStart={start}
+          confirmLabel={current ? 'Replace program' : 'Assign program'}
           onCancel={() => setPicking(false)}
           onConfirm={(days, startDate) => assign(days, startDate)}
         />
       ) : (
         <button type="button" className="btn primary" disabled={!pick || busy} onClick={openPicker}>
-          {busy ? '…' : (current ? 'Replace with this' : 'Assign program')}
+          {busy ? '…' : 'Next: days & start date'}
         </button>
       )}
       {msg && <p className="logged-ok">{msg}</p>}
@@ -3015,7 +3017,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
     const pos = (sessions[programId] || []).length
     const rows = slots
       .slice()
-      .sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)))
+      .sort((a, b) => (a.week - b.week) || byDow(a.dow, b.dow))
       .map((sl, i) => ({
         program_id: programId, position: pos + i, label: dayLabel.trim() || null,
         week: sl.week, dow: sl.dow, title, focus, exercises, finisher,
@@ -3024,7 +3026,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
     if (err) { setAddError(err.message); return }
     setSessions((s) => {
       const next = [...(s[programId] || []), ...(data || [])]
-      next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
+      next.sort((a, b) => (a.week - b.week) || byDow(a.dow, b.dow) || (a.position - b.position))
       return { ...s, [programId]: next }
     })
     // Any exercise name typed by hand is remembered.
@@ -3305,7 +3307,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
                             setSessions((s) => {
                               const next = (s[pr.id] || []).map((x) => (x.id === data.id ? data : x))
                               // the week/day may have moved — keep the list in schedule order
-                              next.sort((a, b) => (a.week - b.week) || ((a.dow ?? 9) - (b.dow ?? 9)) || (a.position - b.position))
+                              next.sort((a, b) => (a.week - b.week) || byDow(a.dow, b.dow) || (a.position - b.position))
                               return { ...s, [pr.id]: next }
                             })
                             setEditSess(null)

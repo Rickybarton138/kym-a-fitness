@@ -189,3 +189,13 @@ export function remainingMacros(target, consumed) {
     calories: Math.max((target?.calories || 0) - consumed.calories, 0),
   }
 }
+
+// The training week runs Monday to Sunday. JS getDay() puts Sunday at 0, so a
+// plain numeric sort of weekday numbers lists Sunday FIRST — Paul: "her week 1
+// is Monday, Thursday, Saturday and Sunday. But in the app it lists it as
+// Sunday, Monday, Thursday, Saturday." Everything that sorts or displays a
+// weekday goes through here.
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+export const dowRank = (dow) => (dow == null ? 99 : dow === 0 ? 7 : dow)
+export const byDow = (a, b) => dowRank(a) - dowRank(b)
+export const sortDays = (days) => [...(days || [])].sort(byDow)

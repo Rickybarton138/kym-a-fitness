@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -39,6 +39,7 @@ import { exchangeStrava } from './strava.js'
 import {
   Ring, MacroBar, MacroRow, Loader, TrendChart, ProgramDayPicker,
   IconHome, IconTrain, IconFridge, IconMeal, IconBody, IconAsk, IconForm, IconContent, IconCommunity, IconTest, ExSets,
+  MEASURE_SITES, BodyTrends,
 } from './ui.jsx'
 
 const FOCUS_OPTIONS = ['Full body', 'Push', 'Pull', 'Legs', 'Upper body']
@@ -568,13 +569,13 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
   // Fluid intake shares the daily_steps row — one row per client per day. The
   // upsert only names the column it changes, so saving water never clears steps
   // and vice versa.
+  // Adds in the DATABASE, not here. Working out the new total from React state
+  // and writing it back meant a tap on a stale base overwrote the one before
+  // it, so +500 then +250 could end up as 250 — a tap silently not counting.
   async function addWater(ml) {
-    const next = Math.max(0, (steps?.water_ml || 0) + ml)
     setSavingWater(true)
-    const { data } = await supabase.from('daily_steps')
-      .upsert({ client_id: profile.id, day: today, water_ml: next, updated_at: new Date().toISOString() }, { onConflict: 'client_id,day' })
-      .select().single()
-    if (data) setSteps(data)
+    const { data } = await supabase.rpc('add_water_ml', { p_day: today, p_delta: ml })
+    if (data) setSteps(Array.isArray(data) ? data[0] : data)
     setSavingWater(false)
   }
 
@@ -1816,7 +1817,7 @@ function ProgramLibrary({ clientId, trainerId, coachName, onBack }) {
                 </button>
                 {onThisPlan && <button type="button" className="link-btn" onClick={stopAssignment}>Stop following</button>}
               </div>
-              {onThisPlan && !assignOpenId && <p className="muted-note" style={{ marginTop: 4 }}>Training {(activeAssignment.day_map || []).map((d) => WEEKDAYS[d]).join(', ') || '—'}, from {activeAssignment.start_date}.</p>}
+              {onThisPlan && !assignOpenId && <p className="muted-note" style={{ marginTop: 4 }}>Training {sortDays(activeAssignment.day_map).map((d) => WEEKDAYS[d]).join(', ') || '—'}, from {activeAssignment.start_date}.</p>}
               {assignOpenId === pr.id && (
                 <ProgramDayPicker
                   sessionsPerWeek={wk1Count}
@@ -3045,36 +3046,35 @@ function BodyScanCard({ scan }) {
 function BodyLog({ measurements, onAdd }) {
   const [w, setW] = useState('')
   const [bf, setBf] = useState('')
-  const [waist, setWaist] = useState('')
+  const [sites, setSites] = useState({})
   const [date, setDate] = useState('')
   const [saving, setSaving] = useState(false)
   const latest = measurements[measurements.length - 1]
-  const first = measurements[0]
   const today = new Date().toISOString().slice(0, 10)
+
+  const setSite = (k, v) => setSites((s) => ({ ...s, [k]: v }))
+  const anything = w || bf || MEASURE_SITES.some((s) => sites[s.key])
 
   async function submit(e) {
     e.preventDefault()
-    if (!w && !bf && !waist) return
+    if (!anything) return
     setSaving(true)
-    await onAdd({
+    const row = {
       weight_kg: w ? Number(w) : null,
       body_fat: bf ? Number(bf) : null,
-      waist_cm: waist ? Number(waist) : null,
       measured_at: date || undefined,
-    })
-    setW(''); setBf(''); setWaist(''); setDate(''); setSaving(false)
+    }
+    for (const s of MEASURE_SITES) row[s.key] = sites[s.key] ? Number(sites[s.key]) : null
+    await onAdd(row)
+    setW(''); setBf(''); setSites({}); setDate(''); setSaving(false)
   }
 
   return (
     <div className="stack">
       {latest && (
         <div className="card">
-          <div className="metrics-2">
-            {latest.weight_kg != null && <Metric k="Weight" v={`${latest.weight_kg}kg`} d={first?.weight_kg != null ? `${(latest.weight_kg - first.weight_kg).toFixed(1)}kg` : ''} />}
-            {latest.body_fat != null && <Metric k="Body fat" v={`${latest.body_fat}%`} d={first?.body_fat != null ? `${(latest.body_fat - first.body_fat).toFixed(1)}%` : ''} />}
-          </div>
-          <TrendChart data={measurements.filter((m) => m.weight_kg != null)} field="weight_kg" />
-          <p className="muted-note">Your weight trend over time.</p>
+          <BodyTrends measurements={measurements} />
+          <p className="muted-note">Tap a measure to see how it has changed.</p>
         </div>
       )}
 
@@ -3083,11 +3083,18 @@ function BodyLog({ measurements, onAdd }) {
         <div className="grid-2">
           <label className="field">Weight (kg)<input type="number" step="0.1" value={w} onChange={(e) => setW(e.target.value)} /></label>
           <label className="field">Body fat (%)<input type="number" step="0.1" value={bf} onChange={(e) => setBf(e.target.value)} /></label>
-          <label className="field">Waist (cm)<input type="number" step="0.1" value={waist} onChange={(e) => setWaist(e.target.value)} /></label>
+        </div>
+        <p className="muted-note" style={{ marginTop: 10 }}>Tape measurements (cm) — fill in whichever you took.</p>
+        <div className="grid-2">
+          {MEASURE_SITES.map((s) => (
+            <label className="field" key={s.key}>{s.label}
+              <input type="number" step="0.1" value={sites[s.key] || ''} onChange={(e) => setSite(s.key, e.target.value)} />
+            </label>
+          ))}
           <label className="field">Date<input type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></label>
         </div>
         <p className="muted-note">Starting fresh with an old photo or measurement? Backdate it to your real start date so your trend stays accurate.</p>
-        <button className="btn primary" disabled={saving} type="submit">{saving ? 'Saving…' : 'Save measurement'}</button>
+        <button className="btn primary" disabled={saving || !anything} type="submit">{saving ? 'Saving…' : 'Save measurement'}</button>
       </form>
     </div>
   )

@@ -29,7 +29,9 @@ export async function printClientReport(client) {
     const dtxt = delta == null ? '' : ` (${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg since ${new Date(first.measured_at).toLocaleDateString('en-GB')})`
     bodyRows = `<tr><td>Weight</td><td>${num(last.weight_kg)} kg${esc(dtxt)}</td></tr>`
     if (last.body_fat != null) bodyRows += `<tr><td>Body fat</td><td>${num(last.body_fat)}%</td></tr>`
-    if (last.waist_cm != null) bodyRows += `<tr><td>Waist</td><td>${num(last.waist_cm)} cm</td></tr>`
+    for (const [lbl, k] of [['Waist', 'waist_cm'], ['Chest', 'chest_cm'], ['Hips', 'hips_cm'], ['Thigh', 'thigh_cm'], ['Bicep', 'bicep_cm']]) {
+      if (last[k] != null) bodyRows += `<tr><td>${lbl}</td><td>${num(last[k])} cm</td></tr>`
+    }
   }
 
   // Strength: best lift per exercise, top 8 by frequency.

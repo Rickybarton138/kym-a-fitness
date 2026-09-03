@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { THEME } from './themes.js'
 import { WEEKDAYS } from './booking.js'
+import { WEEK_ORDER, sortDays } from './lib.js'
 import { setTypeLabel, setTypeNote } from './WorkoutRows.jsx'
 
 // Collapsible section wrapper for the coach dashboard/ClientDetail (Paul's
@@ -154,7 +155,7 @@ export function IconCommunity() { return <svg viewBox="0 0 24 24" {...s}><circle
 export function IconTest() { return <svg viewBox="0 0 24 24" {...s}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg> }
 
 // Weekday order for a training week — Monday first, Sunday last.
-const PROGRAM_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
 
 // Shared by the client (self-assigning from the library) and the coach
 // (AssignProgram) so both flows pick training days the same way.
@@ -162,11 +163,15 @@ const PROGRAM_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
 // picking days here is optional and only overrides them. Without this the
 // Confirm button was disabled until you picked days you didn't need (Paul: "if
 // the programme specifies the days ... I don't then need to pick training days").
-export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, onCancel, onConfirm }) {
+export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, initialStart, confirmLabel, onCancel, onConfirm }) {
   const [days, setDays] = useState(initialDays || [])
-  const [start, setStart] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
+  // This is the ONLY start date in the flow. There used to be a second one on
+  // the card above, which looked like the real thing and was silently thrown
+  // away — Paul set a backdated start there, and the program always began today
+  // (or, if he never reached this step, was never assigned at all).
+  const [start, setStart] = useState(initialStart || (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })())
   const [busy, setBusy] = useState(false)
-  const toggle = (dow) => setDays((ds) => (ds.includes(dow) ? ds.filter((d) => d !== dow) : [...ds, dow].sort((a, b) => a - b)))
+  const toggle = (dow) => setDays((ds) => (ds.includes(dow) ? ds.filter((d) => d !== dow) : sortDays([...ds, dow])))
   async function confirm() {
     setBusy(true)
     await onConfirm(days, start)
@@ -181,15 +186,67 @@ export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, onCanc
           : sessionsPerWeek ? `This program has ${sessionsPerWeek} session${sessionsPerWeek === 1 ? '' : 's'} a week — pick ${sessionsPerWeek} day${sessionsPerWeek === 1 ? '' : 's'} and it'll apply the same days across every week.` : 'Pick your training days and it applies across every week.'}
       </p>
       <div className="seg" style={{ flexWrap: 'wrap' }}>
-        {PROGRAM_WEEK_ORDER.map((dow) => (
+        {WEEK_ORDER.map((dow) => (
           <button type="button" key={dow} className={days.includes(dow) ? 'on' : ''} onClick={() => toggle(dow)}>{WEEKDAYS[dow]}</button>
         ))}
       </div>
       <label className="field" style={{ marginTop: 8 }}>Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
       <div className="grid-2" style={{ marginTop: 10 }}>
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn primary" disabled={(!days.length && !ownDays) || busy} onClick={confirm}>{busy ? 'Adding…' : 'Confirm'}</button>
+        <button type="button" className="btn primary" disabled={(!days.length && !ownDays) || busy} onClick={confirm}>{busy ? 'Adding…' : (confirmLabel || 'Confirm')}</button>
       </div>
     </div>
+  )
+}
+
+// Paul: "with measurements, can we add the option to log Waist, Chest, Hips,
+// Thigh, Bicep". One definition, shared by the client's logging screen and the
+// coach's view of it, so the two can never drift apart.
+export const MEASURE_SITES = [
+  { key: 'waist_cm', label: 'Waist' },
+  { key: 'chest_cm', label: 'Chest' },
+  { key: 'hips_cm', label: 'Hips' },
+  { key: 'thigh_cm', label: 'Thigh' },
+  { key: 'bicep_cm', label: 'Bicep' },
+]
+export const MEASURE_TRENDS = [
+  { key: 'weight_kg', label: 'Weight', unit: 'kg' },
+  { key: 'body_fat', label: 'Body fat', unit: '%' },
+  ...MEASURE_SITES.map((s) => ({ ...s, unit: 'cm' })),
+]
+
+// Latest reading for every measure that has one, plus a switchable trend.
+export function BodyTrends({ measurements }) {
+  const [trend, setTrend] = useState('weight_kg')
+  const rows = measurements || []
+  const latest = rows[rows.length - 1]
+  if (!latest) return null
+  // Compare like with like: the first reading that actually HAS this measure,
+  // not the first row overall, or adding waist later shows a nonsense change.
+  const firstWith = (k) => rows.find((m) => m[k] != null)
+  const shown = MEASURE_TRENDS.filter((t) => rows.some((m) => m[t.key] != null))
+  const active = shown.find((t) => t.key === trend) || shown[0]
+  if (!active) return null
+  const series = rows.filter((m) => m[active.key] != null)
+  return (
+    <>
+      <div className="metrics-2">
+        {MEASURE_TRENDS.map((t) => {
+          if (latest[t.key] == null) return null
+          const base = firstWith(t.key)
+          const d = base && base !== latest && base[t.key] != null
+            ? `${(latest[t.key] - base[t.key]).toFixed(1)}${t.unit}` : ''
+          return <Metric key={t.key} k={t.label} v={`${latest[t.key]}${t.unit}`} d={d} />
+        })}
+      </div>
+      {shown.length > 1 && (
+        <div className="seg small" style={{ flexWrap: 'wrap', marginTop: 8 }}>
+          {shown.map((t) => (
+            <button type="button" key={t.key} className={active.key === t.key ? 'on' : ''} onClick={() => setTrend(t.key)}>{t.label}</button>
+          ))}
+        </div>
+      )}
+      {series.length > 0 && <TrendChart data={series} field={active.key} />}
+    </>
   )
 }

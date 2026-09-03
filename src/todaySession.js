@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js'
+import { byDow } from './lib.js'
 
 // One answer to "what is this client doing today?".
 //
@@ -53,7 +54,7 @@ export function sessionsInWeek(prog, week) {
   if (!prog) return []
   return prog.sessions
     .filter((s) => (s.week || 1) === week)
-    .sort((a, b) => (a.dow ?? 99) - (b.dow ?? 99) || (a.position ?? 0) - (b.position ?? 0))
+    .sort((a, b) => byDow(a.dow, b.dow) || (a.position ?? 0) - (b.position ?? 0))
 }
 
 // The session scheduled for a given day, or null on a rest day.
