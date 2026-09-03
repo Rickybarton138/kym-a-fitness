@@ -283,3 +283,46 @@ Rules:
   matcher produced a row so old rows re-match on read, and the RPC's version
   parameter defaults to 0 so functions still deployed elsewhere mark their writes
   stale rather than poisoning the cache. Prefer self-healing over a manual purge.
+
+## Two inputs for one value: the hidden one wins (2026-09-03)
+"When I assign her program it doesn't actually assign to her ... when I refresh
+it disappears. If I do it from today and click the second confirm button it then
+drops in. If I back date the start, do I have to change the date and click the
+second confirm?" He had diagnosed it himself. `AssignProgram` had a Start date
+field, and the `ProgramDayPicker` it opened had ANOTHER one, seeded to today and
+ignoring the first. The picker's value is the one that reached the insert, so a
+backdated start was silently discarded — and because the first button only
+opened a step it gave no hint of, an abandoned flow wrote nothing at all.
+Rules:
+- One value, one input. Two controls bound to the same field is a bug even when
+  both "work"; the user cannot tell which one counts.
+- The button that commits must be the button that looks like it commits. Rename
+  the earlier step ("Next: days & start date") rather than trusting people to
+  discover a second confirm.
+- "It disappears when I refresh" almost always means the UI showed local state
+  that was never written. Check what the insert actually received, not what the
+  form displayed. One `select` on the live table settled this in seconds:
+  exactly one row, dated today, after several backdated attempts.
+
+## Sunday is 0, so every weekday sort leads with Sunday (2026-09-03)
+"Her week 1 is Monday, Thursday, Saturday and Sunday. But in the app it lists it
+as Sunday, Monday, Thursday, Saturday." `getDay()` numbers Sunday 0, so a plain
+`(a - b)` on weekdays puts Sunday first everywhere — the stored `day_map`, the
+coach's session list, the client's week. The picker already drew its buttons
+Monday-first from `PROGRAM_WEEK_ORDER`, so the app openly contradicted itself.
+Rule: a training week is Mon..Sun, which is NOT the natural order of the numbers
+it is stored in. Put the comparator in one place (`byDow`/`sortDays` in lib.js)
+and route every sort and display through it; never hand-sort dow inline.
+
+## An intermittent test failure on a counter is a lost write (2026-09-03)
+Water logging failed about one run in three with `water_ml: 250` after +500 then
++250. It was tempting to call it flaky timing and move on. It was real:
+`addWater` computed the new total from React state and wrote it back, so a tap
+landing on a stale base overwrote the previous one. To a client that is a tap
+that silently did not count.
+Rule: a counter is never a read-modify-write from client state. Increment in the
+database (`add_water_ml(day, delta)`) so concurrency and stale reads cannot lose
+one. And pass the DAY from the caller — `now()::date` is UTC, and in BST a late
+evening tap is already tomorrow.
+Corollary: when a test fails intermittently on a value that should accumulate,
+suspect the code before the test.
