@@ -11,11 +11,15 @@
 // Run: node tasks/e2e_round21_ui.mjs <deploy-url>
 import { createClient } from '@supabase/supabase-js'
 import { ACHIEVEMENTS } from '../src/achievements.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 const { chromium } = await import(process.env.PLAYWRIGHT_PATH || 'playwright')
 
 const SITE = process.argv[2]
 if (!SITE) { console.error('usage: node tasks/e2e_round21_ui.mjs <url>'); process.exit(1) }
 const base = SITE + '/?brand=paul'
+const here = dirname(fileURLToPath(import.meta.url))
 
 let failures = 0
 const ok = (l, pass, extra = '') => { if (!pass) failures++; console.log(`${pass ? 'PASS' : 'FAIL'}  ${l}${extra ? ' — ' + extra : ''}`) }
@@ -112,6 +116,23 @@ ok('worded for the coach, not the client', /has earned/.test(await coachAwards.i
 // ---------------------------------------------------------------------------
 // 3. The AI voice learns from a writing sample
 // ---------------------------------------------------------------------------
+// Paul: "Can I upload a file to the ai voice or just copy and paste?" A book is
+// a Word document, and telling someone with a broken hand to export it to .txt
+// first is a poor answer. Parsed in the browser, no dependency.
+const { docxToText } = await import('../src/docx.js')
+const docxBuf = readFileSync(join(here, 'fixtures', 'voice-sample.docx'))
+const docxText = await docxToText({
+  name: 'voice-sample.docx',
+  arrayBuffer: async () => docxBuf.buffer.slice(docxBuf.byteOffset, docxBuf.byteOffset + docxBuf.byteLength),
+}).catch((e) => ({ err: e.message }))
+ok('a Word document can be read straight in', typeof docxText === 'string' && docxText.length > 400,
+  typeof docxText === 'string' ? `${docxText.length} chars` : docxText.err)
+const paras = typeof docxText === 'string' ? docxText.split('\n').filter(Boolean).length : 0
+ok('with its paragraphs intact', paras > 3, `${paras} paragraphs`)
+ok('and its punctuation decoded, not left as markup',
+  typeof docxText === 'string' && docxText.includes('&') && !docxText.includes('&amp;'),
+  typeof docxText === 'string' ? docxText.slice(0, 60) : '')
+
 const FN = SITE + '/.netlify/functions/analyze'
 const short = await fetch(FN, {
   method: 'POST', headers: { 'content-type': 'application/json' },

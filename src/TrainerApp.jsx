@@ -7,6 +7,7 @@ import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, p
 import { Awards } from './Awards.jsx'
 import { EquipmentScan } from './EquipmentScan.jsx'
 import { daySpread, progressExercises } from './programBuild.js'
+import { docxToText } from './docx.js'
 import { EXERCISE_GROUPS } from './exercises.js'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
@@ -883,11 +884,14 @@ function VoiceSample({ coachId, persona, onSaved }) {
   async function readFile(f) {
     if (!f) return
     setErr('')
-    if (!/\.(txt|md|markdown|csv)$/i.test(f.name)) {
-      setErr('Plain text only for now (.txt or .md). From Word or Pages, use File → Save As / Export → plain text, or just paste it in below.')
+    if (/\.docx$/i.test(f.name)) {
+      setBusy(true)
+      try { setText(await docxToText(f)) } catch (e) { setErr(e.message) }
+      setBusy(false)
       return
     }
-    setText(await f.text())
+    if (/\.(txt|md|markdown|csv|rtf)$/i.test(f.name)) { setText(await f.text()); return }
+    setErr('Word (.docx) or plain text (.txt). A PDF needs exporting to Word or text first — or just paste it in below.')
   }
 
   async function distil() {
@@ -927,7 +931,7 @@ function VoiceSample({ coachId, persona, onSaved }) {
     <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
       <p className="eyebrow">Teach it your voice</p>
       <p className="muted-note">
-        Paste a chunk of your own writing — a chapter of your book, a few newsletters, anything that sounds like you.
+        Upload a Word document (.docx) or a text file, or paste it in — a chapter of your book, a few newsletters, anything that sounds like you.
         It is read once to work out how you write, then only that summary is used. Your writing is not stored or shown to clients.
       </p>
       {has && !open && (
@@ -943,7 +947,7 @@ function VoiceSample({ coachId, persona, onSaved }) {
         </div>
       ) : (
         <div className="stack" style={{ marginTop: 10 }}>
-          <input type="file" accept=".txt,.md,.markdown,text/plain" onChange={(e) => readFile(e.target.files?.[0])} />
+          <input type="file" accept=".docx,.txt,.md,.markdown,.rtf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(e) => readFile(e.target.files?.[0])} />
           <label className="field">Or paste it here
             <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste a few thousand words — the more the better, up to a whole book." />
           </label>
