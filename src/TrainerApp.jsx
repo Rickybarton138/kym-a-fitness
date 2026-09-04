@@ -5,6 +5,8 @@ import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleI
 import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { Awards } from './Awards.jsx'
+import { EquipmentScan } from './EquipmentScan.jsx'
+import { daySpread, progressExercises } from './programBuild.js'
 import { EXERCISE_GROUPS } from './exercises.js'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
@@ -2088,25 +2090,9 @@ function SlotGrid({ weeks, slots, setSlots }) {
 // Default training days for an N-day week, spread Mon-outwards (0=Sun..6=Sat).
 // Used when the AI builder expands a base week across the whole programme; the
 // coach can drag any session to a different day per week afterwards (shift work).
-const DOW_SPREAD = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 4, 5], 6: [1, 2, 3, 4, 5, 6] }
-const daySpread = (n) => DOW_SPREAD[Math.min(Math.max(n, 1), 6)] || DOW_SPREAD[3]
-// Progressive overload applied when a base week is cloned across a programme:
-// RPE ramps up through each 4-week block, then every 4th week is a deload
-// (a set dropped, RPE eased back). Reps/exercise selection are left untouched.
-function progressExercises(list, week, deload) {
-  const blockWk = (week - 1) % 4 // 0..3 within the current 4-week block
-  return (list || []).map((e) => {
-    const sets = e.sets || 3
-    const out = { name: e.name, sets, reps: e.reps }
-    if (deload) {
-      out.sets = Math.max(2, sets - 1)
-      if (e.rpe) out.rpe = Math.max(6, e.rpe - 2)
-    } else if (e.rpe) {
-      out.rpe = Math.min(10, e.rpe + blockWk)
-    }
-    return out
-  })
-}
+// daySpread / progressExercises now live in programBuild.js — a standard client
+// can generate their own programme too, and both paths must progress load the
+// same way.
 const CLIENT_TASK_KINDS = [
   ['checkin', 'Check-in form'],
   ['measurements', 'Measurements'],
@@ -2824,8 +2810,8 @@ function AssignProgram({ clientId, coachId, clientName }) {
   const [ownDays, setOwnDays] = useState(false)   // programme already sets its own weekdays
   async function load() {
     const [{ data: progs }, { data: cur }] = await Promise.all([
-      supabase.from('workout_programs').select('id, title, weeks, client_id').eq('coach_id', coachId).or(`client_id.is.null,client_id.eq.${clientId}`).order('created_at', { ascending: false }),
-      supabase.from('client_programs').select('id, program_id, start_date, repeat, day_map, coach_id, workout_programs(title)').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1),
+      supabase.from('workout_programs').select('id, title, weeks, client_id, source').eq('coach_id', coachId).or(`client_id.is.null,client_id.eq.${clientId}`).order('created_at', { ascending: false }),
+      supabase.from('client_programs').select('id, program_id, start_date, repeat, day_map, coach_id, workout_programs(title, source)').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }).limit(1),
     ])
     setPrograms(progs || [])
     setCurrent(cur?.[0] || null)
@@ -2837,7 +2823,7 @@ function AssignProgram({ clientId, coachId, clientName }) {
     await supabase.from('client_programs').update({ active: false }).eq('client_id', clientId).eq('active', true)
     const { data, error } = await supabase.from('client_programs')
       .insert({ client_id: clientId, coach_id: coachId, program_id: pick, start_date: startDate || start, repeat, active: true, day_map: days && days.length ? days : null })
-      .select('id, program_id, start_date, repeat, day_map, coach_id, workout_programs(title)').single()
+      .select('id, program_id, start_date, repeat, day_map, coach_id, workout_programs(title, source)').single()
     setBusy(false)
     if (error) { setMsg('Could not assign: ' + error.message); return }
     setCurrent(data); setPick(''); setPicking(false); setMsg('Program assigned ✓')
@@ -2875,7 +2861,7 @@ function AssignProgram({ clientId, coachId, clientName }) {
             {(current.day_map || []).length
               ? `Training ${sortDays(current.day_map).map((d) => WEEKDAYS[d]).join(', ')}`
               : 'Following the program’s own days'}
-            {current.coach_id ? ' · assigned by you' : ' · chosen by them'}
+            {current.workout_programs?.source === 'client_ai' ? ' · they built this themselves with AI' : ''}
           </div>
           <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} disabled={busy} onClick={stop}>Stop program</button>
         </div>
@@ -2883,7 +2869,7 @@ function AssignProgram({ clientId, coachId, clientName }) {
       <label className="field" style={{ marginTop: 10 }}>Program
         <select className="ex-select" value={pick} onChange={(e) => setPick(e.target.value)}>
           <option value="">Choose a program…</option>
-          {programs.map((p) => <option key={p.id} value={p.id}>{p.title}{p.weeks ? ` · ${p.weeks}wk` : ''}{p.client_id ? ' · 1-2-1' : ''}</option>)}
+          {programs.map((p) => <option key={p.id} value={p.id}>{p.title}{p.weeks ? ` · ${p.weeks}wk` : ''}{p.source === 'client_ai' ? ' · self-built' : p.client_id ? ' · 1-2-1' : ''}</option>)}
         </select>
       </label>
       {/* The start date lives on the NEXT step and nowhere else. A second date
@@ -3192,11 +3178,14 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
   const [genBusy, setGenBusy] = useState(false)
   const [genDraft, setGenDraft] = useState(null)
   const [genErr, setGenErr] = useState('')
+  const [kit, setKit] = useState([]) // equipment read off photos, after the coach has corrected it
   const gset = (k) => (e) => setG((s) => ({ ...s, [k]: e.target.value }))
   async function genProgram() {
     setGenBusy(true); setGenErr('')
     try {
-      const res = await fetch('/.netlify/functions/program-generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(g) })
+      // The corrected kit list wins over the free-text box when there is one.
+      const equipment = kit.length ? kit.join(', ') : g.equipment
+      const res = await fetch('/.netlify/functions/program-generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...g, equipment }) })
       const j = await res.json()
       if (!j.sessions?.length) setGenErr(j.error || 'Nothing came back — try again.')
       else setGenDraft(j)
@@ -3206,7 +3195,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
   async function saveGenerated() {
     const d = genDraft
     const weeksN = Math.min(Math.max(Number(d.weeks) || 4, 1), 16)
-    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, client_id: clientId, title: d.title, description: d.description || null, weeks: weeksN, level: g.level, audience_tag: personal ? null : (g.audience_tag?.trim().toLowerCase() || null) }).select().single()
+    const { data: prog, error: err } = await supabase.from('workout_programs').insert({ coach_id: coachId, client_id: clientId, title: d.title, description: d.description || null, weeks: weeksN, level: g.level, audience_tag: personal ? null : (g.audience_tag?.trim().toLowerCase() || null), source: 'coach_ai' }).select().single()
     if (err || !prog) { setGenErr(err?.message || 'Save failed.'); return }
     // Clone the AI's base week across every week of the programme, tagging each
     // session with its week + a default training day, and progressing the load
@@ -3309,6 +3298,18 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
               <select value={g.level} onChange={gset('level')}>{PROGRAM_LEVELS.map((l) => <option key={l}>{l}</option>)}</select>
             </label>
             <label className="field">Equipment<input value={g.equipment} onChange={gset('equipment')} placeholder="e.g. Barbell, dumbbells, machines" /></label>
+            {/* Paul: "could I upload images of their equipment and the ai build
+                the session around what they have?" The photos produce a LIST he
+                corrects; the corrected list is what reaches the generator. */}
+            {personal && (
+              <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                <EquipmentScan
+                  items={kit} setItems={setKit}
+                  label={`Or photograph ${clientFirst}’s kit`}
+                  hint={`Snap their home gym, garage or wherever they train — up to four photos. You will get a list to check before anything is built from it.`}
+                />
+              </div>
+            )}
             {!personal && <label className="field">Only show to tag (optional)<input value={g.audience_tag || ''} onChange={gset('audience_tag')} placeholder="e.g. standard — blank = everyone" /></label>}
             {genErr && <p className="error">{genErr}</p>}
             <div className="nudge-actions">

@@ -22,6 +22,7 @@ import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { Awards } from './Awards.jsx'
+import { BuildMyProgram } from './BuildMyProgram.jsx'
 import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
@@ -1715,6 +1716,7 @@ function ProgramLibrary({ clientId, trainerId, coachName, onBack }) {
   const [schedDay, setSchedDay] = useState({})
   const [assignOpenId, setAssignOpenId] = useState(null)
   const [activeAssignment, setActiveAssignment] = useState(null) // this client's one active whole-programme assignment
+  const [buildOpen, setBuildOpen] = useState(false)
   const todayLocal = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
 
   useEffect(() => {
@@ -1782,6 +1784,24 @@ function ProgramLibrary({ clientId, trainerId, coachName, onBack }) {
       <p className="eyebrow accent">Program library</p>
       <h1 className="h1">Follow a plan.</h1>
       <p className="muted-note">Structured programs built by {coachFirst}. Add a whole program to your plan and pick your training days — it applies across every week automatically. Or open one and add a single session to a day.</p>
+
+      {/* Paul: "I wonder if it could be an option to let people use the ai to
+          create a program ... state what days they can train and it builds a
+          program for them." Sits alongside his library rather than replacing
+          it — his programmes stay the first thing on the screen. */}
+      {THEME.features?.clientProgramAi && (
+        buildOpen ? (
+          <div className="card" style={{ marginTop: 12 }}>
+            <p className="eyebrow accent">Build my own plan</p>
+            <BuildMyProgram clientId={clientId} onDone={() => { setBuildOpen(false); load() }} />
+            <button type="button" className="link-btn" style={{ marginTop: 10 }} onClick={() => setBuildOpen(false)}>Cancel</button>
+          </div>
+        ) : (
+          <button type="button" className="btn ghost" style={{ marginTop: 12 }} onClick={() => setBuildOpen(true)}>
+            Or build me one with AI
+          </button>
+        )
+      )}
 
       {programs === null && <Loader text="Loading programs…" />}
       {programs !== null && programs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>No programs yet — {coachFirst} will add them here.</p>}
