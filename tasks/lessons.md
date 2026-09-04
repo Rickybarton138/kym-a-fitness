@@ -365,3 +365,26 @@ Two things that made it hold up:
 And a failure mode worth remembering: the coach's view also triggered the sync,
 which would have silently consumed each client's first-award moment before they
 saw it. Anything computed on view needs to ask who gets to see the result first.
+
+## A prompt is a request; a check is a guarantee (2026-09-04)
+Building programmes around a client's own kit, the generator put a lat pulldown
+in a plan whose entire inventory was dumbbells, a bench and bands — about one
+run in five. Two rounds of firmer wording ("HARD CONSTRAINT", "there is NO cable
+machine") reduced it but never removed it, because an instruction is something
+the model weighs, not something it obeys.
+What fixed it was checking the output: any exercise naming kit the person does
+not own triggers one rebuild and is dropped if it survives. Three clean runs
+before the guard, five after.
+Rule: when a wrong answer would quietly harm the user — twelve weeks built
+around a machine they do not own — validate the output in code. Reserve prompt
+wording for improving the median answer, never for guaranteeing the floor. The
+same pattern as the barcode check digit and the exercise-image confidence floor.
+
+## Escapes in a python heredoc keep breaking JS (2026-09-04)
+Third time this session: `\n` written inside `python - <<'PY'` reaches the file
+as a real newline, producing an unterminated JS string. It broke the analyze
+function, then a test file. It is silent when the surrounding syntax still
+parses, which is worse.
+Rule: patch anything containing a backslash escape with the Edit tool, not a
+python heredoc. If a heredoc is already in flight, `node --check` the file
+afterwards — it catches this in one second.
