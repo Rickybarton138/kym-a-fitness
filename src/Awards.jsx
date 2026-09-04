@@ -36,6 +36,14 @@ export function Awards({ clientId, own = true, name }) {
   const have = earned.map((e) => e.key)
   const coming = nextUp(have)
 
+  // Not just what THIS sync awarded. The coach opening a client's page syncs
+  // too, and if that were the only trigger the coach would silently consume the
+  // client's first-award moment before they ever saw it. Anything earned in the
+  // last week still reads as new to the person who earned it.
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)
+  const recent = earned.filter((e) => e.earned_on >= weekAgo).map((e) => e.key)
+  const celebrate = [...new Set([...fresh, ...recent])]
+
   if (!earned.length) {
     return (
       <div className="card">
@@ -57,10 +65,10 @@ export function Awards({ clientId, own = true, name }) {
   return (
     <div className="card">
       <p className="eyebrow">Awards</p>
-      {fresh.length > 0 && own && (
+      {celebrate.length > 0 && own && (
         <div className="award-new">
-          <b>{fresh.length === 1 ? 'New award' : `${fresh.length} new awards`}</b>
-          <span>{fresh.map((k) => BY_KEY[k]?.title).filter(Boolean).join(' · ')}</span>
+          <b>{celebrate.length === 1 ? 'New award' : `${celebrate.length} new awards`}</b>
+          <span>{celebrate.map((k) => BY_KEY[k]?.title).filter(Boolean).join(' · ')}</span>
         </div>
       )}
       <p className="muted-note">{who} earned {earned.length} of {ACHIEVEMENTS.length}. All for showing up and staying consistent.</p>
@@ -74,7 +82,7 @@ export function Awards({ clientId, own = true, name }) {
           <div key={g.id} style={{ marginTop: 12 }}>
             <p className="award-group">{g.label}</p>
             <div className="award-grid">
-              {mine.map((e) => <AwardBadge key={e.key} award={e.meta} on={e.earned_on} isNew={fresh.includes(e.key)} />)}
+              {mine.map((e) => <AwardBadge key={e.key} award={e.meta} on={e.earned_on} isNew={celebrate.includes(e.key)} />)}
             </div>
           </div>
         )
