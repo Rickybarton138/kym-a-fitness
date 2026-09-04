@@ -18,6 +18,7 @@ export async function fileToBase64(file) {
 // so answers speak in the client's own coach's voice.
 let activePersona = null
 export function setPersona(p) { activePersona = p }
+export function getPersona() { return activePersona }
 
 // The client's chosen nutrition detail level (lifestyle | performance), injected
 // into every AI call so nutrition answers match their preference.

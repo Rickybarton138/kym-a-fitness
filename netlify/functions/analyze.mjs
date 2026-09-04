@@ -99,6 +99,23 @@ function personaIntro(persona, role) {
   let s = `You are ${name}, a ${role || 'strength and nutrition coach'}${audience}.`
   if (persona && persona.philosophy) s += ` Your coaching philosophy: ${persona.philosophy}.`
   if (persona && persona.tone) s += ` Speak in your own voice — ${persona.tone}.`
+  // Distilled from the coach's own writing (see mode 'voicedistil'). This is a
+  // STYLE brief, not source material: the model must sound like them, never
+  // quote them or claim to be citing their book.
+  if (persona && persona.voiceStyle) {
+    s += `
+
+How ${name} writes and speaks — match this closely:
+${persona.voiceStyle}
+
+Write fresh sentences of your own in that manner. Any fragment quoted in the description above is evidence of style, not a phrase to reuse — never repeat one, and never begin your reply with one.`
+  }
+  // The distillation also pulls out verbatim lines, and those are deliberately
+  // NOT sent here. Given them as exemplars the model treated them as a script:
+  // it opened almost every reply with the same sentence word for word, however
+  // firmly it was told not to. A client would spot that within a day. The style
+  // brief above carries the voice; the sample lines are kept only so the coach
+  // can see what was learned from their writing.
   return s
 }
 
@@ -426,6 +443,66 @@ export const handler = async (event) => {
       if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { briefing: tb ? tb.text : 'No briefing available right now.' })
+    } catch {
+      return json(502, { error: 'Could not reach the AI service. Please try again.' })
+    }
+  }
+
+  // ---- Voice distil: read a coach's own writing, return a style brief ----
+  // Paul asked to feed his book in so the AI captures his tone. The book is not
+  // stored and never reaches a client prompt; this reads it ONCE and returns a
+  // compact brief plus a few characteristic lines, which is what gets injected
+  // (inside the cached prefix, so it is nearly free per call).
+  if (mode === 'voicedistil') {
+    const text = String(body.text || '').trim()
+    if (text.length < 400) return json(400, { error: 'Paste a bit more writing — a few hundred words at least.' })
+    // Sampled across the whole thing rather than the first N characters: an
+    // introduction is not representative of how someone writes throughout.
+    const CAP = 60000
+    let sample = text
+    if (text.length > CAP) {
+      const take = Math.floor(CAP / 3)
+      const mid = Math.floor(text.length / 2 - take / 2)
+      const gap = '\n\n[...]\n\n'
+      sample = text.slice(0, take) + gap + text.slice(mid, mid + take) + gap + text.slice(-take)
+    }
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: MODEL_MID,
+          max_tokens: 1200,
+          system: 'You analyse how a person writes so an assistant can speak in their voice. Return STRICT JSON only, no markdown.',
+          messages: [{
+            role: 'user',
+            content: `Below is writing by a fitness coach. Work out how they SOUND, not what they know.
+
+Return JSON:
+{"style":"<250-400 words, second person, addressed to the assistant. Cover: sentence length and rhythm; how direct or warm they are; vocabulary and any recurring phrases or idioms they actually use; how they open and close a point; humour; how they handle a client who is struggling; and 2-3 things they would NEVER say or do. Be specific. You may quote at most four fragments of five words or fewer as evidence, and you must NEVER quote a complete opening sentence or a whole catchphrase — describe those patterns in your own words instead (e.g. 'often opens by levelling with the reader before making the point').>",
+"examples":["<5 to 8 short lines, VERBATIM from the text, each under 25 words, that best capture the voice. Prefer lines that could plausibly be said to a client.>"]}
+
+Do not summarise the content or the argument. Style only.
+
+TEXT:
+${sample}`,
+          }],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      const tb = (data.content || []).find((b) => b.type === 'text')
+      let out
+      try {
+        out = JSON.parse((tb ? tb.text : '{}').replace(/^```(?:json)?|```$/g, '').trim())
+      } catch { return json(502, { error: 'Could not read the voice analysis. Try again.' }) }
+      const examples = Array.isArray(out.examples) ? out.examples.filter(Boolean).slice(0, 8) : []
+      if (!out.style) return json(502, { error: 'No style could be drawn from that text.' })
+      return json(200, {
+        style: String(out.style).slice(0, 3000),
+        examples: examples.map((e) => String(e).slice(0, 200)),
+        words: text.split(/\s+/).filter(Boolean).length,
+      })
     } catch {
       return json(502, { error: 'Could not reach the AI service. Please try again.' })
     }

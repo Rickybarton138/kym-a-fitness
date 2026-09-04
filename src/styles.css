@@ -690,3 +690,16 @@ input { font-family: inherit; }
 /* Fold-away section header, e.g. "Other sessions (13)" on the Train screen. */
 .disclosure { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 13px 15px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; }
 .disclosure .chev { color: var(--muted); font-size: 17px; }
+
+/* Awards. Text badges, not emoji — emoji render as tofu in Ricky's fonts. */
+.award-group { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.award-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.award { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 12px 8px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--surface-2); }
+.award-glyph { display: flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 14px; letter-spacing: .01em; }
+.award-title { font-size: 12.5px; font-weight: 600; line-height: 1.25; color: var(--text); }
+.award-sub { font-size: 11px; color: var(--muted); line-height: 1.3; }
+.award.locked { border-color: var(--line); opacity: .55; }
+.award.locked .award-glyph { background: var(--surface); color: var(--muted); border: 1px dashed var(--line); }
+.award.is-new { box-shadow: 0 0 0 2px var(--accent); }
+.award-new { display: flex; flex-direction: column; gap: 2px; margin: 8px 0 4px; padding: 10px 12px; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font-size: 13px; }
+.award-new span { font-size: 12px; opacity: .85; }

@@ -4,6 +4,7 @@ import { THEME } from './themes.js'
 import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays } from './lib.js'
 import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
+import { Awards } from './Awards.jsx'
 import { EXERCISE_GROUPS } from './exercises.js'
 import { LEVELS } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
@@ -764,6 +765,10 @@ function ClientDetail({ client, trainerId, onBack }) {
             </CoachSection>
 
             <CoachSection title="Progress & diary">
+              {THEME.features?.awards && (
+                <Awards clientId={client.id} own={false} name={client.full_name} />
+              )}
+
               <FormChecksReview clientId={client.id} />
 
               <ClientBodyScans clientId={client.id} />
@@ -814,12 +819,17 @@ function CoachVoice({ coachId, coachName }) {
     supabase.from('coach_personas').select('*').eq('coach_id', coachId).maybeSingle().then(({ data }) => {
       const persona = data || { display_name: (coachName || '').split(' ')[0] || 'Coach', audience: '', philosophy: '', tone: '' }
       setP(persona)
-      setPersona({ name: persona.display_name, audience: persona.audience, philosophy: persona.philosophy, tone: persona.tone })
+      setPersona(toActive(persona))
     })
   }, [])
+  // The distilled voice rides along with the persona on every AI call.
+  const toActive = (x) => ({
+    name: x.display_name, audience: x.audience, philosophy: x.philosophy, tone: x.tone,
+    voiceStyle: x.voice_style || null, voiceExamples: x.voice_examples || null,
+  })
   async function save() {
     await supabase.from('coach_personas').upsert({ coach_id: coachId, display_name: p.display_name, audience: p.audience, philosophy: p.philosophy, tone: p.tone, welcome: p.welcome || null, updated_at: new Date().toISOString() })
-    setPersona({ name: p.display_name, audience: p.audience, philosophy: p.philosophy, tone: p.tone })
+    setPersona(toActive(p))
     setSaved(true); setTimeout(() => setSaved(false), 1500)
   }
   if (!p) return null
@@ -842,6 +852,122 @@ function CoachVoice({ coachId, coachName }) {
           <label className="field">Your tone<textarea value={p.tone || ''} onChange={set('tone')} placeholder="e.g. direct, motivating, straight-talking with a bit of tough love" /></label>
           <label className="field">Welcome message<textarea value={p.welcome || ''} onChange={set('welcome')} placeholder="Auto-sent to each new client's chat when they join — welcome them and point them to their next steps." /></label>
           <button className="btn primary" onClick={save}>{saved ? 'Saved ✓' : 'Save AI voice'}</button>
+        </div>
+      )}
+      <VoiceSample coachId={coachId} persona={p} onSaved={(np) => { setP(np); setPersona(toActive(np)) }} />
+    </div>
+  )
+}
+
+// Paul: "Is there a way I could upload the transcript from my book into the ai
+// voice so it can see more of how i speak and capture my tone of voice more?"
+//
+// Yes — but not by putting the book in every prompt. It is read ONCE, distilled
+// into a short style brief plus a few characteristic lines, and only that is
+// carried into calls (inside the prompt-cached prefix, so it costs almost
+// nothing per reply). The book itself is never stored and never sent to a
+// client, and the model is told to match the voice, never to quote it.
+function VoiceSample({ coachId, persona, onSaved }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [draft, setDraft] = useState(null) // { style, examples, words }
+  const [saving, setSaving] = useState(false)
+
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0
+  const has = !!persona.voice_style
+
+  async function readFile(f) {
+    if (!f) return
+    setErr('')
+    if (!/\.(txt|md|markdown|csv)$/i.test(f.name)) {
+      setErr('Plain text only for now (.txt or .md). From Word or Pages, use File → Save As / Export → plain text, or just paste it in below.')
+      return
+    }
+    setText(await f.text())
+  }
+
+  async function distil() {
+    setBusy(true); setErr(''); setDraft(null)
+    try {
+      const r = await analyze({ mode: 'voicedistil', text })
+      setDraft(r)
+    } catch (e) { setErr(e.message) }
+    setBusy(false)
+  }
+
+  async function keep() {
+    setSaving(true)
+    const patch = {
+      coach_id: coachId,
+      voice_style: draft.style,
+      voice_examples: (draft.examples || []).join('\n'),
+      voice_source_words: draft.words || words,
+      voice_updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    const { data, error } = await supabase.from('coach_personas').upsert(patch).select().single()
+    setSaving(false)
+    if (error) { setErr(error.message); return }
+    setDraft(null); setText(''); setOpen(false)
+    onSaved?.(data)
+  }
+
+  async function clear() {
+    const { data } = await supabase.from('coach_personas')
+      .upsert({ coach_id: coachId, voice_style: null, voice_examples: null, voice_source_words: null, voice_updated_at: null, updated_at: new Date().toISOString() })
+      .select().single()
+    if (data) onSaved?.(data)
+  }
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+      <p className="eyebrow">Teach it your voice</p>
+      <p className="muted-note">
+        Paste a chunk of your own writing — a chapter of your book, a few newsletters, anything that sounds like you.
+        It is read once to work out how you write, then only that summary is used. Your writing is not stored or shown to clients.
+      </p>
+      {has && !open && (
+        <p className="muted-note" style={{ marginTop: 8 }}>
+          <b>Learned from {persona.voice_source_words ? persona.voice_source_words.toLocaleString() + ' words' : 'your writing'}</b>
+          {persona.voice_updated_at ? ` · ${String(persona.voice_updated_at).slice(0, 10)}` : ''}
+        </p>
+      )}
+      {!open ? (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn ghost" onClick={() => setOpen(true)}>{has ? 'Replace the sample' : 'Add a writing sample'}</button>
+          {has && <button type="button" className="link-btn" onClick={clear}>Remove it</button>}
+        </div>
+      ) : (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <input type="file" accept=".txt,.md,.markdown,text/plain" onChange={(e) => readFile(e.target.files?.[0])} />
+          <label className="field">Or paste it here
+            <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste a few thousand words — the more the better, up to a whole book." />
+          </label>
+          <p className="muted-note">{words.toLocaleString()} words{words > 0 && words < 300 ? ' — a bit more would help' : ''}</p>
+          {err && <p className="error">{err}</p>}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn primary" disabled={busy || words < 60} onClick={distil}>{busy ? 'Reading it…' : 'Analyse my voice'}</button>
+            <button type="button" className="link-btn" onClick={() => { setOpen(false); setDraft(null); setText(''); setErr('') }}>Cancel</button>
+          </div>
+
+          {draft && (
+            <div className="card" style={{ background: 'var(--surface-2)' }}>
+              <p className="eyebrow accent">How it will speak as you</p>
+              <p style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{draft.style}</p>
+              {(draft.examples || []).length > 0 && (
+                <>
+                  <p className="eyebrow" style={{ marginTop: 10 }}>Lines it picked out as most like you</p>
+                  <ul className="ex-list">
+                    {draft.examples.map((x, i) => <li key={i} className="muted-note" style={{ marginTop: 2 }}>“{x}”</li>)}
+                  </ul>
+                </>
+              )}
+              <p className="muted-note" style={{ marginTop: 10 }}>Happy with that? It shapes every AI reply your clients get.</p>
+              <button type="button" className="btn primary" disabled={saving} onClick={keep}>{saving ? 'Saving…' : 'Use this voice'}</button>
+            </div>
+          )}
         </div>
       )}
     </div>

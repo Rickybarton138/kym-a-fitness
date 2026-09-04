@@ -21,6 +21,7 @@ import { FoodDiary } from './FoodDiary.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
+import { Awards } from './Awards.jsx'
 import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
@@ -2914,6 +2915,8 @@ function Body({ measurements, onAdd, clientId, coachName }) {
     <div className="stack">
       <p className="eyebrow">Progress</p>
       <h1 className="h1">Your progress.</h1>
+      {/* Above the tabs on purpose — an award nobody finds is not a reward. */}
+      {THEME.features?.awards && <Awards clientId={clientId} />}
       <div className="seg four">
         <button type="button" className={tab === 'photos' ? 'on' : ''} onClick={() => setTab('photos')}>Photos</button>
         <button type="button" className={tab === 'scan' ? 'on' : ''} onClick={() => setTab('scan')}>Body scan</button>
