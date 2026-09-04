@@ -326,3 +326,42 @@ one. And pass the DAY from the caller — `now()::date` is UTC, and in BST a lat
 evening tap is already tomorrow.
 Corollary: when a test fails intermittently on a value that should accumulate,
 suspect the code before the test.
+
+## Few-shot exemplars become a script, not a style (2026-09-04)
+Paul asked to feed his book in so the AI captures his tone. The distillation
+returned a style brief plus the most characteristic verbatim lines, and both
+went into the prompt. The model then opened almost every reply with the same
+sentence word for word — "Right, let's be honest with each other." — however
+firmly it was told not to reuse them. Removing the lines was not enough: the
+style BRIEF quoted the same opener back as evidence, and it kept getting lifted.
+What worked was fixing the input, not the instruction: the distiller is barred
+from quoting a whole opening line or catchphrase and must describe those
+patterns in its own words, plus an explicit override where the brief is
+injected. Three clean runs afterwards, in voice and original.
+Rules:
+- Verbatim exemplars are a template. If you do not want them reproduced, do not
+  send them — an instruction not to copy loses to the example itself.
+- Style transfers from a DESCRIPTION of the style. Keep the samples for the
+  human to review; they earn trust in the feature without steering the model.
+- When output keeps containing something you banned, look at what is in the
+  prompt rather than adding a firmer ban.
+- My first assertion demanded zero reuse of any sample line. That was the wrong
+  bar: a coach's signature phrase recurring is the point of the feature. Assert
+  the failure that actually harms the user — the formulaic identical opener.
+
+## Decide what a feature refuses to reward (2026-09-04)
+Building milestone awards, the obvious set includes weight lost. The app already
+carries a `nutrition_sensitive` flag for clients who have struggled with
+disordered eating, and a badge for losing 5kg is exactly what should never
+appear on their phone. Every award is for effort and consistency — sessions,
+streaks, PBs, logging — none for body weight or a measurement direction. It is
+also better coaching: it rewards the part the client controls.
+Two things that made it hold up:
+- The maths runs in a SECURITY DEFINER function over the same rows as the rest
+  of the app, and there is NO client insert policy, so awards cannot be minted.
+- Thresholds were set against real data first. Paul's clients had one to four
+  sessions; a ladder starting at 50 would have been furniture. First award at
+  one session.
+And a failure mode worth remembering: the coach's view also triggered the sync,
+which would have silently consumed each client's first-award moment before they
+saw it. Anything computed on view needs to ask who gets to see the result first.
