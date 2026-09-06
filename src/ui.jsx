@@ -167,7 +167,7 @@ export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, initia
   const [days, setDays] = useState(initialDays || [])
   // This is the ONLY start date in the flow. There used to be a second one on
   // the card above, which looked like the real thing and was silently thrown
-  // away — Paul set a backdated start there, and the program always began today
+  // away — Paul set a backdated start there, and the programme always began today
   // (or, if he never reached this step, was never assigned at all).
   const [start, setStart] = useState(initialStart || (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })())
   const [busy, setBusy] = useState(false)
@@ -190,6 +190,16 @@ export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, initia
           <button type="button" key={dow} className={days.includes(dow) ? 'on' : ''} onClick={() => toggle(dow)}>{WEEKDAYS[dow]}</button>
         ))}
       </div>
+      {/* Picking FEWER days than the programme has sessions used to quietly
+          strand the extras — one day chosen for a two-session week meant the
+          second session could never land on a date. Say so before it is saved,
+          rather than letting someone wonder where their legs day went. */}
+      {sessionsPerWeek && days.length > 0 && days.length < sessionsPerWeek && (
+        <p className="muted-note" style={{ marginTop: 6 }}>
+          This program has {sessionsPerWeek} sessions a week and you have picked {days.length} day{days.length === 1 ? '' : 's'}.
+          The {sessionsPerWeek - days.length} you have not placed will stay on the day the program sets.
+        </p>
+      )}
       <label className="field" style={{ marginTop: 8 }}>Start date<input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
       <div className="grid-2" style={{ marginTop: 10 }}>
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>

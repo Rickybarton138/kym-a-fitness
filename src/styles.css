@@ -173,8 +173,15 @@ input { font-family: inherit; }
 .trend { width: 100%; height: auto; display: block; }
 
 /* Forms */
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+/* minmax(0, 1fr), NOT 1fr. A bare 1fr means minmax(auto, 1fr), so each column
+   refuses to shrink below its content's intrinsic width — and an <input> has a
+   built-in default width of about 20 characters. Two of those plus the gap
+   overflow a narrow phone, which scrolls the WHOLE page sideways and pushes the
+   labels off the left edge. Paul's client: "there's a couple of bits where the
+   text box goes off screen". Every .grid-2 in the app was affected. */
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
+.field input, .field select, .field textarea { min-width: 0; width: 100%; }
 .field input { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; color: var(--text); font-size: 15px; }
 .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -716,3 +723,11 @@ button.chip span { color: var(--muted); font-weight: 700; }
 /* A full-width selectable option row (where do you train, etc). */
 .opt-row { display: block; width: 100%; text-align: left; padding: 14px 16px; margin-top: 8px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
 .opt-row.on { border-color: var(--accent); background: var(--surface-2); }
+
+/* Steps catch-up: one row per recent day, showing what is already logged. */
+.step-day { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 14px; cursor: pointer; }
+.step-day.on { border-color: var(--accent); background: var(--surface-2); }
+.step-day-name { font-weight: 600; }
+.step-day-n { font-size: 13px; color: var(--text); }
+.step-day-n.none { color: var(--muted); }
+.step-day-n.hit { color: var(--accent-hi, var(--accent)); font-weight: 600; }

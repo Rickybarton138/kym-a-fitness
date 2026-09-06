@@ -23,6 +23,7 @@ import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { Awards } from './Awards.jsx'
 import { BuildMyProgram } from './BuildMyProgram.jsx'
+import { StepsCatchUp } from './StepsCatchUp.jsx'
 import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
@@ -201,8 +202,8 @@ export default function ClientApp({ profile, onSignOut }) {
 
       <main className="screen">
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
-        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
-        {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} onGo={setScreen} />}
+        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
+        {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} stepTarget={profile.step_target} onGo={setScreen} />}
         {screen === 'myprogram' && <MyProgram clientId={profile.id} onBack={() => setScreen(THEME.nav ? 'trainhub' : 'train')} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
         {screen === 'calc' && <CalcTargets profile={profile} onSaveTargets={saveTargets} onBack={() => setScreen(THEME.nav ? 'nutrition' : 'home')} />}
@@ -1535,7 +1536,7 @@ function YourPlanCard({ clientId, onOpen }) {
   )
 }
 
-function Train({ clientId, trainerId, onWorkoutDone }) {
+function Train({ clientId, trainerId, onWorkoutDone, stepTarget }) {
   const [tab, setTab] = useState(THEME.features?.templates ? 'start' : 'ai')
   const [history, setHistory] = useState([])
 
@@ -1582,6 +1583,8 @@ function Train({ clientId, trainerId, onWorkoutDone }) {
       {tab === 'start' && <StartWorkout clientId={clientId} onStarted={onSaved} />}
       {tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
       {tab === 'own' && <OwnPlan clientId={clientId} trainerId={trainerId} onSaved={onSaved} history={history} />}
+
+      <StepsCatchUp clientId={clientId} target={stepTarget} />
 
       <LiftProgress plans={history} clientId={clientId} canAdd title="Weights lifted" />
 
@@ -3457,7 +3460,7 @@ function MyProgram({ clientId, onBack, onGo }) {
   )
 }
 
-function TrainHub({ clientId, coachName, onGo }) {
+function TrainHub({ clientId, coachName, onGo, stepTarget }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [prog, setProg] = useState(null)
   const [today, setToday] = useState(null)
@@ -3519,6 +3522,12 @@ function TrainHub({ clientId, coachName, onGo }) {
           </button>
         )}
       </div>
+
+      {/* Paul's client: "Could we add an option to go back and add steps for
+          another day? Maybe in the training section ... Then keep the ability to
+          update for the day on the home page as it currently does." Both, then:
+          Home stays the one-tap today entry, this is the catch-up. */}
+      <StepsCatchUp clientId={clientId} target={stepTarget} />
     </div>
   )
 }
