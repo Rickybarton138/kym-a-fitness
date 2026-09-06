@@ -388,3 +388,31 @@ parses, which is worse.
 Rule: patch anything containing a backslash escape with the Edit tool, not a
 python heredoc. If a heredoc is already in flight, `node --check` the file
 afterwards — it catches this in one second.
+
+## `1fr` is `minmax(auto, 1fr)`, and an input will not shrink (2026-09-06)
+Paul's client: "there's a couple of bits where the text box goes off screen."
+`.grid-2` was `grid-template-columns: 1fr 1fr`. A bare `1fr` is
+`minmax(auto, 1fr)`, so each column refuses to go below its content's intrinsic
+width — and an `<input>` carries a built-in width of roughly 20 characters. Two
+of those plus a gap exceed a 360px phone, which scrolls the WHOLE page sideways
+and pushes the labels off the left edge. It had been wrong in all 48 uses of the
+class since the start; nobody hit it until a client on a narrow screen did.
+Rule: in any grid or flex row holding form controls, use `minmax(0, 1fr)` and
+`min-width: 0` on the children. `1fr` alone is a latent overflow.
+The check that matters more than the fix: a sweep of every screen at 320px and
+360px asserting `documentElement.scrollWidth <= clientWidth`, naming the widest
+offending element. Cheap, catches the whole class, and it is in round 23 now.
+
+## Positional mapping silently drops what it cannot place (2026-09-06)
+"I could see the TRX training session but not the legs one." A programme was
+authored Tue + Thu; the assignment's day_map was [Tue]. `sessionForDay` maps
+chosen days onto the week's sessions BY POSITION, so a one-entry map could only
+ever reach session one. The Thursday session existed in the database, rendered
+in listings, and no date could ever resolve to it.
+Rule: when mapping list A onto list B by index, decide explicitly what happens
+to the leftovers. Silently dropping them is almost never right — here they now
+fall back to the day the coach authored, so nothing can vanish. And say it at
+input time: the picker now states how many sessions are left unplaced.
+Worth noting the shape — the data was perfect and the bug was in the reading of
+it. Querying program_sessions showed both sessions present, which pointed
+straight at the resolver rather than at the builder.
