@@ -416,3 +416,30 @@ input time: the picker now states how many sessions are left unplaced.
 Worth noting the shape — the data was perfect and the bug was in the reading of
 it. Querying program_sessions showed both sessions present, which pointed
 straight at the resolver rather than at the builder.
+
+## "It isn't saving" often means "I can't find my way back" (2026-09-06)
+Benn: "it's not saving his progress as he goes so when he comes out of the
+browser and back in it's reloading back to the home page and he's having to
+start again." Every tick and weight WAS being saved — the player writes to
+localStorage on each change. What was missing was the route back: the flag that
+reopens a session lived in sessionStorage, which a browser discards on close, so
+the app had no idea there was anything to return to.
+Rule: when a user says data is lost, check whether it is the data or the way
+back to it. Reading what is actually in storage answers it in a minute, and the
+two have completely different fixes.
+Corollary that nearly hid the fix: the session card reads the resume flag once,
+at mount. Someone whose last screen was already Train set the flag and saw
+nothing, because the screen never changed and so never remounted. State read
+only at mount needs a deliberate remount when something outside changes it.
+
+## A test that finishes a workout changes what the app offers (2026-09-06)
+Round 24 finishes a session to prove the drops are stored. That inserts a
+workout_completion for today, which makes Home show "Start" instead of "Start a
+workout" — and round 10, which clicks that button, started failing. It looked
+like a regression from the change under test.
+What settled it in one run: the same suite failed against PRODUCTION, which did
+not have the new code. Not mine.
+Rule: a suite must undo every side effect it creates, not just the rows it
+obviously owns — completions, targets and streak state all steer other screens.
+And when a sibling suite starts failing, run it against production first; if it
+fails there too, the change under test is innocent.
