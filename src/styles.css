@@ -731,3 +731,11 @@ button.chip span { color: var(--muted); font-weight: 700; }
 .step-day-n { font-size: 13px; color: var(--text); }
 .step-day-n.none { color: var(--muted); }
 .step-day-n.hit { color: var(--accent-hi, var(--accent)); font-weight: 600; }
+
+/* Logging each drop of a drop set, indented under its working set. */
+.gw-drops { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 2px 34px; }
+.gw-drop { display: flex; align-items: center; gap: 8px; }
+.gw-drop-n { flex: 0 0 62px; font-size: 12px; color: var(--muted); }
+
+/* "You have a session in progress" — sits above whatever screen they land on. */
+.resume-card { border-color: var(--accent); margin-bottom: 16px; }

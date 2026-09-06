@@ -85,6 +85,11 @@ export default function ClientApp({ profile, onSignOut }) {
   // NOTE: cbk_gw_active stays sessionStorage on purpose — it distinguishes
   // "resuming an interrupted workout" from "opening the plan fresh".
   const [screen, setScreen] = useState(() => { try { return localStorage.getItem('cbk_screen') || 'home' } catch { return 'home' } })
+  // Remounts the Train screen when a session is resumed. Without it, someone
+  // whose last screen was already Train sets the resume flag and nothing
+  // happens: the session card reads that flag once, when it mounts, and it
+  // never mounted again.
+  const [resumeTick, setResumeTick] = useState(0)
   useEffect(() => { try { localStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
   // Where the client came from, so a screen reachable two ways (My details: the
   // Nutrition tile, or the PAR-Q prompt on Home) sends them back where they were.
@@ -201,8 +206,13 @@ export default function ClientApp({ profile, onSignOut }) {
       </header>
 
       <main className="screen">
+        {/* Paul: "Could we have that if someone exits mid workout, when they go
+            back in it prompts and says you have an active session would you like
+            to resume?" Shown wherever they land, because the whole point is that
+            they did not choose to be here. */}
+        <ResumeBanner clientId={profile.id} onResume={() => { setResumeTick((n) => n + 1); setScreen('train') }} />
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
-        {screen === 'train' && <Train onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
+        {screen === 'train' && <Train key={'train' + resumeTick} onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} stepTarget={profile.step_target} onGo={setScreen} />}
         {screen === 'myprogram' && <MyProgram clientId={profile.id} onBack={() => setScreen(THEME.nav ? 'trainhub' : 'train')} onGo={setScreen} />}
         {screen === 'nutrition' && <NutritionHub profile={profile} coachName={coachName} onGo={setScreen} />}
@@ -2544,7 +2554,17 @@ function toPlayer(exercises) {
     // it here would erase the coach's drop sets the moment a client hits Finish
     // (fromPlayer rebuilds the stored sets from exactly these).
     const sets = Array.isArray(ex.sets)
-      ? ex.sets.map((s) => ({ reps: String(s.reps ?? ''), weight: String(s.weight ?? ''), done: false, ...(s.drops ? { drops: s.drops } : {}) }))
+      ? ex.sets.map((s) => ({
+        reps: String(s.reps ?? ''), weight: String(s.weight ?? ''), done: false,
+        ...(s.drops ? {
+          drops: s.drops,
+          // One slot per prescribed drop. Paul: "the client has no where to log
+          // their drop sets" — the count was shown as a label and that was all.
+          drop_log: Array.from({ length: s.drops }, (_, i) => ({
+            reps: String(s.drop_log?.[i]?.reps ?? ''), weight: String(s.drop_log?.[i]?.weight ?? ''),
+          })),
+        } : {}),
+      }))
       : Array.from({ length: Math.max(1, Number(ex.sets) || 1) }, () => ({ reps: String(ex.reps ?? ''), weight: String(ex.weight ?? ''), done: false }))
     return { ...ex, sets }
   })
@@ -2552,11 +2572,82 @@ function toPlayer(exercises) {
 function fromPlayer(playerExs) {
   return playerExs.map((ex) => {
     const { reps, weight, sets, ...rest } = ex
-    return { ...rest, sets: (sets || []).map((s) => ({ reps: String(s.reps).trim(), weight: String(s.weight).trim() || null, ...(s.drops ? { drops: s.drops } : {}) })) }
+    return {
+      ...rest,
+      sets: (sets || []).map((s) => {
+        const drop_log = (s.drop_log || [])
+          .map((d) => ({ reps: String(d.reps || '').trim(), weight: String(d.weight || '').trim() || null }))
+        // Only stored once something was actually logged, so an untouched drop
+        // set still reads as the coach's prescription and nothing else.
+        const logged = drop_log.some((d) => d.reps || d.weight)
+        return {
+          reps: String(s.reps).trim(), weight: String(s.weight).trim() || null,
+          ...(s.drops ? { drops: s.drops } : {}),
+          ...(logged ? { drop_log } : {}),
+        }
+      }),
+    }
   })
 }
 
 const GW_KEY = (id) => 'cbk_gw:' + id
+// Benn: leaving the browser mid-session and coming back landed him on Home,
+// "having to start again". His sets were never actually lost — they are written
+// to localStorage on every change — but the flag that REOPENS the session lives
+// in sessionStorage, which the browser throws away on close. So nothing knew
+// there was a session to go back to. This record is the durable half.
+const GW_RESUME = 'cbk_gw_resume'
+export const readResume = () => {
+  try { return JSON.parse(localStorage.getItem(GW_RESUME) || 'null') } catch { return null }
+}
+export const clearResume = () => { try { localStorage.removeItem(GW_RESUME) } catch { /* ignore */ } }
+// The way back into an interrupted session. Reads the durable record the player
+// writes on every change, so it survives the browser being closed — which is
+// exactly what was losing Benn.
+function ResumeBanner({ clientId, onResume }) {
+  const [rec, setRec] = useState(() => readResume())
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    if (!rec) { setChecking(false); return }
+    let alive = true
+    // Only offer it if the session is still there and still unfinished — a plan
+    // finished on another device must not haunt this one.
+    supabase.from('workout_plans').select('id, title').eq('id', rec.id).eq('client_id', clientId).maybeSingle()
+      .then(({ data }) => {
+        if (!alive) return
+        if (!data) { clearResume(); setRec(null) }
+        setChecking(false)
+      })
+    return () => { alive = false }
+  }, [])
+
+  if (checking || !rec) return null
+  // A week-old record is not "mid-session" any more, it is litter.
+  if (rec.at && Date.now() - rec.at > 7 * 864e5) { clearResume(); return null }
+
+  const dismiss = () => { clearResume(); setRec(null) }
+  const go = () => {
+    try { sessionStorage.setItem('cbk_gw_active', rec.id) } catch { /* ignore */ }
+    setRec(null)
+    onResume()
+  }
+
+  return (
+    <div className="card resume-card">
+      <p className="eyebrow accent">Session in progress</p>
+      <p style={{ margin: '4px 0 0', fontWeight: 600 }}>{rec.title || 'Your session'}</p>
+      <p className="muted-note">
+        {rec.total ? `${rec.done} of ${rec.total} sets logged. Nothing has been lost — pick up where you left off.` : 'Pick up where you left off.'}
+      </p>
+      <div className="nudge-actions" style={{ marginTop: 10 }}>
+        <button className="btn primary sm" onClick={go}>Resume session</button>
+        <button type="button" className="link-btn" onClick={dismiss}>Not now</button>
+      </div>
+    </div>
+  )
+}
+
 function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastByName }) {
   // Restore an in-progress session (survives app-switch / reload), so ticked sets
   // and logged weights aren't lost until they hit Finish.
@@ -2571,7 +2662,21 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
   // Mark this session active + persist progress as they go.
   useEffect(() => { try { sessionStorage.setItem('cbk_gw_active', plan.id) } catch { /* ignore */ } }, [])
   useEffect(() => { try { localStorage.setItem(GW_KEY(plan.id), JSON.stringify(exs)) } catch { /* ignore */ } }, [exs])
-  const clearSaved = () => { try { localStorage.removeItem(GW_KEY(plan.id)); sessionStorage.removeItem('cbk_gw_active') } catch { /* ignore */ } }
+  // Durable, so closing the browser still leaves a trail back to this session.
+  useEffect(() => {
+    const done = exs.reduce((n, ex) => n + ex.sets.filter((x) => x.done).length, 0)
+    const total = exs.reduce((n, ex) => n + ex.sets.length, 0)
+    try {
+      localStorage.setItem(GW_RESUME, JSON.stringify({ id: plan.id, title: plan.title, done, total, at: Date.now() }))
+    } catch { /* ignore */ }
+  }, [exs])
+  const clearSaved = () => {
+    try {
+      localStorage.removeItem(GW_KEY(plan.id))
+      sessionStorage.removeItem('cbk_gw_active')
+      clearResume()
+    } catch { /* ignore */ }
+  }
   const exit = () => { clearSaved(); onExit && onExit() }
 
   const totalSets = exs.reduce((n, ex) => n + ex.sets.length, 0)
@@ -2580,6 +2685,13 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
 
   const toggleSet = (ei, si) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, done: !s.done })) })))
   const updateSet = (ei, si, k, v) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, [k]: v })) })))
+  const updateDrop = (ei, si, di, k, v) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : {
+    ...ex,
+    sets: ex.sets.map((s, j) => (j !== si ? s : {
+      ...s,
+      drop_log: (s.drop_log || []).map((d, k2) => (k2 !== di ? d : { ...d, [k]: v })),
+    })),
+  })))
 
   async function finish() {
     setSaving(true)
@@ -2637,12 +2749,25 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
             {embed && <div className="video-embed"><iframe src={embed} title={ex.name} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>}
             <div className="gw-sets">
               {ex.sets.map((s, si) => (
-                <label className={'gw-set' + (s.done ? ' done' : '')} key={si}>
-                  <input type="checkbox" checked={s.done} onChange={() => toggleSet(ei, si)} />
-                  <span className="gw-set-n">Set {si + 1}{s.drops ? <span className="settype-chip drops">+{s.drops} drop{s.drops === 1 ? '' : 's'}</span> : null}</span>
-                  <input className="gw-in" inputMode="numeric" placeholder="reps" value={s.reps} onChange={(e) => updateSet(ei, si, 'reps', e.target.value)} />
-                  <input className="gw-in" inputMode="decimal" placeholder="kg" value={s.weight} onChange={(e) => updateSet(ei, si, 'weight', e.target.value)} />
-                </label>
+                <div key={si}>
+                  <label className={'gw-set' + (s.done ? ' done' : '')}>
+                    <input type="checkbox" checked={s.done} onChange={() => toggleSet(ei, si)} />
+                    <span className="gw-set-n">Set {si + 1}{s.drops ? <span className="settype-chip drops">+{s.drops} drop{s.drops === 1 ? '' : 's'}</span> : null}</span>
+                    <input className="gw-in" inputMode="numeric" placeholder="reps" value={s.reps} onChange={(e) => updateSet(ei, si, 'reps', e.target.value)} />
+                    <input className="gw-in" inputMode="decimal" placeholder="kg" value={s.weight} onChange={(e) => updateSet(ei, si, 'weight', e.target.value)} />
+                  </label>
+                  {(s.drop_log || []).length > 0 && (
+                    <div className="gw-drops">
+                      {s.drop_log.map((d, di) => (
+                        <div className="gw-drop" key={di}>
+                          <span className="gw-drop-n">Drop {di + 1}</span>
+                          <input className="gw-in" inputMode="numeric" placeholder="reps" value={d.reps} onChange={(e) => updateDrop(ei, si, di, 'reps', e.target.value)} />
+                          <input className="gw-in" inputMode="decimal" placeholder="kg" value={d.weight} onChange={(e) => updateDrop(ei, si, di, 'weight', e.target.value)} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
             {ex.cue && <p className="ex-cue">{ex.cue}</p>}

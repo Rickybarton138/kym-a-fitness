@@ -131,7 +131,15 @@ export function ExSets({ ex }) {
         {ex.sets.map((st, i) => (
           <div className="set-line" key={i}>
             <span className="sl-n">{setWord} {i + 1}</span>
-            <span className="sl-v">{st.reps ? (/[a-zA-Z]/.test(st.reps) ? st.reps : st.reps + ' reps') : '—'}{st.weight ? ' @ ' + st.weight + 'kg' : ''}{st.drops ? ` + ${st.drops} drop${st.drops === 1 ? '' : 's'}` : ''}</span>
+            <span className="sl-v">
+              {st.reps ? (/[a-zA-Z]/.test(st.reps) ? st.reps : st.reps + ' reps') : '—'}{st.weight ? ' @ ' + st.weight + 'kg' : ''}
+              {/* Once the client has logged the drops, show what they actually
+                  did rather than only how many were prescribed — that is the
+                  bit the coach wants to read back. */}
+              {(st.drop_log || []).some((d) => d.reps || d.weight)
+                ? ' → ' + st.drop_log.map((d) => `${d.reps || '?'}${d.weight ? '@' + d.weight : ''}`).join(' → ')
+                : st.drops ? ` + ${st.drops} drop${st.drops === 1 ? '' : 's'}` : ''}
+            </span>
           </div>
         ))}
         {type && setTypeNote(type) && <div className="ex-meta">{setTypeNote(type)}</div>}
