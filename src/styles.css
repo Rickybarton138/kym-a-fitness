@@ -739,3 +739,8 @@ button.chip span { color: var(--muted); font-weight: 700; }
 
 /* "You have a session in progress" — sits above whatever screen they land on. */
 .resume-card { border-color: var(--accent); margin-bottom: 16px; }
+
+/* The one-time welcome, shown as a client finishes joining. */
+.welcome-sheet { display: flex; flex-direction: column; gap: 12px; padding: 22px 20px calc(22px + env(safe-area-inset-bottom)); max-height: 85vh; overflow-y: auto; }
+.welcome-body p { margin: 0 0 10px; font-size: 15px; line-height: 1.55; }
+.welcome-body p:last-child { margin-bottom: 0; }

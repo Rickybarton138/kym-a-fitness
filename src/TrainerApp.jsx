@@ -853,11 +853,104 @@ function CoachVoice({ coachId, coachName }) {
           <label className="field">Who you coach<input value={p.audience || ''} onChange={set('audience')} placeholder="e.g. everyday people chasing real results" /></label>
           <label className="field">Your philosophy<textarea value={p.philosophy || ''} onChange={set('philosophy')} placeholder="e.g. no-nonsense, honest coaching over gimmicks or quick fixes" /></label>
           <label className="field">Your tone<textarea value={p.tone || ''} onChange={set('tone')} placeholder="e.g. direct, motivating, straight-talking with a bit of tough love" /></label>
-          <label className="field">Welcome message<textarea value={p.welcome || ''} onChange={set('welcome')} placeholder="Auto-sent to each new client's chat when they join — welcome them and point them to their next steps." /></label>
+          <label className="field">Welcome message (everyone else)<textarea value={p.welcome || ''} onChange={set('welcome')} placeholder="The fallback, used when a tier below has nothing set." /></label>
           <button className="btn primary" onClick={save}>{saved ? 'Saved ✓' : 'Save AI voice'}</button>
         </div>
       )}
+      <WelcomeMessages coachId={coachId} />
       <VoiceSample coachId={coachId} persona={p} onSaved={(np) => { setP(np); setPersona(toActive(np)) }} />
+    </div>
+  )
+}
+
+// Paul: "Can I have the option to send a different Welcome message based on tag
+// or either standard or Inner Circle? Standard ... have to set themselves up
+// essentially so the welcome message talks them through it. For Inner Circle ...
+// it basically will tell them that I will be in touch via whatsapp."
+//
+// Each message goes to the client's chat AND shows once as a popup the moment
+// they finish joining, which is the only moment they are guaranteed to read it.
+const WELCOME_AUDIENCES = [
+  {
+    key: 'standard',
+    label: 'Standard members',
+    hint: 'They set themselves up, so use this to walk them through what to do first.',
+    placeholder: 'e.g. Welcome! Start by setting your targets under Nutrition, then head to the Program library and pick a plan that suits you...',
+  },
+  {
+    key: 'inner_circle',
+    label: 'Inner Circle',
+    hint: 'You set these up yourself, so tell them to sit tight and how you will reach them.',
+    placeholder: 'e.g. Welcome aboard. I will be in touch on WhatsApp to get your plan and targets set up personally...',
+  },
+]
+
+function WelcomeMessages({ coachId }) {
+  const [rows, setRows] = useState(null)
+  const [draft, setDraft] = useState({})
+  const [saving, setSaving] = useState(null)
+  const [open, setOpen] = useState(false)
+
+  async function load() {
+    const { data } = await supabase.from('coach_welcomes').select('audience, body').eq('coach_id', coachId)
+    const map = {}
+    for (const r of data || []) map[r.audience] = r.body
+    setRows(map)
+    setDraft(map)
+  }
+  useEffect(() => { load() }, [coachId])
+
+  async function save(key) {
+    setSaving(key)
+    const body = (draft[key] || '').trim()
+    if (!body) {
+      await supabase.from('coach_welcomes').delete().eq('coach_id', coachId).eq('audience', key)
+    } else {
+      await supabase.from('coach_welcomes').upsert(
+        { coach_id: coachId, audience: key, body, updated_at: new Date().toISOString() },
+        { onConflict: 'coach_id,audience' },
+      )
+    }
+    setSaving(null)
+    load()
+  }
+
+  if (rows === null) return null
+  const set = new Set(Object.keys(rows).filter((k) => (rows[k] || '').trim()))
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+      <p className="eyebrow">Welcome messages</p>
+      <p className="muted-note">
+        Sent to a new client&rsquo;s chat and shown to them as a popup the moment they finish joining —
+        the one point you know they are looking. A tier with nothing set falls back to the general message above.
+      </p>
+      {!open ? (
+        <div style={{ marginTop: 10 }}>
+          <p className="muted-note">
+            {WELCOME_AUDIENCES.map((a) => `${a.label}: ${set.has(a.key) ? 'set' : 'using the fallback'}`).join(' · ')}
+          </p>
+          <button type="button" className="btn ghost" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>Edit welcome messages</button>
+        </div>
+      ) : (
+        <div className="stack" style={{ marginTop: 10 }}>
+          {WELCOME_AUDIENCES.map((a) => (
+            <div key={a.key}>
+              <label className="field">{a.label}
+                <textarea rows={4} value={draft[a.key] || ''} placeholder={a.placeholder}
+                  onChange={(e) => setDraft((d) => ({ ...d, [a.key]: e.target.value }))} />
+              </label>
+              <p className="muted-note">{a.hint}</p>
+              <button type="button" className="btn ghost sm" style={{ marginTop: 6 }}
+                disabled={saving === a.key || (draft[a.key] || '') === (rows[a.key] || '')}
+                onClick={() => save(a.key)}>
+                {saving === a.key ? 'Saving…' : (draft[a.key] || '').trim() ? `Save for ${a.label}` : 'Clear'}
+              </button>
+            </div>
+          ))}
+          <button type="button" className="link-btn" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
     </div>
   )
 }

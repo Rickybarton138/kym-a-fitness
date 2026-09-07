@@ -74,7 +74,7 @@ let signIn = await signupClient.auth.signInWithPassword({ email, password: 'Test
 if (signIn.error) {
   const su = await signupClient.auth.signUp({
     email, password: 'TestPass123',
-    options: { data: { full_name: 'E2E Onboard', role: 'client', trainer_code: 'REDEF1' } },
+    options: { data: { full_name: 'E2E Onboard', role: 'client', trainer_code: 'FA128C' } },
   })
   ok('the onboarding fixture exists', !su.error, su.error?.message)
   signIn = await signupClient.auth.signInWithPassword({ email, password: 'TestPass123' })

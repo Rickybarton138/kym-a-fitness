@@ -210,6 +210,7 @@ export default function ClientApp({ profile, onSignOut }) {
             back in it prompts and says you have an active session would you like
             to resume?" Shown wherever they land, because the whole point is that
             they did not choose to be here. */}
+        <WelcomeSheet profile={profile} coachName={coachName} />
         <ResumeBanner clientId={profile.id} onResume={() => { setResumeTick((n) => n + 1); setScreen('train') }} />
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train key={'train' + resumeTick} onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
@@ -2601,6 +2602,52 @@ export const readResume = () => {
   try { return JSON.parse(localStorage.getItem(GW_RESUME) || 'null') } catch { return null }
 }
 export const clearResume = () => { try { localStorage.removeItem(GW_RESUME) } catch { /* ignore */ } }
+// Paul: "It would also be good if the welcome message perhaps pops up on the
+// screen for them upon joining to 'talk them through' what to do to maximise
+// people doing the right things."
+//
+// Shown ONCE, the moment they finish joining — the one point you know a new
+// client is actually looking at the screen. It is the same message that lands
+// in their chat, so it stays there to re-read; this is just the copy that
+// cannot be missed. Which message they get is decided server-side by tier.
+function WelcomeSheet({ profile, coachName }) {
+  const [body, setBody] = useState(null)
+  const [closing, setClosing] = useState(false)
+
+  useEffect(() => {
+    // Only a brand new client, and only once. Everyone already using the app was
+    // marked as seen when this shipped, so nobody gets a surprise popup.
+    if (profile.welcome_seen_at) return
+    let alive = true
+    supabase.rpc('welcome_for_me').then(({ data }) => {
+      if (!alive) return
+      if (data && String(data).trim()) setBody(String(data).trim())
+      else supabase.rpc('mark_welcome_seen') // nothing to show; do not ask again
+    })
+    return () => { alive = false }
+  }, [])
+
+  if (!body || closing) return null
+
+  const done = async () => {
+    setClosing(true)
+    try { await supabase.rpc('mark_welcome_seen') } catch { /* best effort */ }
+  }
+
+  return (
+    <div className="sheet-overlay" role="dialog" aria-modal="true" aria-label="Welcome">
+      <div className="sheet welcome-sheet">
+        <p className="eyebrow accent">A message from {coachName?.split(' ')[0] || 'your coach'}</p>
+        <div className="welcome-body">
+          {body.split(/\n{2,}/).map((para, i) => <p key={i}>{para}</p>)}
+        </div>
+        <button className="btn primary big" onClick={done}>Let&rsquo;s go</button>
+        <p className="muted-note">It is saved in your chat too, if you want it again later.</p>
+      </div>
+    </div>
+  )
+}
+
 // The way back into an interrupted session. Reads the durable record the player
 // writes on every change, so it survives the browser being closed — which is
 // exactly what was losing Benn.
