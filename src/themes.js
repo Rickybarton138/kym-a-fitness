@@ -132,6 +132,55 @@ export const BRANDS = {
   // brand exactly: green circle "E" mark (#45b263) + navy wordmark on white.
   // Light scheme so their navy logo + clean white identity carry through — no
   // re-brand. Green is the accent; button text is dark-green for AA contrast.
+  // Ricky's own training app. Not a fork — a brand. Same codebase, same
+  // database, so every fix and every feature built for a customer lands here
+  // too, and nothing has to be ported. RLS already keeps one coach's data away
+  // from another's, so his numbers are no more visible to Paul than Paul's are
+  // to Kim.
+  //
+  // Every feature is on: there is no upsell tier to protect and no client to
+  // confuse, and he wants the AI to do the programming and the nutrition.
+  ricky: {
+    slug: 'ricky',
+    name: 'Rick.Fit',
+    tagline: 'Train hard. Eat properly. Get on with it.',
+    mark: 'R',
+    features: {
+      testing: true, templates: true, programs: true, recipes: true, videos: true,
+      barcode: true, tags: true, supplements: true, shop: true, podcasts: true,
+      agenda: true, progressHub: true, checkinForms: true, checkinAI: true, files: true,
+      nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true,
+      nutritionSupport: true, groupedHome: true, groupedCoach: true, water: true,
+      awards: true, clientProgramAi: true, gettingStarted: true, nutritionExpert: true,
+      monitoring: true, coachMealPlans: true,
+      // No PAR-Q: it is a screening form for taking on other people's risk,
+      // and there is nobody here but him.
+      parq: false,
+    },
+    trainGymName: 'the gym',
+    equipment: [
+      'Barbell, rack & bench',
+      'Dumbbells',
+      'Cable machine',
+      'Leg press & leg machines',
+      'Pull-up bar',
+      'Treadmill, bike & rower',
+    ],
+    vars: {
+      '--bg': '#0d1117',
+      '--surface': '#161b22',
+      '--surface-2': '#1f262e',
+      '--line': '#2c343d',
+      '--text': '#e8edf3',
+      '--muted': '#8b98a8',
+      '--accent': '#f0b429',
+      '--accent-hi': '#ffc94d',
+      '--on-accent': '#1a1400',
+      '--gold': '#f0b429',
+      '--ring-track': '#2c343d',
+      '--radius': '14px',
+    },
+  },
   elev8: {
     slug: 'elev8',
     name: 'Elev8u',
@@ -210,6 +259,7 @@ const HOST_BRAND = {
   'coached-by-kim.netlify.app': 'kim',
   'the-physical-performance-hub.netlify.app': 'pph',
   'elev8-hyrox.netlify.app': 'elev8',
+  'rick-fit.netlify.app': 'ricky',
 }
 
 function resolveBrandSlug() {

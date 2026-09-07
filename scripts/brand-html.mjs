@@ -30,10 +30,25 @@ const BRANDS = {
     theme: '#ffffff', bg: '#f4f7f9', url: 'https://elev8-hyrox.netlify.app',
     icon192: '/brands/elev8/icon-192.png', icon512: '/brands/elev8/icon-512.png', og: '/brands/elev8/og.png',
   },
+  ricky: {
+    name: 'Rick.Fit', short: 'Rick.Fit',
+    description: 'Training and nutrition, run by AI. One user.',
+    theme: '#0d1117', bg: '#0d1117', url: 'https://rick-fit.netlify.app',
+    icon192: '/icon-192.png', icon512: '/icon-512.png', og: '/icon-512.png',
+  },
 }
 
 const brand = (process.env.BRAND || process.env.VITE_BRAND || 'kim').toLowerCase()
-const b = BRANDS[brand] || BRANDS.kim
+// Fail rather than fall back. A silent default to Kim is how a white-label site
+// ships somebody else's name, icon and install title — the failure this script
+// exists to prevent, and it happened again the first time a new brand was added
+// here: the build cheerfully stamped "Coached by Kim" into Rick.Fit.
+if (!BRANDS[brand]) {
+  console.error(`brand-html: unknown BRAND "${brand}". Known: ${Object.keys(BRANDS).join(', ')}.`)
+  console.error('Add it to BRANDS here (and to src/themes.js) before building.')
+  process.exit(1)
+}
+const b = BRANDS[brand]
 const dist = resolve(process.cwd(), 'dist')
 const abs = (p) => (p.startsWith('http') ? p : b.url + p)
 

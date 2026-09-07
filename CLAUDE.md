@@ -25,7 +25,19 @@
 ## Run
 - `npm run dev` (port 5220) — UI + auth/DB work (AI needs the function)
 - `netlify dev` (port 8899) — everything, needs `ANTHROPIC_API_KEY` in `.env`
-- **`npm run build:paul`** (or `build:kim` / `build:pph` / `build:elev8`) — ALWAYS build
+- **The site's `BRAND` env var is what decides branding, not your local build.**
+  `netlify deploy` runs the `command` in netlify.toml (`npm run build`), so the
+  HTML/manifest are stamped from the SITE's BRAND, and a locally stamped dist is
+  overwritten. This is why The Physical Performance Hub served "Coached by Kim"
+  for weeks: its BRAND was never set, and `npm run build` defaults to kim.
+  Check it before blaming the build:
+  `npx netlify api getEnvVars --data '{"account_id":"698094fd72d00ee4b3786542","site_id":"<site>"}'`
+  Current: paul=paul, kim=kim, pph=pph, elev8=elev8, ricky=ricky.
+  `netlify env:set` and `--site` are NOT reliable here — this folder is linked to
+  Kim's site and the flag was ignored, which set Kim's BRAND to another brand.
+  Use `deleteEnvVar` + `createEnvVars` through `netlify api` with an explicit
+  `site_id`, and read it back afterwards.
+- **`npm run build:paul`** (or `build:kim` / `build:pph` / `build:elev8` / `build:ricky`) — build
   with the per-brand script before deploying. `npx vite build` skips
   `scripts/brand-html.mjs`, and plain `npm run build` defaults to BRAND=kim, so
   either one ships Kim's title, icon, link preview and PWA install name to

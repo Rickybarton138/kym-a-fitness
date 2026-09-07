@@ -482,3 +482,28 @@ Rules:
   A test that needs more power than the user has is testing something else.
 - Assert the fixture is in the state you think it is. `trainer_id: null` would
   have shown in one select and saved two rounds of debugging.
+
+## The deploy runs the build; your local one is decorative (2026-09-07)
+The Physical Performance Hub served "Coached by Kim" for weeks. Local builds
+were correct — `npm run build:pph` stamped the right name into dist every time —
+and the deployed site was still wrong. The reason: netlify.toml sets
+`command = "npm run build"`, so `netlify deploy` runs that build and stamps the
+HTML from the SITE's BRAND env var. PPH's BRAND was never set, and the default
+is kim. Paul, Kim and Elev8 all looked fine only because their BRAND happened to
+be right.
+Rule: when a deployed artefact disagrees with the one you built, stop comparing
+your build and go and read what the deploy pipeline actually runs. I re-verified
+the local stamp three times over two sessions before checking netlify.toml.
+
+## `--site` was ignored, and it wrote to the wrong customer's site (2026-09-07)
+`netlify env:set BRAND ricky --site <rick-fit-id>` set BRAND=ricky on COACHED BY
+KIM — this folder is linked to Kim's site and the flag did not win. Kim's live
+site was never rebuilt so nothing shipped, but one deploy of hers would have put
+another brand's name, icon and install title in front of her clients.
+Rules:
+- For anything that writes to a specific site, use `netlify api` with an explicit
+  `site_id`, never a CLI flag on a folder linked to a different site.
+- Read it back on EVERY site afterwards. One read showed kim=ricky and
+  ricky=paul; without that the damage would have sat there waiting for a deploy.
+- A tool that silently targets something other than what you named is worth
+  writing down, not working around once and forgetting.
