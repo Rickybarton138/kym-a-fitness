@@ -24,6 +24,7 @@ import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { Awards } from './Awards.jsx'
 import { BuildMyProgram } from './BuildMyProgram.jsx'
 import { StepsCatchUp } from './StepsCatchUp.jsx'
+import { GettingStarted } from './GettingStarted.jsx'
 import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
@@ -91,6 +92,12 @@ export default function ClientApp({ profile, onSignOut }) {
   // never mounted again.
   const [resumeTick, setResumeTick] = useState(0)
   useEffect(() => { try { localStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
+  // Targets are seeded at signup, so having them proves nothing about whether
+  // the client has ever looked. Opening the screen is the signal.
+  useEffect(() => {
+    if (screen !== 'calc' || profile.targets_reviewed_at) return
+    supabase.from('profiles').update({ targets_reviewed_at: new Date().toISOString() }).eq('id', profile.id)
+  }, [screen])
   // Where the client came from, so a screen reachable two ways (My details: the
   // Nutrition tile, or the PAR-Q prompt on Home) sends them back where they were.
   const cameFrom = useRef('home')
@@ -211,6 +218,11 @@ export default function ClientApp({ profile, onSignOut }) {
             to resume?" Shown wherever they land, because the whole point is that
             they did not choose to be here. */}
         <WelcomeSheet profile={profile} coachName={coachName} />
+        {/* Paul's "walk through" for standard members, on Home only so it never
+            gets in the way once they are actually using a screen. */}
+        {screen === 'home' && THEME.features?.gettingStarted && (
+          <GettingStarted profile={profile} onGo={setScreen} />
+        )}
         <ResumeBanner clientId={profile.id} onResume={() => { setResumeTick((n) => n + 1); setScreen('train') }} />
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train key={'train' + resumeTick} onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}

@@ -744,3 +744,19 @@ button.chip span { color: var(--muted); font-weight: 700; }
 .welcome-sheet { display: flex; flex-direction: column; gap: 12px; padding: 22px 20px calc(22px + env(safe-area-inset-bottom)); max-height: 85vh; overflow-y: auto; }
 .welcome-body p { margin: 0 0 10px; font-size: 15px; line-height: 1.55; }
 .welcome-body p:last-child { margin-bottom: 0; }
+
+/* Getting started: the first-week checklist that ticks itself off. */
+.gs-card { border-color: var(--accent); }
+.gs-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.gs-track { height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin: 12px 0 4px; }
+.gs-track > i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s ease; }
+.gs-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.gs-step { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.gs-step:last-child { border-bottom: 0; }
+.gs-tick { flex: 0 0 24px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+.gs-step.done .gs-tick { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.gs-step.done .gs-body b { color: var(--muted); text-decoration: line-through; }
+.gs-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gs-body b { font-size: 14px; font-weight: 600; }
+.gs-body span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.gs-step.next .gs-tick { border-color: var(--accent); color: var(--accent); }
