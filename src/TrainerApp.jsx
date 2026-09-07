@@ -565,6 +565,10 @@ function ClientDetail({ client, trainerId, onBack }) {
   const [logs, setLogs] = useState([])
   const [measurements, setMeasurements] = useState([])
   const [plans, setPlans] = useState([])
+  // Bumping this remounts the assign card so it re-reads the programme list;
+  // assignPick preselects the programme that was just built.
+  const [programsTick, setProgramsTick] = useState(0)
+  const [assignPick, setAssignPick] = useState('')
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
   const [tier, setTier] = useState(client.membership_tier || 'standard')
@@ -737,9 +741,28 @@ function ClientDetail({ client, trainerId, onBack }) {
             <CoachSection title="Training">
               <AssignWorkout clientId={client.id} trainerId={trainerId} onAssigned={(p) => setPlans((pl) => [p, ...pl])} />
 
-              {THEME.features?.programs && <CoachPrograms coachId={trainerId} clientId={client.id} clientName={client.full_name} />}
+              {/* Paul: "I have to go back to the home and back to their page to be
+                  able to see it in the list I can assign." The assign card loaded
+                  its list once, on mount, so a programme built above it was not
+                  there yet. It now reloads when one is created, and each 1-2-1
+                  programme carries an Assign button that selects it below —
+                  reusing the one assign flow rather than adding a second way to
+                  pick days and a start date. */}
+              {THEME.features?.programs && (
+                <CoachPrograms
+                  coachId={trainerId} clientId={client.id} clientName={client.full_name}
+                  onProgramsChanged={() => setProgramsTick((t) => t + 1)}
+                  onAssign={(id) => { setAssignPick(id); setProgramsTick((t) => t + 1) }}
+                />
+              )}
 
-              {THEME.features?.programs && <AssignProgram clientId={client.id} coachId={trainerId} clientName={client.full_name} />}
+              {THEME.features?.programs && (
+                <AssignProgram
+                  key={'assign' + programsTick}
+                  clientId={client.id} coachId={trainerId} clientName={client.full_name}
+                  preselect={assignPick}
+                />
+              )}
 
               {THEME.features?.programs && <ApplyProgramSchedule clientId={client.id} coachId={trainerId} />}
 
@@ -2894,10 +2917,10 @@ const PROGRAM_LEVELS = ['Beginner', 'Intermediate', 'Advanced']
 // Edit a saved programme's details + visibility (level, weeks, the library filter
 // dimensions and the "only show to tag"). Paul's ask: he couldn't add/change tags
 // after creating a programme. Mirrors the create form's fields.
-function AssignProgram({ clientId, coachId, clientName }) {
+function AssignProgram({ clientId, coachId, clientName, preselect }) {
   const [programs, setPrograms] = useState([])
   const [current, setCurrent] = useState(null)
-  const [pick, setPick] = useState('')
+  const [pick, setPick] = useState(preselect || '')
   const [start, setStart] = useState(() => new Date().toISOString().slice(0, 10))
   const [repeat, setRepeat] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -3123,7 +3146,7 @@ function ApplyProgramSchedule({ clientId, coachId }) {
 // Multi-session programmes built from the coach's templates. Each programme session
 // snapshots a template (title/focus/exercises/finisher) so later template edits
 // don't rewrite a published programme. Clients browse these in "Program library".
-function CoachPrograms({ coachId, clientId = null, clientName }) {
+function CoachPrograms({ coachId, clientId = null, clientName, onProgramsChanged, onAssign }) {
   const personal = !!clientId // scoped to one client's private 1-2-1 programmes
   const clientFirst = (clientName || 'this client').split(' ')[0]
   const [programs, setPrograms] = useState([])
@@ -3197,7 +3220,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       audience_tag: personal ? null : (meta.audience_tag?.trim().toLowerCase() || null),
     }).select().single()
     if (err) { setError(err.message); return }
-    setPrograms((p) => [data, ...p])
+    setPrograms((p) => [data, ...p]); onProgramsChanged && onProgramsChanged()
     setTitle(''); setDesc(''); setWeeks(''); setLevel('Beginner'); setMeta({}); setCreating(false); setError('')
     setOpenId(data.id); setSessions((s) => ({ ...s, [data.id]: [] })); setAddFor(data.id)
   }
@@ -3315,7 +3338,7 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
       })
     }
     await supabase.from('program_sessions').insert(rows)
-    setPrograms((p) => [prog, ...p]); setGenDraft(null); setGenOn(false)
+    setPrograms((p) => [prog, ...p]); setGenDraft(null); setGenOn(false); onProgramsChanged && onProgramsChanged()
   }
 
   // AI whole-programme edit: send all sessions + one instruction, preview the
@@ -3440,6 +3463,14 @@ function CoachPrograms({ coachId, clientId = null, clientName }) {
         <div className="stack" style={{ marginTop: 12 }}>
           {programs.map((pr) => (
             <div className="card session-card" key={pr.id}>
+              {/* Straight from the programme he has just built to putting it on
+                  the client, without leaving the page to find it in a list. */}
+              {personal && onAssign && (
+                <button type="button" className="btn primary sm" style={{ float: 'right', marginLeft: 8 }}
+                  onClick={() => onAssign(pr.id)}>
+                  Assign to {clientFirst}
+                </button>
+              )}
               <button type="button" className="session-head" onClick={() => toggle(pr.id)}>
                 <div>
                   <div className="session-title">{pr.title}</div>

@@ -45,14 +45,18 @@ ok('the mapped day still resolves', on('2026-09-01')?.sess?.title === 'Full Body
 ok('the session the map missed is reachable again', on('2026-09-03')?.sess?.title === 'Lower Body Focus', String(on('2026-09-03')?.sess?.title))
 ok('a genuine rest day is still a rest day', on('2026-09-02') === null, JSON.stringify(on('2026-09-02')?.sess?.title))
 
-// A full map still overrides the authored days, as it always did. Week 1 runs
-// Tue 1 Sept to Mon 7 Sept, so Fri 4th and Mon 7th are both inside it — the
-// fixture only has week 1, and reaching into week 2 would prove nothing.
-const moved = { ...prog, dayMap: [1, 5] }
+// A full map still overrides the authored days, as it always did.
+//
+// Weeks are CALENDAR weeks now (see round 29 — Katie was stuck repeating week 1
+// because they used to be rolling 7-day blocks from the start date). The
+// programme starts Tue 1 Sept, so its week 1 ends on Sunday the 6th and Monday
+// the 7th is week 2. The fixture only has week 1, so both test days have to sit
+// inside Tue-Sun: Wednesday and Friday.
+const moved = { ...prog, dayMap: [3, 5] }
 const onMoved = (iso) => sessionForDay(moved, new Date(iso + 'T09:00:00'))
 ok('a full day map still moves both sessions',
-  onMoved('2026-09-07')?.sess?.title === 'Full Body Foundation' && onMoved('2026-09-04')?.sess?.title === 'Lower Body Focus',
-  `Mon: ${onMoved('2026-09-07')?.sess?.title} / Fri: ${onMoved('2026-09-04')?.sess?.title}`)
+  onMoved('2026-09-02')?.sess?.title === 'Full Body Foundation' && onMoved('2026-09-04')?.sess?.title === 'Lower Body Focus',
+  `Wed: ${onMoved('2026-09-02')?.sess?.title} / Fri: ${onMoved('2026-09-04')?.sess?.title}`)
 ok('and the days it moved off are now clear', onMoved('2026-09-01') === null && onMoved('2026-09-03') === null,
   `Tue: ${onMoved('2026-09-01')?.sess?.title} / Thu: ${onMoved('2026-09-03')?.sess?.title}`)
 
