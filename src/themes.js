@@ -150,7 +150,7 @@ export const BRANDS = {
       barcode: true, tags: true, supplements: true, shop: true, podcasts: true,
       agenda: true, progressHub: true, checkinForms: true, checkinAI: true, files: true,
       nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true,
-      nutritionSupport: true, groupedHome: true, groupedCoach: true, water: true,
+      nutritionSupport: true, groupedHome: true, groupedCoach: true, water: true, foodDayComplete: true,
       awards: true, clientProgramAi: true, gettingStarted: true, nutritionExpert: true,
       monitoring: true, coachMealPlans: true,
       // No PAR-Q: it is a screening form for taking on other people's risk,
