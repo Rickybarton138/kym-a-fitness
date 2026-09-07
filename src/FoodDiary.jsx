@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import { sumMacros, mealByHour } from './lib.js'
 import { FoodSearch } from './FoodSearch.jsx'
-import { Metric } from './ui.jsx'
+import { Metric, Loader } from './ui.jsx'
 import { THEME } from './themes.js'
+import { BarcodeScan, MealScan } from './FoodCapture.jsx'
+import { RecipeCreator } from './RecipeCreator.jsx'
 
 // Per-day food diary — itemised entries grouped by meal, with delete + daily totals
 // vs target, and a weekly-averages summary. Shared by the client (their own diary)
@@ -26,6 +28,86 @@ const isToday = (d) => d.toDateString() === new Date().toDateString()
 
 const MAX_AHEAD = 14 // days you can pre-log into the future
 
+// The client's own saved recipes, loggable by the portion, plus a way to build
+// a new one without leaving the diary. Paul: "a tab for their recipes ... or
+// they can create a new one as part of the logging ... recipe creation at the
+// client level asks them how many servings a recipe makes and then the app
+// works out the calories per serving." That maths already existed in
+// RecipeCreator; what was missing was a way to reach it while logging, and a
+// way to log what you had made.
+function MyRecipes({ clientId, onLog, defaultMeal }) {
+  const [rows, setRows] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [portions, setPortions] = useState({})
+  const [meal, setMeal] = useState(defaultMeal)
+  const [logged, setLogged] = useState(null)
+
+  async function load() {
+    const { data } = await supabase.from('recipes')
+      .select('id, title, servings, calories, protein_g, carbs_g, fat_g, fibre_g')
+      .eq('client_id', clientId).order('created_at', { ascending: false })
+    setRows(data || [])
+  }
+  useEffect(() => { load() }, [clientId])
+
+  if (creating) {
+    return <RecipeCreator clientId={clientId} onSaved={() => load()} onClose={() => { setCreating(false); load() }} />
+  }
+  if (rows === null) return <Loader text="Loading your recipes…" />
+
+  const log = (r) => {
+    // Stored macros are already PER SERVING, so a portion count multiplies them.
+    const n = Number(portions[r.id] || 1) || 1
+    onLog({
+      name: n === 1 ? r.title : `${r.title} (${n} servings)`,
+      calories: Math.round((r.calories || 0) * n),
+      protein_g: Math.round((r.protein_g || 0) * n),
+      carbs_g: Math.round((r.carbs_g || 0) * n),
+      fat_g: Math.round((r.fat_g || 0) * n),
+      fibre_g: Math.round((r.fibre_g || 0) * n),
+      meal_type: meal,
+    })
+    setLogged(r.id)
+    setTimeout(() => setLogged(null), 2000)
+  }
+
+  return (
+    <div className="stack">
+      <label className="field">Meal
+        <select className="ex-select" value={meal} onChange={(e) => setMeal(e.target.value)}>
+          {MEALS.map((m) => <option key={m}>{m}</option>)}
+        </select>
+      </label>
+
+      {rows.length === 0 && (
+        <p className="muted-note">No recipes saved yet. Build one and the app works out the calories for a single portion from the whole batch.</p>
+      )}
+
+      {rows.map((r) => (
+        <div className="card" key={r.id} style={{ background: 'var(--surface-2)' }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{r.title}</div>
+          <p className="muted-note" style={{ margin: '2px 0 0' }}>
+            {r.calories} kcal per serving · {r.protein_g}g P · {r.carbs_g}g C · {r.fat_g}g F
+            {r.servings > 1 ? ` · makes ${r.servings}` : ''}
+          </p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
+            <label className="field" style={{ flex: '0 0 96px' }}>Portions
+              <input type="number" inputMode="decimal" step="0.5" min="0.5"
+                value={portions[r.id] ?? '1'}
+                onChange={(e) => setPortions((p) => ({ ...p, [r.id]: e.target.value }))} />
+            </label>
+            <button type="button" className="btn primary sm" style={{ marginBottom: 2 }} onClick={() => log(r)}>
+              {logged === r.id ? 'Added ✓' : 'Log this'}
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <button type="button" className="btn ghost" onClick={() => setCreating(true)}>Create a recipe</button>
+    </div>
+  )
+}
+
 export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diary', onBack, onChanged }) {
   const [day, setDay] = useState(() => new Date())
   const [logs, setLogs] = useState(null)
@@ -33,6 +115,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const [mult, setMult] = useState('1')
   const [eMeal, setEMeal] = useState('')
   const [eDate, setEDate] = useState('')
+  const [addTab, setAddTab] = useState('search')
   const [savingEdit, setSavingEdit] = useState(false)
   const [editErr, setEditErr] = useState('')
   const [targets, setTargets] = useState(null)
@@ -268,7 +351,21 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
         <div className="sheet-overlay" onClick={() => setAdding(false)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head"><b>Add food{isToday(day) ? '' : ' · ' + day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</b><button className="link-btn" onClick={() => setAdding(false)}>Done</button></div>
-            <FoodSearch onLog={addFood} defaultMeal={mealByHour(day)} coachId={coachId} contributorId={contributorId} />
+            {/* Paul: "if people are adding a mixture of foods that they would
+                search out and foods they would scan the barcode they can do it
+                all in one place. Similarly they can also scan their plate from
+                there too." Every way of logging, behind one button, all writing
+                to the day being viewed — so it backdates correctly too. */}
+            <div className="seg four" style={{ marginBottom: 12 }}>
+              <button type="button" className={addTab === 'search' ? 'on' : ''} onClick={() => setAddTab('search')}>Search</button>
+              {THEME.features?.barcode && <button type="button" className={addTab === 'barcode' ? 'on' : ''} onClick={() => setAddTab('barcode')}>Barcode</button>}
+              <button type="button" className={addTab === 'plate' ? 'on' : ''} onClick={() => setAddTab('plate')}>Scan plate</button>
+              {THEME.features?.recipes && <button type="button" className={addTab === 'recipes' ? 'on' : ''} onClick={() => setAddTab('recipes')}>Recipes</button>}
+            </div>
+            {addTab === 'search' && <FoodSearch onLog={addFood} defaultMeal={mealByHour(day)} coachId={coachId} contributorId={contributorId} />}
+            {addTab === 'barcode' && <BarcodeScan onLog={addFood} />}
+            {addTab === 'plate' && <MealScan onLog={addFood} />}
+            {addTab === 'recipes' && <MyRecipes clientId={clientId} onLog={addFood} defaultMeal={mealByHour(day)} />}
           </div>
         </div>
       )}
