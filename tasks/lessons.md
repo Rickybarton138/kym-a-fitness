@@ -388,6 +388,14 @@ parses, which is worse.
 Rule: patch anything containing a backslash escape with the Edit tool, not a
 python heredoc. If a heredoc is already in flight, `node --check` the file
 afterwards — it catches this in one second.
+UPDATE 2026-09-07: broke this rule twice more the same week — a `/
+{2,}/`
+regex that became a literal newline, and a shell heredoc that would not even
+parse. Writing the rule down was not enough. The stronger version, which does
+work: NEVER author or patch a whole file through a heredoc. Use the Write tool
+for new files and Edit for changes; reserve heredocs for plain prose with no
+backslashes at all. It is not a judgement call each time — the escape layers
+are simply not worth reasoning about.
 
 ## `1fr` is `minmax(auto, 1fr)`, and an input will not shrink (2026-09-06)
 Paul's client: "there's a couple of bits where the text box goes off screen."
