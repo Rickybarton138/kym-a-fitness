@@ -200,3 +200,16 @@ export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
 export const dowRank = (dow) => (dow == null ? 99 : dow === 0 ? 7 : dow)
 export const byDow = (a, b) => dowRank(a) - dowRank(b)
 export const sortDays = (days) => [...(days || [])].sort(byDow)
+
+// A failure a client can read. "TypeError: Failed to fetch" is what a dropped
+// connection actually throws, and putting that in front of someone mid-workout
+// tells them nothing and looks broken.
+export function friendlyError(e) {
+  const raw = String((e && e.message) || e || '')
+  if (!raw || /failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+    return 'No connection just then — check your signal and try again.'
+  }
+  if (/timeout|timed out/i.test(raw)) return 'That took too long — try again.'
+  if (/jwt|token|not authenticated|expired/i.test(raw)) return 'Your session expired — sign in again and it will still be here.'
+  return raw
+}

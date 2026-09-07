@@ -8,6 +8,7 @@ export function MessageThread({ clientId, me, placeholder }) {
   const [msgs, setMsgs] = useState([])
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
 
   async function load() {
     const { data } = await supabase
@@ -20,9 +21,19 @@ export function MessageThread({ clientId, me, placeholder }) {
     const text = body.trim()
     if (!text || busy) return
     setBusy(true)
-    const { data } = await supabase.from('messages').insert({ client_id: clientId, sender: me, body: text }).select().single()
-    if (data) { setMsgs((m) => [...m, data]); setBody('') }
-    setBusy(false)
+    setErr('')
+    try {
+      const { data, error } = await supabase.from('messages')
+        .insert({ client_id: clientId, sender: me, body: text }).select().single()
+      if (error) throw new Error(error.message)
+      // Only clear the box once it is actually sent. Wiping it on a failed send
+      // loses what they wrote, which is worse than the failure.
+      if (data) { setMsgs((m) => [...m, data]); setBody('') }
+    } catch (e) {
+      setErr((e && e.message) || 'Message did not send — try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -40,8 +51,9 @@ export function MessageThread({ clientId, me, placeholder }) {
           placeholder={placeholder || 'Type a message…'}
           onKeyDown={(e) => { if (e.key === 'Enter') send() }}
         />
-        <button className="btn primary" disabled={busy || !body.trim()} onClick={send}>Send</button>
+        <button className="btn primary" disabled={busy || !body.trim()} onClick={send}>{busy ? 'Sending…' : 'Send'}</button>
       </div>
+      {err && <p className="error">{err}</p>}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError} from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -2563,6 +2563,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
     return toPlayer(plan.exercises)
   })
   const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
   const [finished, setFinished] = useState(false)
   const [guideEx, setGuideEx] = useState(null)
 
@@ -2600,21 +2601,43 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
     })),
   })))
 
+  // Katie, 7 Sept: "when she hits save it just hangs and doesn't save it."
+  // There was no error handling here at all: any failed request left the promise
+  // rejected, setSaving(false) never ran, and the button sat on "Saving…" for
+  // ever with nothing said. She started the session again, which is why her
+  // diary has the same session twice on two different days.
+  //
+  // Now: errors are caught and shown, the button always comes back, and the
+  // work is NOT cleared from local storage unless the save actually landed —
+  // so a failed save can be retried with everything still there.
   async function finish() {
     setSaving(true)
-    const exercises = fromPlayer(exs)
-    const { data } = await supabase.from('workout_plans').update({ exercises }).eq('id', plan.id).select().single()
-    // Mark today complete once — guard against a duplicate if they already tapped "Done".
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: existing } = await supabase.from('workout_completions').select('id').eq('client_id', clientId).eq('completed_on', today).limit(1)
-    if (!existing || existing.length === 0) {
-      await supabase.from('workout_completions').insert({ client_id: clientId, source: 'guided' })
+    setSaveErr('')
+    try {
+      const exercises = fromPlayer(exs)
+      const { data, error } = await supabase.from('workout_plans')
+        .update({ exercises }).eq('id', plan.id).select().single()
+      if (error) throw new Error(error.message)
+
+      // Mark today complete once — guard against a duplicate if they already tapped "Done".
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: existing } = await supabase.from('workout_completions')
+        .select('id').eq('client_id', clientId).eq('completed_on', today).limit(1)
+      if (!existing || existing.length === 0) {
+        // Not fatal: the session itself is saved, and a missing completion is a
+        // far smaller problem than telling them their work was lost.
+        await supabase.from('workout_completions').insert({ client_id: clientId, source: 'guided' })
+      }
+
+      clearSaved()
+      if (data) onDone && onDone(data)
+      onFinishedToday && onFinishedToday()
+      setFinished(true)
+    } catch (e) {
+      setSaveErr(friendlyError(e))
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
-    clearSaved()
-    if (data) onDone && onDone(data)
-    onFinishedToday && onFinishedToday()
-    setFinished(true)
   }
 
   if (finished) {
@@ -2683,8 +2706,11 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
         )
       })}
       {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
+      {saveErr && (
+        <p className="error">{saveErr} Your sets are still here — nothing has been lost.</p>
+      )}
       <div className="nudge-actions">
-        <button className="btn primary big" disabled={saving} onClick={finish}>{saving ? 'Saving…' : 'Finish session'}</button>
+        <button className="btn primary big" disabled={saving} onClick={finish}>{saving ? 'Saving…' : saveErr ? 'Try again' : 'Finish session'}</button>
         <button className="btn ghost sm" onClick={exit}>Exit</button>
       </div>
       {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}

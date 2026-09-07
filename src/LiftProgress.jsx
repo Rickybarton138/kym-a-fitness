@@ -52,12 +52,17 @@ function AddPastLift({ clientId, onDone, onCancel }) {
 
   async function save() {
     setSaving(true); setError('')
-    const { error: e } = await supabase.from('lift_entries').insert({
-      client_id: clientId, name: name.trim(), weight: Number(weight), performed_on: date,
-    })
-    setSaving(false)
-    if (e) { setError(e.message); return }
-    onDone()
+    try {
+      const { error: e } = await supabase.from('lift_entries').insert({
+        client_id: clientId, name: name.trim(), weight: Number(weight), performed_on: date,
+      })
+      if (e) throw new Error(e.message)
+      onDone()
+    } catch (e) {
+      setError((e && e.message) || 'Could not save that — check your signal and try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (

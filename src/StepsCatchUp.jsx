@@ -37,15 +37,20 @@ export function StepsCatchUp({ clientId, target }) {
     if (!day) { setErr('Pick the day.'); return }
     if (!n) { setErr('Enter the step count for that day.'); return }
     setSaving(true); setErr(''); setMsg('')
-    const { error } = await supabase.from('daily_steps').upsert(
-      { client_id: clientId, day, steps: n, updated_at: new Date().toISOString() },
-      { onConflict: 'client_id,day' },
-    )
-    setSaving(false)
-    if (error) { setErr(error.message); return }
-    setMsg(`Saved ${n.toLocaleString()} steps for ${day === today ? 'today' : day}.`)
-    setTotal(''); setDay('')
-    load()
+    try {
+      const { error } = await supabase.from('daily_steps').upsert(
+        { client_id: clientId, day, steps: n, updated_at: new Date().toISOString() },
+        { onConflict: 'client_id,day' },
+      )
+      if (error) throw new Error(error.message)
+      setMsg(`Saved ${n.toLocaleString()} steps for ${day === today ? 'today' : day}.`)
+      setTotal(''); setDay('')
+      load()
+    } catch (e) {
+      setErr((e && e.message) || 'Could not save that — check your signal and try again.')
+    } finally {
+      setSaving(false)
+    }
     setTimeout(() => setMsg(''), 3000)
   }
 
