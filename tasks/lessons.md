@@ -443,3 +443,34 @@ Rule: a suite must undo every side effect it creates, not just the rows it
 obviously owns — completions, targets and streak state all steer other screens.
 And when a sibling suite starts failing, run it against production first; if it
 fails there too, the change under test is innocent.
+
+## Derive onboarding progress from the work, not from a cursor (2026-09-07)
+Paul asked for a walkthrough — "you know how some apps do a walk through of
+first up, go here and do xyz". The obvious build is a tooltip tour with Next
+buttons. It was built as a checklist that ticks itself off from the client's
+real rows instead, because his actual goal was "maximise people doing the right
+things" and a tour is dismissed once whether or not anything was done. Deriving
+it also means it survives closing the app for free, with no progress cursor to
+keep in sync, and it keeps working as a to-do list through the first week, which
+is when people drift.
+Rule: when asked for a walkthrough, ask what the walkthrough is FOR. If the goal
+is completion rather than orientation, measure completion.
+Cheap correctness point that mattered: targets are seeded at signup, so "has
+targets" proves nothing about whether anyone looked. Opening the screen is the
+signal. Check whether the state you are testing was created by the user or by a
+default.
+
+## Test setup that works around RLS is hiding something (2026-09-07)
+A test set a client's tier with a direct profiles update and silently got back
+zero rows — the only UPDATE policy is own-row, and set_member_tier is the coach's
+real route. The instinct is to reach for the service role and move on; the
+policy was doing its job and the test was wrong.
+The same run showed two fixture clients had `trainer_id: null`: they had been
+created with joining code REDEF1 when Paul's is FA128C, so they were never
+actually linked to him. Assertions had been passing around an account that was
+not in the state it claimed to be.
+Rules:
+- If test setup needs to bypass a policy, use the same route the product uses.
+  A test that needs more power than the user has is testing something else.
+- Assert the fixture is in the state you think it is. `trainer_id: null` would
+  have shown in one select and saved two rounds of debugging.
