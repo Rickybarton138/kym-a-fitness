@@ -760,3 +760,12 @@ button.chip span { color: var(--muted); font-weight: 700; }
 .gs-body b { font-size: 14px; font-weight: 600; }
 .gs-body span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .gs-step.next .gs-tick { border-color: var(--accent); color: var(--accent); }
+
+/* Rick.Fit only: the display type wants to be big, tight and shouty, which the
+   default serif headings are not. Scoped by the accent so no other brand moves. */
+html.brand-ricky .h1 { text-transform: uppercase; font-weight: 800; letter-spacing: -.01em; font-size: 29px; line-height: 1.06; }
+html.brand-ricky .brand-name { text-transform: uppercase; font-weight: 800; letter-spacing: .06em; font-size: 15px; }
+html.brand-ricky .auth-brand h1 { text-transform: uppercase; font-weight: 800; letter-spacing: .04em; }
+html.brand-ricky .eyebrow { letter-spacing: .18em; }
+html.brand-ricky .eyebrow.accent { color: var(--accent); }
+html.brand-ricky .btn.primary { box-shadow: 0 0 18px rgba(46, 232, 92, .28); }

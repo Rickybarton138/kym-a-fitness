@@ -142,8 +142,9 @@ export const BRANDS = {
   // confuse, and he wants the AI to do the programming and the nutrition.
   ricky: {
     slug: 'ricky',
+    scheme: 'dark',
     name: 'Rick.Fit',
-    tagline: 'Train hard. Eat properly. Get on with it.',
+    tagline: 'Lose the belly fat. Keep the muscle.',
     mark: 'R',
     features: {
       testing: true, templates: true, programs: true, recipes: true, videos: true,
@@ -167,18 +168,29 @@ export const BRANDS = {
       'Treadmill, bike & rower',
     ],
     vars: {
-      '--bg': '#0d1117',
-      '--surface': '#161b22',
-      '--surface-2': '#1f262e',
-      '--line': '#2c343d',
-      '--text': '#e8edf3',
-      '--muted': '#8b98a8',
-      '--accent': '#f0b429',
-      '--accent-hi': '#ffc94d',
-      '--on-accent': '#1a1400',
-      '--gold': '#f0b429',
-      '--ring-track': '#2c343d',
-      '--radius': '14px',
+      // Lifted from the look Ricky liked: near-black with a single neon green,
+      // nothing else competing. The green only ever appears on the thing you
+      // are meant to press or the number that matters — used everywhere it
+      // stops meaning anything.
+      '--bg': '#070a08',
+      '--surface': '#0e1310',
+      '--surface-2': '#161d18',
+      '--line': '#232d26',
+      '--text': '#eef5ef',
+      '--muted': '#8b9c90',
+      '--accent': '#2ee85c',
+      '--accent-hi': '#5bff86',
+      '--on-accent': '#04120a',
+      '--gold': '#2ee85c',
+      '--good': '#2ee85c',
+      '--ring-track': '#1c2620',
+      '--radius': '16px',
+      // Headings drop the default serif for a heavy system sans. The first
+      // attempt reached for Haettenschweiler and Impact to get the condensed
+      // look of the reference; neither is reliably installed, and the wordmark
+      // rendered as an unreadable squeezed blob. Weight and letter-spacing get
+      // most of that character with a stack that exists everywhere.
+      '--serif': "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     },
   },
   elev8: {
@@ -290,4 +302,8 @@ export function applyTheme(theme) {
   Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v))
   root.style.colorScheme = theme.scheme || 'light'
   document.title = theme.name
+  // A brand hook for the handful of things a CSS variable cannot express —
+  // letter-spacing, casing, a glow. Everything else should stay in vars.
+  root.classList.forEach((c) => { if (c.startsWith('brand-')) root.classList.remove(c) })
+  if (theme.slug) root.classList.add('brand-' + theme.slug)
 }
