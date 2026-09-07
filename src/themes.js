@@ -146,6 +146,17 @@ export const BRANDS = {
     name: 'Rick.Fit',
     tagline: 'Lose the belly fat. Keep the muscle.',
     mark: 'R',
+    logo: '/brands/ricky/icon-512.png',
+    // Shipped with the build rather than uploaded: THEME.heroImages is
+    // concatenated ahead of any the coach uploads, so this needs no storage
+    // bucket and no credentials. Generated with gpt-image-2; see
+    // scripts/make-ricky-heroes.mjs for the prompts that produced them.
+    heroImages: [
+      '/brands/ricky/hero-1.jpg',
+      '/brands/ricky/hero-3.jpg',
+      '/brands/ricky/hero-2.jpg',
+      '/brands/ricky/hero-4.jpg',
+    ],
     features: {
       testing: true, templates: true, programs: true, recipes: true, videos: true,
       barcode: true, tags: true, supplements: true, shop: true, podcasts: true,

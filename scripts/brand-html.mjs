@@ -32,9 +32,12 @@ const BRANDS = {
   },
   ricky: {
     name: 'Rick.Fit', short: 'Rick.Fit',
-    description: 'Training and nutrition, run by AI. One user.',
-    theme: '#0d1117', bg: '#0d1117', url: 'https://rick-fit.netlify.app',
-    icon192: '/icon-192.png', icon512: '/icon-512.png', og: '/icon-512.png',
+    description: 'Lose the belly fat. Keep the muscle. Training, food and progress in one place.',
+    theme: '#070a08', bg: '#070a08', url: 'https://rick-fit.netlify.app',
+    // Was pointing at /icon-192.png and /icon-512.png — Coached by Kim's icons,
+    // so every WhatsApp share of this app carried her mark.
+    icon192: '/brands/ricky/icon-192.png', icon512: '/brands/ricky/icon-512.png',
+    og: '/brands/ricky/og.png',
   },
 }
 
