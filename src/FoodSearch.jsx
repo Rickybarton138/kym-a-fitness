@@ -53,17 +53,21 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
   }, [coachId])
 
   useEffect(() => {
-    if (q.trim().length < 2) { setApi([]); return }
+    if (q.trim().length < 2) { setApi([]); setSearching(false); return }
+    // Mark it as searching IMMEDIATELY, not inside the debounce. It used to be
+    // set when the timer fired, so for the first 450ms the state was "not
+    // searching, no results" and the screen said "No matches — add it manually"
+    // before the request had even been sent. Paul: "One of my clients thought
+    // nothing was in there as she saw it every time."
+    setSearching(true)
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
-      setSearching(true)
       try {
         const res = await fetch('/.netlify/functions/food-search?q=' + encodeURIComponent(q.trim()))
         const j = await res.json()
         setApi(j.results || [])
-      } catch { setApi([]) }
-      setSearching(false)
-    }, 450)
+      } catch { setApi([]) } finally { setSearching(false) }
+    }, 250)
     return () => clearTimeout(timer.current)
   }, [q])
 

@@ -116,6 +116,12 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const [eMeal, setEMeal] = useState('')
   const [eDate, setEDate] = useState('')
   const [addTab, setAddTab] = useState('search')
+  const [copying, setCopying] = useState(null)   // the meal name being copied
+  const [copyTo, setCopyTo] = useState('')       // target date
+  const [copyMeal, setCopyMeal] = useState('')   // target meal
+  const [copyBusy, setCopyBusy] = useState(false)
+  const [copyMsg, setCopyMsg] = useState('')
+  const [yesterday, setYesterday] = useState(null) // what was eaten this meal, the day before
   const [savingEdit, setSavingEdit] = useState(false)
   const [editErr, setEditErr] = useState('')
   const [targets, setTargets] = useState(null)
@@ -209,6 +215,66 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     })
     loadDay(day); loadWeek()
   }
+  // Paul: "in the food diary, is it possible to copy meals from previous days?
+  // MyFitnessPal allows it ... You can also go to a previous day and select copy
+  // on a meal and then put in what day and meal you want to copy it to."
+  //
+  // Both halves of that: copy a whole meal somewhere else, and — because the
+  // commonest case by far is eating the same breakfast again — a one-tap repeat
+  // of yesterday's version of the meal you are already adding to.
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  async function copyMealTo(mealName, targetDay, targetMeal) {
+    const items = (logs || []).filter((l) => (l.meal_type || mealOf(l.logged_at)) === mealName)
+    if (!items.length) return 0
+    const [y, m, d] = targetDay.split('-').map(Number)
+    const when = new Date(y, m - 1, d, 12, 0, 0)
+    const rows = items.map((l) => ({
+      client_id: clientId, source: 'manual', name: l.name,
+      calories: l.calories, protein_g: l.protein_g, carbs_g: l.carbs_g, fat_g: l.fat_g, fibre_g: l.fibre_g,
+      meal_type: targetMeal, logged_at: when.toISOString(),
+    }))
+    const { error } = await supabase.from('nutrition_logs').insert(rows)
+    if (error) throw new Error(error.message)
+    return rows.length
+  }
+
+  async function runCopy() {
+    setCopyBusy(true); setCopyMsg('')
+    try {
+      const n = await copyMealTo(copying, copyTo, copyMeal)
+      const sameDay = copyTo === ymd(day)
+      setCopyMsg(`${n} item${n === 1 ? '' : 's'} copied to ${copyMeal}${sameDay ? '' : ' on ' + copyTo}.`)
+      if (sameDay) { loadDay(day); loadWeek() }
+      setTimeout(() => { setCopying(null); setCopyMsg('') }, 2200)
+    } catch (e) {
+      setCopyMsg(e.message || 'Could not copy that — try again.')
+    } finally { setCopyBusy(false) }
+  }
+
+  // What they ate for this meal yesterday, offered inside the add sheet.
+  async function loadYesterday(mealName) {
+    const prev = new Date(day); prev.setDate(prev.getDate() - 1)
+    const from = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate(), 0, 0, 0)
+    const to = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate(), 23, 59, 59)
+    const { data } = await supabase.from('nutrition_logs').select('*')
+      .eq('client_id', clientId).gte('logged_at', from.toISOString()).lte('logged_at', to.toISOString())
+    const items = (data || []).filter((l) => (l.meal_type || mealOf(l.logged_at)) === mealName)
+    setYesterday(items.length ? { meal: mealName, items, label: ymd(prev) } : null)
+  }
+
+  async function repeatYesterday() {
+    if (!yesterday) return
+    const when = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0)
+    await supabase.from('nutrition_logs').insert(yesterday.items.map((l) => ({
+      client_id: clientId, source: 'manual', name: l.name,
+      calories: l.calories, protein_g: l.protein_g, carbs_g: l.carbs_g, fat_g: l.fat_g, fibre_g: l.fibre_g,
+      meal_type: yesterday.meal, logged_at: when.toISOString(),
+    })))
+    setYesterday(null)
+    loadDay(day); loadWeek()
+  }
+
   const maxDay = () => { const m = new Date(); m.setDate(m.getDate() + MAX_AHEAD); return m }
   const shift = (n) => { const d = new Date(day); d.setDate(d.getDate() + n); if (d <= maxDay()) setDay(d) }
   const canForward = (() => { const d = new Date(day); d.setDate(d.getDate() + 1); return d <= maxDay() })()
@@ -251,7 +317,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
         </div>
       </div>
 
-      <button type="button" className="btn primary" style={{ marginTop: 12 }} onClick={() => setAdding(true)}>
+      <button type="button" className="btn primary" style={{ marginTop: 12 }} onClick={() => { setAdding(true); loadYesterday(mealByHour(day)) }}>
         + Add food{isFuture ? ' (plan ahead)' : ''}
       </button>
 
@@ -272,7 +338,39 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
       {logs !== null && logs.length === 0 && <p className="muted-note" style={{ marginTop: 12 }}>{isFuture || !isToday(day) ? 'Nothing here — plan the day by adding food above.' : 'Nothing logged yet — add food above.'}</p>}
       {grouped.map((g) => (
         <div className="card" key={g.meal}>
-          <p className="eyebrow">{g.meal}</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <p className="eyebrow">{g.meal}</p>
+            <button
+              type="button" className="link-btn"
+              onClick={() => {
+                setCopying(copying === g.meal ? null : g.meal)
+                setCopyTo(ymd(day)); setCopyMeal(g.meal); setCopyMsg('')
+              }}
+            >{copying === g.meal ? 'Cancel' : 'Copy'}</button>
+          </div>
+
+          {copying === g.meal && (
+            <div className="card" style={{ background: 'var(--surface-2)', marginBottom: 10 }}>
+              <p className="muted-note" style={{ marginTop: 0 }}>
+                Copy all {g.items.length} item{g.items.length === 1 ? '' : 's'} to:
+              </p>
+              <div className="grid-2">
+                <label className="field">Day
+                  <input type="date" value={copyTo} max={ymd(maxDay())} onChange={(e) => setCopyTo(e.target.value)} />
+                </label>
+                <label className="field">Meal
+                  <select className="ex-select" value={copyMeal} onChange={(e) => setCopyMeal(e.target.value)}>
+                    {MEALS.map((m) => <option key={m}>{m}</option>)}
+                  </select>
+                </label>
+              </div>
+              {copyMsg && <p className="logged-ok">{copyMsg}</p>}
+              <button type="button" className="btn primary sm" disabled={copyBusy || !copyTo} onClick={runCopy}>
+                {copyBusy ? 'Copying…' : 'Copy it'}
+              </button>
+            </div>
+          )}
+
           {g.items.map((l) => (
             <div className="diary-item" key={l.id}>
               <button type="button" className="diary-name diary-edit" onClick={() => openEdit(l)} aria-label={`Edit ${l.name || 'entry'}`}>
@@ -362,6 +460,19 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
               <button type="button" className={addTab === 'plate' ? 'on' : ''} onClick={() => setAddTab('plate')}>Scan plate</button>
               {THEME.features?.recipes && <button type="button" className={addTab === 'recipes' ? 'on' : ''} onClick={() => setAddTab('recipes')}>Recipes</button>}
             </div>
+            {/* The commonest copy of all: the same breakfast as yesterday.
+                Offered before the search box, because if this is what they
+                wanted it saves the whole interaction. */}
+            {yesterday && yesterday.items.length > 0 && (
+              <button type="button" className="btn ghost" style={{ marginBottom: 10, textAlign: 'left' }} onClick={repeatYesterday}>
+                Same {yesterday.meal.toLowerCase()} as yesterday
+                <span className="muted-note" style={{ display: 'block', marginTop: 2 }}>
+                  {yesterday.items.map((i) => i.name).slice(0, 3).join(', ')}
+                  {yesterday.items.length > 3 ? ` +${yesterday.items.length - 3} more` : ''}
+                  {' · '}{yesterday.items.reduce((n, i) => n + (i.calories || 0), 0)} kcal
+                </span>
+              </button>
+            )}
             {addTab === 'search' && <FoodSearch onLog={addFood} defaultMeal={mealByHour(day)} coachId={coachId} contributorId={contributorId} />}
             {addTab === 'barcode' && <BarcodeScan onLog={addFood} />}
             {addTab === 'plate' && <MealScan onLog={addFood} />}
