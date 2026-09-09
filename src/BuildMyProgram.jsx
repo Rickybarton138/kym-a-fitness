@@ -4,6 +4,7 @@ import { EquipmentScan } from './EquipmentScan.jsx'
 import { buildProgramRows } from './programBuild.js'
 import { sortDays } from './lib.js'
 import { WEEKDAYS } from './booking.js'
+import { TRAIN_WHERE } from './programMeta.js'
 
 // Paul, 4 Sept: "The program library is awesome but I wonder if it could be an
 // option to let people use the ai to create a programme where they can state if
@@ -19,11 +20,6 @@ import { WEEKDAYS } from './booking.js'
 // library, and the programme is stamped 'client_ai' so the coach can always
 // tell it apart from his own.
 
-const WHERE = [
-  { key: 'gym', label: 'A gym', sub: 'Full kit — machines, racks, everything' },
-  { key: 'home_gym', label: 'My home gym', sub: 'Garage, spare room — you pick what you have' },
-  { key: 'home', label: 'At home', sub: 'Little or no equipment' },
-]
 const WEEK_BUTTONS = [1, 2, 3, 4, 5, 6, 0]
 const GOALS = ['Build muscle', 'Lose fat', 'Get stronger', 'General fitness']
 
@@ -124,7 +120,7 @@ export function BuildMyProgram({ clientId, onDone }) {
       <p className="muted-note">Answer three things and the AI builds you a plan that fits where you train and the days you can do.</p>
 
       <p className="eyebrow">Where do you train?</p>
-      {WHERE.map((w) => (
+      {TRAIN_WHERE.map((w) => (
         <button
           type="button" key={w.key}
           className={'opt-row' + (where === w.key ? ' on' : '')}

@@ -9,6 +9,17 @@ export const PROGRAM_DIMS = [
   { key: 'goal',      label: 'Goal',      options: [['lose', 'Fat loss'], ['maintain', 'Maintain'], ['gain', 'Build muscle'], ['performance', 'Performance']] },
 ]
 
+// Where the training actually happens. Paul, 9 Sept, on the client's one-off
+// session builder: "can we prompt it to ask if it is a home, gym or home gym
+// session". His programme builder already asks exactly that, in these words —
+// so both builders read the same list rather than growing two vocabularies for
+// the same three places.
+export const TRAIN_WHERE = [
+  { key: 'gym', label: 'A gym', sub: 'Full kit — machines, racks, everything' },
+  { key: 'home_gym', label: 'My home gym', sub: 'Garage, spare room — whatever you have' },
+  { key: 'home', label: 'At home', sub: 'Little or no equipment' },
+]
+
 export function programTagLabel(key, val) {
   if (!val) return null
   const d = PROGRAM_DIMS.find((x) => x.key === key)

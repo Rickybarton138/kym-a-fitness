@@ -6,8 +6,17 @@ import { scaleImageToBase64 } from './lib.js'
 // servings -> per-portion macros), or paste text / snap a screenshot (great for
 // migrating recipes from another app). Saves as the client's own recipe.
 
-function Preview({ draft, setDraft, onSave, saving }) {
+const cleanIngredients = (list) => (list || []).map((i) => String(i).trim()).filter(Boolean)
+
+// The review form, shared by the create flow and by editing a saved recipe.
+// Ingredients and the method are EDITABLE here, not just displayed: an imported
+// recipe is a first draft — the AI mis-reads a quantity or drops a line, and
+// until now the only way to correct it was to start again.
+function Preview({ draft, setDraft, onSave, saving, saveLabel = 'Save recipe' }) {
   const set = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }))
+  // One ingredient per line. Blank lines are kept while typing and dropped on
+  // save, so pressing Enter for the next line does not delete the one above.
+  const setIngredients = (e) => setDraft((d) => ({ ...d, ingredients: e.target.value.split('\n') }))
   return (
     <div className="stack" style={{ marginTop: 8 }}>
       {draft.image_url && <img className="link-img" src={draft.image_url} alt={draft.title} />}
@@ -17,13 +26,12 @@ function Preview({ draft, setDraft, onSave, saving }) {
         <div />
       </div>
       <p className="muted-note">Per serving: <b>{draft.calories} kcal</b> · {draft.protein_g}g P · {draft.carbs_g}g C · {draft.fat_g}g F{draft.fibre_g ? ` · ${draft.fibre_g}g fibre` : ''}</p>
-      {draft.ingredients?.length > 0 && (
-        <div className="card" style={{ background: 'var(--surface-2)' }}>
-          <p className="eyebrow">Ingredients</p>
-          {draft.ingredients.map((i, n) => <div className="checkin-line" key={n}>{i}</div>)}
-        </div>
-      )}
-      {draft.method && <p className="muted-note" style={{ whiteSpace: 'pre-line' }}>{draft.method}</p>}
+      <label className="field">Ingredients — one per line
+        <textarea className="food-input" style={{ minHeight: 110 }} value={(draft.ingredients || []).join('\n')} onChange={setIngredients} placeholder="500g beef mince&#10;1 tin chopped tomatoes" />
+      </label>
+      <label className="field">Method
+        <textarea className="food-input" style={{ minHeight: 110 }} value={draft.method || ''} onChange={set('method')} placeholder="How you make it — optional" />
+      </label>
       <p className="muted-note">Macros are an estimate — tweak the numbers if you know better.</p>
       <div className="grid-2">
         <label className="field">Calories<input type="number" value={draft.calories} onChange={set('calories')} /></label>
@@ -32,7 +40,48 @@ function Preview({ draft, setDraft, onSave, saving }) {
         <label className="field">Fat (g)<input type="number" value={draft.fat_g} onChange={set('fat_g')} /></label>
         <label className="field">Fibre (g)<input type="number" value={draft.fibre_g || ''} onChange={set('fibre_g')} /></label>
       </div>
-      <button className="btn primary big" disabled={saving || !draft.title} onClick={onSave}>{saving ? 'Saving…' : 'Save recipe'}</button>
+      <button className="btn primary big" disabled={saving || !draft.title} onClick={onSave}>{saving ? 'Saving…' : saveLabel}</button>
+    </div>
+  )
+}
+
+// Paul, 9 Sept: "can we have an edit button on recipes so clients can go into
+// their own created recipes and edit them?" Only their own — the RLS policy
+// rc_client_own is scoped to client_id = auth.uid(), so an update against a
+// coach's recipe matches no row and silently changes nothing. The Edit button
+// is therefore shown only on the client's own recipes, which is also what Paul
+// asked for.
+export function RecipeEditor({ recipe, onSaved, onClose }) {
+  const [draft, setDraft] = useState({
+    ...recipe,
+    servings: recipe.servings || 1,
+    ingredients: recipe.ingredients || [],
+    method: recipe.method || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function save() {
+    setSaving(true); setError('')
+    const d = draft
+    const { data, error: err } = await supabase.from('recipes').update({
+      title: d.title, servings: Number(d.servings) || 1,
+      ingredients: cleanIngredients(d.ingredients), method: d.method || null,
+      calories: Number(d.calories) || 0, protein_g: Number(d.protein_g) || 0,
+      carbs_g: Number(d.carbs_g) || 0, fat_g: Number(d.fat_g) || 0, fibre_g: Number(d.fibre_g) || 0,
+    }).eq('id', recipe.id).select().single()
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    onSaved && onSaved(data); onClose()
+  }
+
+  return (
+    <div className="sheet-overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><b>Edit recipe</b><button className="link-btn" onClick={onClose}>Close</button></div>
+        <Preview draft={draft} setDraft={setDraft} onSave={save} saving={saving} saveLabel="Save changes" />
+        {error && <p className="error">{error}</p>}
+      </div>
     </div>
   )
 }
@@ -90,7 +139,7 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
     const d = draft
     const { data, error: err } = await supabase.from('recipes').insert({
       client_id: clientId, coach_id: null, title: d.title, servings: Number(d.servings) || 1,
-      ingredients: d.ingredients || [], method: d.method || null, image_url: d.image_url || null, source_url: d.source_url || null,
+      ingredients: cleanIngredients(d.ingredients), method: d.method || null, image_url: d.image_url || null, source_url: d.source_url || null,
       serving_label: 'per serving',
       calories: Number(d.calories) || 0, protein_g: Number(d.protein_g) || 0, carbs_g: Number(d.carbs_g) || 0, fat_g: Number(d.fat_g) || 0, fibre_g: Number(d.fibre_g) || 0,
     }).select().single()

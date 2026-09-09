@@ -16,7 +16,7 @@ import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
 import { ExerciseGuide } from './ExerciseGuide.jsx'
-import { RecipeCreator } from './RecipeCreator.jsx'
+import { RecipeCreator, RecipeEditor } from './RecipeCreator.jsx'
 import { FoodDiary } from './FoodDiary.jsx'
 import { CommunityFeed } from './CommunityFeed.jsx'
 import { LiftProgress } from './LiftProgress.jsx'
@@ -28,7 +28,7 @@ import { BarcodeScan, MealScan } from './FoodCapture.jsx'
 import { GettingStarted } from './GettingStarted.jsx'
 import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
-import { PROGRAM_DIMS, programTagLabel, programMatches } from './programMeta.js'
+import { PROGRAM_DIMS, programTagLabel, programMatches, TRAIN_WHERE } from './programMeta.js'
 import { WEEKDAYS } from './booking.js'
 import { formatAnswer } from './checkinForms.js'
 import { RTP_LADDER, BODY_REGIONS, availabilityOf, statusLabel } from './rehab.js'
@@ -1622,8 +1622,17 @@ function Train({ clientId, trainerId, onWorkoutDone, stepTarget }) {
   )
 }
 
+// Paul, 9 Sept: "can we prompt it to ask if it is a home, gym or home gym
+// session and maybe add a text box so they can say, for example, create me a
+// full body TRX workout … or a workout hitting x,y,z using only machines etc?"
+//
+// So: the same three places his programme builder already asks about (shared
+// list, TRAIN_WHERE), plus a free-text line. The focus chips stay — they are
+// one tap and cover most sessions — and the box is for everything they don't.
 function AiPlan({ clientId, onSaved }) {
   const [goal, setGoal] = useState('Push')
+  const [where, setWhere] = useState('gym')
+  const [notes, setNotes] = useState('')
   const [state, setState] = useState('idle')
   const [error, setError] = useState('')
   const [equip, setEquip] = useState(null) // { data, preview } — optional photo of available kit
@@ -1639,7 +1648,11 @@ function AiPlan({ clientId, onSaved }) {
   async function generate() {
     setState('loading'); setError('')
     try {
-      const json = await analyze({ mode: 'workout', goal, equipment: THEME.equipment, gymName: THEME.trainGymName, ...(equip ? { image: equip.data, mediaType: 'image/jpeg' } : {}) })
+      const json = await analyze({
+        mode: 'workout', goal, equipment: THEME.equipment, gymName: THEME.trainGymName,
+        location: where, notes: notes.trim().slice(0, 300),
+        ...(equip ? { image: equip.data, mediaType: 'image/jpeg' } : {}),
+      })
       const { data } = await supabase.from('workout_plans').insert({
         client_id: clientId, title: json.title, focus: json.focus,
         exercises: json.exercises || [], finisher: json.finisher || null,
@@ -1654,16 +1667,45 @@ function AiPlan({ clientId, onSaved }) {
 
   return (
     <div className="stack">
-      <p className="lead">Pick a focus and the AI writes a session using {equip ? 'the equipment in your photo' : `only the kit at ${THEME.trainGymName}`}.</p>
+      <p className="lead">Tell it where you are and what you’re after, and the AI writes you a session.</p>
+
+      <p className="eyebrow">Where are you training?</p>
+      {TRAIN_WHERE.map((w) => (
+        <button
+          type="button" key={w.key}
+          className={'opt-row' + (where === w.key ? ' on' : '')}
+          onClick={() => setWhere(w.key)}
+        >
+          <span style={{ fontWeight: 600 }}>{w.label}</span>
+          <span className="muted" style={{ display: 'block', fontSize: 13 }}>{w.sub}</span>
+        </button>
+      ))}
+
+      <p className="eyebrow" style={{ marginTop: 6 }}>Focus</p>
       <div className="focus-row">
         {FOCUS_OPTIONS.map((f) => (
           <button key={f} className={'focus-chip' + (goal === f ? ' on' : '')} onClick={() => setGoal(f)}>{f}</button>
         ))}
       </div>
+
+      <label className="field" style={{ marginTop: 6 }}>Anything else? (optional)
+        <textarea
+          className="food-input" style={{ minHeight: 72 }} maxLength={300}
+          value={notes} onChange={(e) => setNotes(e.target.value)}
+          placeholder="e.g. full body TRX session · upper body, bodyweight only · chest, shoulders and triceps using machines · 30 minutes, no jumping"
+        />
+      </label>
+
       <input ref={equipRef} type="file" accept="image/*" capture="environment" hidden onChange={pickEquip} />
       {!equip
-        ? <button type="button" className="btn ghost sm" onClick={() => equipRef.current?.click()}>Training somewhere else? Snap the equipment you’ve got</button>
-        : <div className="stack"><div className="shot"><img src={equip.preview} alt="Your equipment" /></div><button type="button" className="link-btn inline" onClick={() => equipRef.current?.click()}>Retake</button>{' · '}<button type="button" className="link-btn inline" onClick={() => setEquip(null)}>Use my usual gym</button></div>}
+        ? <button type="button" className="btn ghost sm" onClick={() => equipRef.current?.click()}>{where === 'gym' ? 'Somewhere different today? Snap the equipment you’ve got' : 'Snap the equipment you’ve got'}</button>
+        : <div className="stack"><div className="shot"><img src={equip.preview} alt="Your equipment" /></div><button type="button" className="link-btn inline" onClick={() => equipRef.current?.click()}>Retake</button>{' · '}<button type="button" className="link-btn inline" onClick={() => setEquip(null)}>Remove the photo</button></div>}
+      <p className="muted-note">
+        {equip ? 'It will build the session around the kit in your photo.'
+          : where === 'gym' ? `It will use only the kit at ${THEME.trainGymName}.`
+          : where === 'home_gym' ? 'Say what you have in the box above, or snap it — otherwise it will assume the usual home-gym basics.'
+          : 'Bodyweight and anything you mention above.'}
+      </p>
       {state !== 'loading' && <button className="btn primary big" onClick={generate}>Generate a session</button>}
       {state === 'loading' && <Loader text="Writing your session…" />}
       {state === 'done' && <p className="logged-ok">Added to your sessions ✓</p>}
@@ -1918,6 +1960,7 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
   const [loggedId, setLoggedId] = useState(null)
   const [copiedId, setCopiedId] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState(null)
   const [q, setQ] = useState('')
   const [tag, setTag] = useState('')
   const clientId = profile?.id
@@ -1981,11 +2024,13 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
             <div className="nudge-actions">
               <button className="btn primary sm" onClick={() => log(r)}>{loggedId === r.id ? 'Added to today ✓' : 'Log this meal'}</button>
               {(r.ingredients || []).length > 0 && <button className="btn ghost sm" onClick={() => copyShopping(r)}>{copiedId === r.id ? 'Copied ✓' : 'Shopping list'}</button>}
+              {r.client_id === clientId && <button className="btn ghost sm" onClick={() => setEditing(r)}>Edit</button>}
             </div>
           </div>
         ))}
       </div>
       {creating && <RecipeCreator clientId={clientId} onSaved={(rec) => setRecipes((rs) => [rec, ...(rs || [])])} onClose={() => setCreating(false)} />}
+      {editing && <RecipeEditor recipe={editing} onSaved={(rec) => setRecipes((rs) => (rs || []).map((x) => (x.id === rec.id ? rec : x)))} onClose={() => setEditing(null)} />}
     </div>
   )
 }

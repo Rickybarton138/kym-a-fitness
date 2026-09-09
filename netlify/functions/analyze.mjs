@@ -134,10 +134,33 @@ function buildBriefingSystem(persona) {
   )
 }
 
-function buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, healthContext }) {
+// Where the client is training this session — the same gym/home_gym/home keys
+// the programme builder sends to program-generate. A photo still beats all of
+// them: it shows the actual room.
+function locationLine(location, equipment, gymName) {
+  if (location === 'home') {
+    return 'The client is training AT HOME with little or no equipment. Build a bodyweight session — you may use only kit they explicitly mention below. No machines, no barbells, no cables. Use tempo, unilateral work, range of motion and short rest to make it hard without load.'
+  }
+  if (location === 'home_gym') {
+    return 'The client is training in their OWN HOME GYM. Assume only what they describe below; if they describe nothing, assume the usual home-gym basics — adjustable dumbbells, a bench, a pull-up bar, bands — and nothing more. No commercial machines or cable stacks.'
+  }
+  return `The client is training at ${gymName || 'the gym'}. Use ONLY equipment from this list, and name the specific piece for each exercise: ${(equipment || []).join('; ')}.`
+}
+
+// The client's own words about the session they want ("full body TRX", "chest,
+// shoulders and triceps on machines only", "30 minutes, nothing jumping").
+// Last in the prompt so it overrides the generic focus, and capped — it is a
+// one-line request, not a channel for a wall of text.
+function requestLine(notes) {
+  const n = String(notes || '').trim().slice(0, 300)
+  if (!n) return ''
+  return ` The client has asked for this specifically: "${n}". Honour it — it takes priority over the generic focus above, as long as it stays safe and sensible. If they name a piece of kit, movement pattern or muscle group, the session must be built around it.`
+}
+
+function buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, healthContext, location, notes }) {
   const equipLine = fromPhoto
     ? 'Look at the photo — it shows the equipment actually available to the client right now. Build the session using ONLY equipment you can see in the photo, and name the specific piece for each exercise. If the photo is unclear, fall back to sensible commonly-available kit.'
-    : `Use ONLY equipment from this list, and name the specific piece for each exercise: ${(equipment || []).join('; ')}.`
+    : locationLine(location, equipment, gymName)
   return (
     personaIntro(persona, 'strength coach') + ` Your clients train at ${gymName || 'the gym'}. ` +
     `Build ONE ${goal || 'full body'} session for today. ` +
@@ -145,7 +168,7 @@ function buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, heal
     'Give 5-6 exercises, compound strength movements first, with sets (a number), a rep target or range, ' +
     'the exact equipment used, and one short coaching cue each (form and mindset, not just mechanics). ' +
     'Add a brief finisher. Sensible, joint-friendly volume the client can actually recover from.' +
-    healthLine(healthContext)
+    healthLine(healthContext) + requestLine(notes)
   )
 }
 
@@ -353,7 +376,7 @@ export const handler = async (event) => {
     return json(400, { error: 'Invalid JSON body.' })
   }
 
-  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras, recovery, healthContext, answers } = body
+  const { mode, image, mediaType, remaining, goal, equipment, gymName, question, knowledge, comms, text, persona, nutritionStyle, extras, recovery, healthContext, answers, location, notes } = body
 
   // ---- Nutrition Expert: evidence-based sports-nutrition answers ----
   if (mode === 'expert') {
@@ -560,7 +583,7 @@ ${sample}`,
     const fromPhoto = !!image
     // With an equipment photo, use a vision-capable mid model; text-only stays cheap.
     model = fromPhoto ? MODEL_MID : MODEL_LITE
-    content = [{ type: 'text', text: buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, healthContext }) }]
+    content = [{ type: 'text', text: buildWorkoutPrompt({ goal, equipment, gymName, persona, fromPhoto, healthContext, location, notes }) }]
     if (fromPhoto) content.push({ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: image } })
   } else if (mode === 'parse') {
     if (!text) return json(400, { error: 'Paste some text to parse.' })
