@@ -90,13 +90,13 @@ export function StepsCatchUp({ clientId, target }) {
       <p className="muted-note">Missed a day? Add it here — pick any past date from the calendar. Today’s steps are quicker to log from the home screen.</p>
 
       {rows !== null && (
-        <div className="stack" style={{ marginTop: 10 }}>
+        <div className="stack step-week" style={{ marginTop: 10 }}>
           {week.map((d) => dayRow(d, logged.get(d)))}
         </div>
       )}
 
       {earlier.length > 0 && (
-        <div className="stack" style={{ marginTop: 10 }}>
+        <div className="stack step-earlier" style={{ marginTop: 10 }}>
           <p className="eyebrow">Earlier</p>
           {earlier.map((r) => dayRow(r.day, r.steps))}
         </div>

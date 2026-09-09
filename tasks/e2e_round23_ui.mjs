@@ -132,8 +132,10 @@ ok('there is a way to add steps for another day', await steps.waitFor({ timeout:
 // The day list arrives from a query, so wait for it rather than counting an
 // empty DOM — the same race that has bitten this suite before.
 await steps.locator('.step-day').first().waitFor({ timeout: 20000 })
-ok('showing which of the last few days are missing', await steps.locator('.step-day').count() === 7,
-  `${await steps.locator('.step-day').count()} days listed`)
+// Scoped to the week strip: since 9 Sept the card also lists any logged day
+// further back, under "Earlier", so counting every .step-day counts those too.
+ok('showing which of the last few days are missing', await steps.locator('.step-week .step-day').count() === 7,
+  `${await steps.locator('.step-week .step-day').count()} days listed`)
 
 await steps.locator('input[type="date"]').fill(backDay)
 await steps.locator('input[type="number"]').fill('9412')
