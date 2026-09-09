@@ -24,10 +24,18 @@ export const handler = async (event) => {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: image ? VISION_MODEL : MODEL, max_tokens: 200, messages: [{ role: 'user', content: userContent }] }),
+      // 200 is enough when the answer is the whole response, and on a short
+      // prompt it still is — the photo path does work today, measured. But the
+      // vision model reasons before it answers, and that reasoning grows with
+      // the job: the same assumption in meal-plan.mjs held for three meals and
+      // silently returned nothing for twelve. Give the photo room rather than
+      // wait for a busier gym photo to find the edge.
+      body: JSON.stringify({ model: image ? VISION_MODEL : MODEL, max_tokens: image ? 2000 : 200, messages: [{ role: 'user', content: userContent }] }),
     })
     const j = await res.json()
-    const text = j?.content?.[0]?.text || '{}'
+    // The answer is the first TEXT block, not the first block. See analyze.mjs,
+    // which has always done this properly.
+    const text = (j?.content || []).find((c) => c?.type === 'text')?.text || '{}'
     const m = text.match(/\{[\s\S]*\}/)
     const parsed = JSON.parse(m ? m[0] : '{}')
     const alt = String(parsed.name || '').trim()

@@ -402,7 +402,7 @@ function homeTileDefs(coachFirst) {
     { id: 'food', group: 'Nutrition', show: true, Icon: IconMeal, title: 'Log food', sub: 'Search foods & drinks, add your portion' },
     { id: 'barcode', group: 'Nutrition', show: THEME.features?.barcode, Icon: IconMeal, title: 'Barcode scan', sub: 'Scan a product, log it in a tap' },
     { id: 'recipes', group: 'Nutrition', show: THEME.features?.recipes, Icon: IconMeal, title: 'Recipes', sub: `${coachFirst}’s go-to meals, log in one tap` },
-    { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'Build a day around your targets' },
+    { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'A day, or a week with the shopping list' },
     { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
     { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
     { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: THEME.features?.parq ? 'PAR-Q, health conditions & life circumstances' : 'Health conditions & life circumstances — optional' },
@@ -3604,7 +3604,7 @@ function NutritionHub({ profile, coachName, onGo }) {
         {THEME.features?.mealPlans && (
           <button className="tile tile-hero" onClick={() => onGo('mealplan')}>
             <IconMeal />
-            <div><b>Meal plan</b><span>Build a day around your targets</span></div>
+            <div><b>Meal plan</b><span>A day, or a week with the shopping list</span></div>
           </button>
         )}
         <button className="tile" onClick={() => onGo('calc')}>

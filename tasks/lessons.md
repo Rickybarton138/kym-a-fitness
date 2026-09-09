@@ -507,3 +507,43 @@ Rules:
   ricky=paul; without that the damage would have sat there waiting for a deploy.
 - A tool that silently targets something other than what you named is worth
   writing down, not working around once and forgetting.
+
+## `Math.max(2, x)` can never be the sentinel you're testing for (2026-09-08)
+Week mode was gated on `const days = Math.min(7, Math.max(2, Number(b.days) || 0))`
+then `if (days)`. The clamp floors at 2, so `days` is never 0, so the branch was
+always taken — every ordinary one-day meal plan, the thing Paul's clients already
+use daily, went down the untested week path. It shipped to a draft and would have
+shipped to production; the advisor caught it by reading, not by running.
+Rules:
+- Check "was this asked for?" BEFORE clamping. `b.days ? clamp(b.days) : 0`.
+- When adding a branch to a shared endpoint, the test for the OLD behaviour is
+  the important one. Round 31 asserts `!d1.days` — "not a week" — for this reason.
+
+## content[0].text is not the answer on a model that thinks (2026-09-08)
+The shopping list returned a clean HTTP 200 with an empty list, so it read as the
+model failing at the task. It was not: `content[0]` was a `thinking` block, so
+`content[0].text` was undefined and the parse ran on `'{}'`. With three meals it
+finished thinking and produced text; with twelve it spent the whole 2500-token
+budget reasoning and stopped on `max_tokens` with no text block at all.
+Rules:
+- Read the first block of `type === 'text'`, never `content[0]`. All four call
+  sites in meal-plan.mjs were wrong the same way; `analyze.mjs` and the other
+  brands' functions want the same check.
+- `stop_reason === 'max_tokens'` is a different failure from a bad answer and
+  deserves a different message. Print it before theorising.
+- The diagnostic that solved it was returning `{status, stop_reason, content
+  types}` in the error body. Two minutes, after twenty of guessing.
+
+## A prompt cannot hold two rules that contradict each other (2026-09-08)
+"Be varied" and "keep the shopping list small" were both in the day prompt.
+Weighted one way it wanted duck, halibut, sea bass and kippers in a single week —
+97 items. Weighted the other it served the same dinner four nights running, which
+is the exact complaint being fixed. Reordering the instructions and shouting
+ABSOLUTE at one of them just moved which side lost. Four attempts, no progress.
+Rule: when two instructions genuinely conflict, take the decision away from the
+model. A cheap call now picks five proteins and four cuisines, and code assigns
+each day its own pairing — the shop is small because the proteins repeat, the
+days differ because the cooking does, and neither is left to chance.
+Corollary: that assignment was wrong twice (four days of chicken thigh, then
+repeated pairings) and a six-line brute force over every plausible list size
+caught both in seconds. Arithmetic you can enumerate, you should enumerate.

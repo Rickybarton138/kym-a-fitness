@@ -35,13 +35,21 @@ if (!files.length) {
 // will hand back a generic lean bloke, which is no use as a reference point.
 const PROMPT = [
   'Edit this photograph of a man so that he appears noticeably leaner and more muscular,',
-  'as he might look after a serious training block: less body fat around the midsection,',
-  'visible abdominal definition, fuller chest, shoulders, arms and back.',
-  'It must remain unmistakably the SAME PERSON — identical face, head shape, hair, beard,',
-  'skin tone and apparent age. Keep the same room, same lighting, same camera angle,',
-  'same pose and the same clothing.',
-  'Entirely photorealistic, like a later photograph of this man, not a different or younger',
-  'person and not a competitive bodybuilder. No text, no watermark, no graphics.',
+  'as he might look after a hard training block: low body fat around the midsection,',
+  'clearly visible abdominal definition, fuller chest, shoulders, arms and back,',
+  'defined obliques. Strong and athletic, not a competitive bodybuilder.',
+  'He must remain unmistakably the SAME PERSON — identical face, head shape, hair colour',
+  'and hairline, skin tone and apparent age, same shorts, same stance with arms out.',
+  // He asked for it to be theatrical, so the room goes as well as the body. The
+  // original is a phone mirror selfie in a flat grey studio; keeping that room
+  // was the dull half of the first attempt.
+  'Replace the plain grey room with a dramatic weightlifting gym at night: dark',
+  'background falling into black, loaded barbells and plate trees behind him,',
+  'a chalk haze in the air, hard directional lighting from above and behind that',
+  'rims his shoulders and arms and carves out the muscle, deep shadows, high contrast,',
+  'cinematic and slightly moody. Remove the phone and the mirror entirely — this should',
+  'read as a photograph taken OF him in that gym, not a selfie.',
+  'Entirely photorealistic. No text, no watermark, no graphics.',
 ].join(' ')
 
 for (const f of files) {
