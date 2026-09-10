@@ -527,7 +527,7 @@ finished thinking and produced text; with twelve it spent the whole 2500-token
 budget reasoning and stopped on `max_tokens` with no text block at all.
 Rules:
 - Read the first block of `type === 'text'`, never `content[0]`. All four call
-  sites in meal-plan.mjs were wrong the same way; `analyze.mjs` and the other
+  sites in meal-plan.mjs were wrong the same way; `analyse.mjs` and the other
   brands' functions want the same check.
 - `stop_reason === 'max_tokens'` is a different failure from a bad answer and
   deserves a different message. Print it before theorising.
@@ -547,3 +547,56 @@ days differ because the cooking does, and neither is left to chance.
 Corollary: that assignment was wrong twice (four days of chicken thigh, then
 repeated pairings) and a six-line brute force over every plausible list size
 caught both in seconds. Arithmetic you can enumerate, you should enumerate.
+
+## A safer helper is still a behaviour change (2026-09-09)
+Six functions read `j?.content?.[0]?.text || '{}'`. Replacing them with a shared
+`firstText(j, '{}')` that ended `return tb?.text ?? fallback` looked like a pure
+improvement — it fixes the thinking-block case the old code got wrong. It also
+quietly changed what happens on an EMPTY text block: `||` fell back to `'{}'`,
+`??` returns `''`, and `JSON.parse('')` throws where it used to parse cleanly.
+All six run on Haiku and all six work today, so the only way this sweep could
+matter to a user was by breaking something that already worked.
+Rules:
+- `??` and `||` are not interchangeable when you are replacing `||`. Read the
+  fallback and ask what the old code did with a falsy-but-present value.
+- When a refactor's whole justification is "this can never fire today", the
+  tests worth writing are for the paths that DO fire. `tasks/test_claude_text.mjs`
+  is 11 cases and 6 of them assert the pre-existing behaviour.
+- Caught by reading the diff, not by running anything. Diff every mechanical
+  sweep before deploying it, especially one applied by script.
+
+## Numbers a user quotes are not always the number you need (2026-09-09)
+Asked for height and waist to date a fat-loss target; got "5'11" and 32"". Run
+through Navy body-fat that gives ~11% — already at the goal — and the advice
+flips from "keep cutting" to "stop cutting and build". But a photo from eight
+weeks and 3 kg earlier plainly showed otherwise. The 32" was a jeans size, not a
+tape at the navel; trouser sizing runs 2-4" under.
+Rule: when one input swings the recommendation to its opposite, say so and give
+both branches rather than picking the flattering one. State how to resolve it
+(tape at the navel, relaxed, breathed out) instead of quietly assuming.
+
+## The error in the screenshot was the browser's, not ours (2026-09-09)
+Paul sent a photo of the steps card: "Value must be greater than or equal to
+2026-09-03". Nothing in the logs, no error state in the app, and the save path
+looked correct — because none of it ever ran. The date input carried
+`min={week[6]}`, so Chrome rejected the submit before React saw the event. A
+constraint written in JSX as an attribute is enforced by the browser, silently,
+with a tooltip we neither wrote nor can style, and it produces exactly the
+symptom of a broken feature while leaving no trace anywhere we look.
+Rules:
+- A customer's screenshot of a validation message: first ask whose message it
+  is. Native ones are grey-on-dark bubbles pointing at the field, and their
+  wording is the browser's, not the codebase's — grep the string; no hit means
+  it is not ours.
+- Before debugging a form that "does nothing", read its `min`, `max`, `step`,
+  `pattern`, `required` and `type`. `type="number"` on a field someone types
+  "8,500" into is the same class of bug.
+- Same shape as the `.thumb-del` positioning bug: the feature was present and
+  correct, and something outside the logic stopped it reaching the user.
+
+Corollary, from the fix: widening the seven-day list to show older entries broke
+a round-23 assertion that counted every `.step-day` in the card. The assertion
+was right about what it meant and wrong about how it selected. Give a new
+section its own class (`.step-week`, `.step-earlier`) and scope the old
+assertion to it — never re-scope by `nth-child`, which breaks again the next
+time anything is inserted.
