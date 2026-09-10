@@ -290,5 +290,28 @@ Still open:
       KEY POINT for the decision: push and WhatsApp look identical on a lock screen.
       What WhatsApp actually buys is a REPLY - two-way is the accountability
       mechanism, not the channel. Push is one-way.
+      REUSE FROM ASTRA (checked 2026-09-10, `~/astra-removals`): yes, substantially.
+      These are ACCOUNT-level assets, callable over HTTP from a Netlify function -
+      the Python/Railway vs JS/Netlify split does not matter:
+      - Twilio WhatsApp, PRODUCTION not sandbox: 11 Meta-approved templates with real
+        HX content SIDs in `app/whatsapp.py` (one marked "APPROVED by Meta 2026-07-30").
+        `ADMIN_ALERT_WHATSAPP_TO` already points at Ricky's personal mobile.
+      - ElevenLabs conversational agent WITH a Twilio phone number
+        (`ELEVENLABS_AGENT_ID`, `ELEVENLABS_AGENT_PHONE_NUMBER_ID`), placing real
+        outbound calls via `/v1/convai/twilio/outbound_call`. This IS "the app phones
+        me and asks questions" - already built, for Astra leads.
+      - Telegram bot, already wired and already alerting Ricky.
+      - The PATTERN worth copying: a queue endpoint (`/outbound/queue` in
+        `app/voice_routes.py`) that n8n polls and fans out to ElevenLabs. Rick.Fit
+        would expose an equivalent "who needs a nudge call" endpoint.
+      WHAT DOES NOT TRANSFER: the templates are Meta-approved per use case and
+      branded Astra Removals - "your quote is ready" cannot carry "did you train".
+      New fitness templates need fresh Meta approval (days). The ElevenLabs agent's
+      persona is removals sales; a second agent can reuse the same phone number.
+      RECOMMENDATION: Telegram FIRST. No 24h window, no template approval, no
+      per-message cost, bot already wired to him, and it is two-way. WhatsApp's
+      24h window is the whole problem and Telegram simply does not have it.
+      Voice second: a second ElevenLabs agent with a fitness prompt on the existing
+      number. WhatsApp last, if ever - it is the most work for the least gain here.
 - [ ] Asked 2026-09-09: should Rick.Fit be its own repo? Recommendation was no - it
       would fork one codebase into five and every fix would need doing five times.
