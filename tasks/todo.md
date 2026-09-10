@@ -261,8 +261,34 @@ Still open:
       one, or have the publish script sign in as the coach.
 - [ ] Wave 3 #26 (event countdowns) would put the late-January target date on his
       home screen as "N weeks to go". Not started - see the Wave 3 list above.
-- [ ] Asked 2026-09-09, not built: proactive comms for Rick.Fit - push (already
-      built, `push-*.mjs`), WhatsApp, and voice. Ricky asked whether the app can
-      phone him or WhatsApp him and ask questions.
+- [ ] Proactive comms for Rick.Fit. INVESTIGATED 2026-09-10, not built.
+      ALREADY WORKING, zero build needed: web push. Rick.Fit has VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY, VAPID_SUBJECT, VITE_VAPID_PUBLIC_KEY and NUDGE_CRON_SECRET
+      all set, and `push-daily-reminder.mjs` carries
+      `export const config = { schedule: '0 * * * *' }` - a Netlify scheduled
+      function running hourly on his site right now. `src/accountability.js` has a
+      FIVE-level escalating nudge ladder for food and workouts.
+      THE ONLY BLOCKER: Ricky has NO row in `push_subscriptions`. The three that
+      exist are Richard Anderson, Lekan and Rosalind Smithers - Kim's and Paul's
+      clients. He needs to open the installed PWA and allow notifications. 30 seconds.
+      COPY MISMATCH: the nudges are in Kim's voice for women 35+ ("it'd be lovely",
+      "no pressure"). Wrong register for him - but see the coupling below before
+      editing them.
+      ** CROSS-BRAND COUPLING, pre-existing, NOT from this session **
+      `daily_reminders_due`, `nudges_due` and `coach_alerts_due` all take only
+      `p_secret` - NO brand or coach parameter. Every brand's site runs its own
+      hourly copy against the same global queue; `*_mark_sent` de-dupes so nobody
+      gets doubles, but it means RICK.FIT'S SITE SENDS PUSH TO KIM'S AND PAUL'S
+      CLIENTS. Consequence: `src/accountability.js` is shared AND the sender is
+      unscoped, so rewriting the nudge copy for Ricky would put his wording on
+      Paul's paying clients' phones. Scope the RPCs by coach before touching it.
+      NOT BUILT - WhatsApp: needs Meta WhatsApp Business API or Twilio. Outbound
+      needs pre-approved templates; free-form replies only inside a 24h window after
+      HE messages first. Meta Business verification + template approval takes days.
+      NOT BUILT - voice: Twilio Voice + TTS (ElevenLabs key already on hand). A call
+      that asks questions also needs speech recognition and dialogue handling.
+      KEY POINT for the decision: push and WhatsApp look identical on a lock screen.
+      What WhatsApp actually buys is a REPLY - two-way is the accountability
+      mechanism, not the channel. Push is one-way.
 - [ ] Asked 2026-09-09: should Rick.Fit be its own repo? Recommendation was no - it
       would fork one codebase into five and every fix would need doing five times.
