@@ -149,13 +149,19 @@ export const BRANDS = {
     logo: '/brands/ricky/icon-512.png',
     // Shipped with the build rather than uploaded: THEME.heroImages is
     // concatenated ahead of any the coach uploads, so this needs no storage
-    // bucket and no credentials. Generated with gpt-image-2; see
-    // scripts/make-ricky-heroes.mjs for the prompts that produced them.
+    // bucket and no credentials. All eight are built by
+    // scripts/make-ricky-heroes.py, which documents where each one comes from:
+    // the original gym shots with Ricky's face swapped in, the two originals
+    // that had no face to swap, and his own goal renders, interleaved.
     heroImages: [
       '/brands/ricky/hero-1.jpg',
-      '/brands/ricky/hero-3.jpg',
       '/brands/ricky/hero-2.jpg',
+      '/brands/ricky/hero-3.jpg',
       '/brands/ricky/hero-4.jpg',
+      '/brands/ricky/hero-5.jpg',
+      '/brands/ricky/hero-6.jpg',
+      '/brands/ricky/hero-7.jpg',
+      '/brands/ricky/hero-8.jpg',
     ],
     features: {
       testing: true, templates: true, programs: true, recipes: true, videos: true,

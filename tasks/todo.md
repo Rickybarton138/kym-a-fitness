@@ -165,17 +165,88 @@ regression green on draft 6aa06e27):
       The change is insurance against the same failure at a bigger input, not a
       fix for a live fault.
 
+Done 2026-09-09 (deploy 6aa18e05, rick-fit.netlify.app):
+- [x] The `content[0].text` sweep. New shared helper `netlify/functions/_claude-text.mjs`
+      (`firstText` / `stopReason`), applied to barcode, exercise-guide, program-edit,
+      program-generate, recipe-ai, recipe-generate. It uses `||` not `??` on purpose:
+      the code it replaced fell back on an empty string too, and `??` would have sent
+      `''` to `JSON.parse` where it used to parse `'{}'` cleanly. Unit test
+      `tasks/test_claude_text.mjs` - 11 cases, most asserting the OLD behaviour, green.
+      NOTE: these functions are shared by all five brands but only Rick.Fit was
+      deployed. Kim, Paul, PPH and Elev8 still run the old code. That is deliberate -
+      deploying them would also ship the unflagged week meal plan (see above). Their
+      deploy is a separate decision.
+- [x] The three dark suites. `e2e_mealplans`, `e2e_wave3`, `e2e_personal` used
+      `@kymafit.test` fixtures, which Supabase rejects as an invalid email format.
+      Moved to `@e2e.kymafit.app` - one dedicated domain, so a single grep finds every
+      fixture account ever made and no real address can collide. All three PASS.
+      Fixture accounts from the verification run were deleted afterwards (5 auth
+      users, 1 template, 2 programmes); 0 left.
+- [x] Ricky's week plan is in the app. `client_meal_plans` now holds the 7-day,
+      28-meal rotation as "Lean & Strong - 7-day rotation"; the old hand-written
+      3-day plan is kept but inactive. `scripts/ricky-week-plan.mjs` now also emits
+      `.private/ricky/ricky-week-plan.json` in the app's plan shape
+      ([{label, meals:[{name, detail, kcal}]}]) so publishing never has to parse the
+      markdown back out. `macro_targets` corrected 2400/195 -> 2100/180/187/70 to
+      match the plan - they disagreed, so the remaining-calories readout was wrong
+      every day.
+- [x] Home-screen heroes: EIGHT, Rick.Fit only (corrected, deploy 6aa192db). First
+      pass replaced the four stock shots with his goal renders; he wanted the stock
+      shots KEPT with his face on the men in them, plus the goal renders added.
+      `scripts/ricky-face-swap.mjs` (new, sibling to ricky-transform.mjs - that one
+      keeps him and changes the body, this one keeps the body and changes the head)
+      sends the scene plus a face crop from july-16.jpg to gpt-image-2.
+      IMPORTANT: only stock-1 and stock-4 contain a visible face. stock-2 is a close
+      crop of an arm and stock-3 is an empty gym - asked to swap a face in those the
+      model invented an entirely new man and scene, so those two ship UNCHANGED.
+      Final set interleaves 2 swapped + 2 untouched originals + 4 goal renders.
+      Originals recovered from git into `.private/ricky/stock/`.
+- [x] De-aged, deploy 6aa19770. First pass came back looking mid-fifties; Ricky is
+      45 and asked for 40. Cause: the face reference is ~150x220 real pixels off a
+      mirror selfie, so the model invents the facial detail and what it invents is
+      wrinkles. "Match the reference" cannot fix that - the reference is too soft to
+      argue with, so the target age has to be stated outright in the prompt.
+      Face swaps: age block added to `ricky-face-swap.mjs` and re-run.
+      Goal renders: new `scripts/ricky-deage.mjs` edits the FACE ONLY in place.
+      Deliberately not regenerated from the four bespoke scripts - that would have
+      returned four different physiques and he liked these. Pre-de-age versions kept
+      as `*-aged.png`.
+- [x] Transformation plan with dates: `.private/ricky/ricky-transformation-plan.md`.
+      RESOLVED 2026-09-10 - measured 104 cm waist / 40 cm neck. The 32" was indeed a
+      jeans size, and the real tape is 41", so he is at ~27.6% body fat (24.0 kg fat,
+      63.0 kg lean) - higher than EITHER branch I had sketched. Target ~74 kg at 12%
+      allowing 2 kg of regained muscle, so ~13 kg to go, landing early April 2027 on
+      the current 2100 kcal. Mifflin-St Jeor predicts 0.43 kg/wk on that intake and he
+      is observing 0.46, so the dates are calibrated against his own data rather than
+      a formula. 2100 kcal CONFIRMED correct (the earlier assumption held). Advice is
+      to hold 2100 until Christmas then consider 1950 - at 27.6% a bigger deficit is
+      low-risk for muscle, but January is better timed than December.
+      Baseline logged to `body_measurements` (waist 104, body_fat 27.6, weight left
+      null - he gave a tape reading, not a new weigh-in; do not invent one).
+
+- [x] Real face reference, deploy 6aa26068. Ricky sent a proper front-on photo
+      (`.private/ricky/in/hero/face-source.jpg`); `face-ref.jpg` is now a 670x1080 crop
+      of it instead of a 150x220 upscale off a mirror selfie - about 20x the actual
+      facial detail. `ricky-face-swap.mjs` rewritten to drive BOTH families off it:
+      the 2 stock shots with a face, and the 4 goal renders (whose invented face was
+      wrong in identity, not just age - gaunter, more angular, wrong hair colour).
+      Goal renders re-swapped from their FIRST-generation `-aged.png` sources so each
+      output is one edit on an original, not two stacked. `ricky-deage.mjs` deleted -
+      superseded, a real reference beats arguing age into a prompt.
+- [x] Yoga: three 10-minute lounge-floor sessions in `workout_plans` (blocks + ball).
+      Hips & Hamstrings, Chest/Shoulders/Upper Back, Full Body Unwind. ALL WRIST-SAFE
+      by design - forearms, fists or hands on blocks, never flat palms under load,
+      because every pressing cue in his own programme says neutral grip and "if the
+      wrist grumbles". Weekly placement added to the transformation plan.
+
 Still open:
-- [ ] The remaining functions still read `content[0].text` rather than the first
-      TEXT block: barcode, exercise-guide, program-edit, program-generate,
-      recipe-ai, recipe-generate. All are on Haiku so none are broken today, but
-      any of them moved to a thinking model breaks silently. `analyze.mjs` has
-      always done it correctly — copy that.
-- [ ] Three suites fail on PRODUCTION as well as on drafts: `e2e_mealplans`,
-      `e2e_wave3`, `e2e_personal`. All three sign up throwaway accounts on
-      `.test` domains and Supabase now rejects those as an invalid email format.
-      Not a regression — but it means three suites have been dark for a while.
-      Fix: give the fixtures real-format addresses like the round-30 ones.
-- [ ] Ricky's own plan is generated by `scripts/ricky-week-plan.mjs` into
-      `.private/`. It is not in the app yet — his `client_meal_plans` row is
-      still the hand-written 3-template one he called boring.
+- [ ] Publishing a plan to `client_meal_plans` is still a manual SQL step - there is
+      no service-role key in `.env`, so a script cannot write through RLS. Either add
+      one, or have the publish script sign in as the coach.
+- [ ] Wave 3 #26 (event countdowns) would put the late-January target date on his
+      home screen as "N weeks to go". Not started - see the Wave 3 list above.
+- [ ] Asked 2026-09-09, not built: proactive comms for Rick.Fit - push (already
+      built, `push-*.mjs`), WhatsApp, and voice. Ricky asked whether the app can
+      phone him or WhatsApp him and ask questions.
+- [ ] Asked 2026-09-09: should Rick.Fit be its own repo? Recommendation was no - it
+      would fork one codebase into five and every fix would need doing five times.
