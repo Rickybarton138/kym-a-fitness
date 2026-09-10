@@ -1,6 +1,8 @@
 // Coach tool: generate a batch of original recipes for a category, with per-serving
 // macros — the coach reviews and saves them to their library. Lets a coach stand up
 // an owned recipe library fast instead of inheriting a provider's.
+import { firstText } from './_claude-text.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -25,7 +27,7 @@ export const handler = async (event) => {
       body: JSON.stringify({ model: MODEL, max_tokens: 2500, messages: [{ role: 'user', content: prompt }] }),
     })
     const j = await res.json()
-    const text = j?.content?.[0]?.text || '[]'
+    const text = firstText(j, '[]')
     const m = text.match(/\[[\s\S]*\]/)
     const arr = JSON.parse(m ? m[0] : '[]')
     const int = (v) => Math.max(0, Math.round(Number(v) || 0))

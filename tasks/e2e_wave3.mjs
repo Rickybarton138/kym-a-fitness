@@ -3,7 +3,7 @@ const URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 const KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
 const CODE = '94BA86'
 const stamp = process.argv[2] || 'x'
-const email = `w3_${stamp}@kymafit.test`
+const email = `w3_${stamp}@e2e.kymafit.app`
 
 const coach = createClient(URL, KEY)
 await coach.auth.signInWithPassword({ email: 'kymtest@kymafit.app', password: 'TestPass123' })
@@ -36,7 +36,7 @@ console.log('dob persisted:', prof.data?.dob === '1988-08-06' ? 'OK' : 'FAIL ' +
 
 // NEGATIVE: a second temp client must NOT read the first client's cycle logs
 const cli2 = createClient(URL, KEY)
-const su2 = await cli2.auth.signUp({ email: `w3b_${stamp}@kymafit.test`, password: 'TestPass123', options: { data: { role: 'client', full_name: 'W3 Other', trainer_code: CODE } } })
+const su2 = await cli2.auth.signUp({ email: `w3b_${stamp}@e2e.kymafit.app`, password: 'TestPass123', options: { data: { role: 'client', full_name: 'W3 Other', trainer_code: CODE } } })
 await new Promise((r) => setTimeout(r, 800))
 const leak = await cli2.from('cycle_logs').select('period_start').eq('client_id', clientId)
 console.log('other client blocked from cycle:', (leak.data || []).length === 0 ? 'OK' : 'FAIL leaked')

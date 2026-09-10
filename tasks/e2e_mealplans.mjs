@@ -3,7 +3,7 @@ const URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 const KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
 const CODE = '94BA86' // Kim's test coach trainer_code
 const stamp = process.argv[2] || 'x'
-const email = `mp_${stamp}@kymafit.test`
+const email = `mp_${stamp}@e2e.kymafit.app`
 
 // COACH: author a template
 const coach = createClient(URL, KEY)

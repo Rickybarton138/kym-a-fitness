@@ -10,7 +10,7 @@ const coachId = (await coach.auth.getUser()).data.user.id
 
 async function mkClient(tag) {
   const c = createClient(URL, KEY)
-  await c.auth.signUp({ email: `pp_${tag}_${stamp}@kymafit.test`, password: 'TestPass123', options: { data: { role: 'client', full_name: `PP ${tag}`, trainer_code: CODE } } })
+  await c.auth.signUp({ email: `pp_${tag}_${stamp}@e2e.kymafit.app`, password: 'TestPass123', options: { data: { role: 'client', full_name: `PP ${tag}`, trainer_code: CODE } } })
   return c
 }
 const A = await mkClient('a'); const B = await mkClient('b')
@@ -46,4 +46,4 @@ const pass =
   bTitles.includes('LIB TEST') && !bTitles.includes('PERSONAL-A TEST') &&
   bLeakSess.length === 0
 console.log(pass ? 'E2E PASS' : 'E2E FAIL')
-console.log('CLEANUP', JSON.stringify({ lib: lib?.id, per: per?.id, aId, bId, emails: [`pp_a_${stamp}@kymafit.test`, `pp_b_${stamp}@kymafit.test`] }))
+console.log('CLEANUP', JSON.stringify({ lib: lib?.id, per: per?.id, aId, bId, emails: [`pp_a_${stamp}@e2e.kymafit.app`, `pp_b_${stamp}@e2e.kymafit.app`] }))

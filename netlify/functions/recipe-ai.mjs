@@ -2,6 +2,8 @@
 // title, ingredients, servings, method and PER-SERVING macros (estimated from the
 // ingredients when the source doesn't state them). Also pulls a meal image from
 // the page. Powers URL-import, paste, and screenshot migration.
+import { firstText } from './_claude-text.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -39,7 +41,7 @@ async function claude(content) {
     body: JSON.stringify({ model: MODEL, max_tokens: 900, messages: [{ role: 'user', content }] }),
   })
   const j = await res.json()
-  const text = j?.content?.[0]?.text || '{}'
+  const text = firstText(j, '{}')
   const m = text.match(/\{[\s\S]*\}/)
   return JSON.parse(m ? m[0] : '{}')
 }
