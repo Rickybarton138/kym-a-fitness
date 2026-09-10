@@ -1,8 +1,6 @@
 // Coach tool: draft a multi-session training programme from a prompt (goal, days,
 // equipment, level). Returns a header + one session per training day, each with
 // real exercises. The coach reviews and publishes to the programme library.
-import { firstText } from './_claude-text.mjs'
-
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -50,7 +48,7 @@ export const handler = async (event) => {
         body: JSON.stringify({ model: MODEL, max_tokens: 3000, messages: [{ role: 'user', content: prompt + (extra || '') }] }),
       })
       const j = await res.json()
-      const text = firstText(j, '{}')
+      const text = j?.content?.[0]?.text || '{}'
       const m = text.match(/\{[\s\S]*\}/)
       return JSON.parse(m ? m[0] : '{}')
     }

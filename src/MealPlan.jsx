@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { getRecovery, getHealthContext } from './lib.js'
+import { THEME } from './themes.js'
 
 // Client meal-plan builder. Uses their saved macro targets as the budget, asks a
 // few qualifying questions, then the AI returns either:
@@ -19,6 +20,17 @@ const DIETARY = ['Vegetarian', 'Vegan', 'Pescatarian', 'Dairy-free', 'Gluten-fre
 const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 function dayDate(i) { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + i); return d }
 function dayLabel(i) { return i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : WD[dayDate(i).getDay()] }
+
+// Week plans are Rick.Fit only. Paul has `mealPlans` too, and the week path has
+// never run on his clients' eating — it went live on Ricky's own site first,
+// deliberately. Gating it on a flag rather than on remembering not to deploy is
+// what actually keeps that true: the code is shared, so any Paul deploy would
+// otherwise ship it.
+//
+// Gated in three places, because the toggle alone is not enough: a week saved in
+// localStorage would put a brand without the flag straight back into week mode
+// on mount, and the submit handler would still take the week branch.
+const WEEK_ON = THEME.features?.weekMealPlans === true
 
 const WEEK_KEY = 'mp_week_v1'
 const loadWeek = () => { try { return JSON.parse(localStorage.getItem(WEEK_KEY) || 'null') } catch { return null } }
@@ -49,7 +61,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   // whole point is to have it in the shop. Restore the last week they built.
   useEffect(() => {
     const saved = loadWeek()
-    if (saved?.plan?.days?.length) { setWeek(saved.plan); setTicked(saved.ticked || []); setMode('week') }
+    if (WEEK_ON && saved?.plan?.days?.length) { setWeek(saved.plan); setTicked(saved.ticked || []); setMode('week') }
   }, [])
 
   const toggleDiet = (d) => setDiet((s) => (s.includes(d) ? s.filter((x) => x !== d) : [...s, d]))
@@ -82,7 +94,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
 
   async function generate() {
     if (!hasTargets) { setErr('Your calorie targets aren’t set yet — do the quick setup first.'); return }
-    if (mode === 'week') { buildWeek(0, { days: [], shopping: [] }); return }
+    if (WEEK_ON && mode === 'week') { buildWeek(0, { days: [], shopping: [] }); return }
     setBusy(true); setErr('')
     try {
       setPlan(null)
@@ -256,10 +268,12 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
       )}
 
       <div className="card" style={{ marginTop: 12 }}>
-        <div className="seg" style={{ marginBottom: 4 }}>
-          <button type="button" className={mode === 'day' ? 'on' : ''} onClick={() => setMode('day')}>Just a day</button>
-          <button type="button" className={mode === 'week' ? 'on' : ''} onClick={() => setMode('week')}>A whole week</button>
-        </div>
+        {WEEK_ON && (
+          <div className="seg" style={{ marginBottom: 4 }}>
+            <button type="button" className={mode === 'day' ? 'on' : ''} onClick={() => setMode('day')}>Just a day</button>
+            <button type="button" className={mode === 'week' ? 'on' : ''} onClick={() => setMode('week')}>A whole week</button>
+          </div>
+        )}
 
         {mode === 'week' && (
           <>

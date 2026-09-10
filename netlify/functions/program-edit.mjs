@@ -2,8 +2,6 @@
 // sessions + a plain-English change ("more hypertrophy", "swap dumbbell work to
 // barbell", "make weeks 5-8 harder") and returns the full revised session set in
 // the same shape, preserving each session's week/day so the schedule is intact.
-import { firstText } from './_claude-text.mjs'
-
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -39,8 +37,7 @@ export const handler = async (event) => {
         body: JSON.stringify({ model: MODEL, max_tokens: 4000, messages: [{ role: 'user', content: prompt }] }),
       })
       const j = await res.json()
-      const tb = firstText(j, '')
-      if (tb) text = tb
+      if (j?.content?.[0]?.text) text = j.content[0].text
     }
     if (!text) return { statusCode: 200, headers: cors, body: JSON.stringify({ sessions: [], error: 'The AI is busy right now — give it another go in a moment.' }) }
     // Robust parse: the model may return {"sessions":[...]}, a bare [...] array,

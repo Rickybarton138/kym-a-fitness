@@ -239,6 +239,22 @@ Done 2026-09-09 (deploy 6aa18e05, rick-fit.netlify.app):
       because every pressing cue in his own programme says neutral grip and "if the
       wrist grumbles". Weekly placement added to the transformation plan.
 
+- [x] ISOLATION 2026-09-10 (deploy 6aa2663b), on Ricky's instruction: keep everything
+      from this session Rick.Fit-only. Two things could otherwise have reached Paul,
+      the only other brand with `mealPlans`:
+      1. The six shared functions from c9e414d are REVERTED. Paul's runtime is now
+         byte-identical to before 10 Sept. `_claude-text.mjs` and its test removed
+         with them. The fix is not lost - it is in git at c9e414d and can be
+         cherry-picked when Paul is next deliberately deployed. Rick.Fit gave it up
+         too; that was the accepted cost of one shared codebase.
+      2. Week meal plans are now behind `weekMealPlans`, on for ricky ONLY. Gated in
+         THREE places in MealPlan.jsx, not one: the mode toggle, the localStorage
+         restore (a saved week would otherwise drop a brand straight into week mode
+         on mount) and the submit handler. Verified off for kim/paul/pph/elev8/bbl.
+      "Rick.Fit only" is now enforced by code rather than by remembering not to
+      deploy. Kim, PPH, Elev8 and BBL never had `mealPlans` at all and were never
+      exposed either way.
+
 Still open:
 - [ ] Publishing a plan to `client_meal_plans` is still a manual SQL step - there is
       no service-role key in `.env`, so a script cannot write through RLS. Either add

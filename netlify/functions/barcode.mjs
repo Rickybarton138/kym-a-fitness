@@ -8,8 +8,6 @@
 // screen said "scan the barcode" with no way to scan one. Every EAN/UPC has its
 // digits printed underneath, so reading those off a photo works on any device.
 
-import { firstText } from './_claude-text.mjs'
-
 const OFF = 'https://world.openfoodfacts.org/api/v2/product/'
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const VISION_MODEL = 'claude-haiku-4-5-20251001'
@@ -44,7 +42,7 @@ async function readBarcodeFromImage(image, mediaType) {
   })
   if (!res.ok) return null
   const j = await res.json()
-  const text = String(firstText(j, ''))
+  const text = String(j?.content?.[0]?.text || '')
   const digits = text.replace(/\D/g, '')
   const plausible = [8, 12, 13].includes(digits.length) && checksumOk(digits)
   return { digits: plausible ? digits : null, raw: text.trim().slice(0, 40) }

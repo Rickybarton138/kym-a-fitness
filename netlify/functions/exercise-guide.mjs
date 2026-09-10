@@ -6,7 +6,6 @@
 // matcher fix re-matches old rows instead of serving the old answer forever.
 
 import { matchImages, nameKey, MATCHER_V } from './_exercise-match.mjs'
-import { firstText } from './_claude-text.mjs'
 
 const SUPABASE_URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 const SUPABASE_KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
@@ -37,7 +36,7 @@ No markdown, no extra text. If the name isn't a real exercise, still give sensib
     body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, messages: [{ role: 'user', content: prompt }] }),
   })
   const j = await res.json()
-  const text = firstText(j, '{}')
+  const text = j?.content?.[0]?.text || '{}'
   const m = text.match(/\{[\s\S]*\}/)
   const parsed = JSON.parse(m ? m[0] : '{}')
   return { how_to: String(parsed.how_to || ''), cues: Array.isArray(parsed.cues) ? parsed.cues.slice(0, 6).map(String) : [] }
