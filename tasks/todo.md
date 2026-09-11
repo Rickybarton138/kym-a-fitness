@@ -261,7 +261,29 @@ Still open:
       one, or have the publish script sign in as the coach.
 - [ ] Wave 3 #26 (event countdowns) would put the late-January target date on his
       home screen as "N weeks to go". Not started - see the Wave 3 list above.
-- [ ] Proactive comms for Rick.Fit. INVESTIGATED 2026-09-10, not built.
+- [x] Proactive comms: TELEGRAM NUDGES LIVE 2026-09-11 (deploy 6aa3c58d). Verified
+      end to end - `?hour=8` and `?hour=19` both returned sent:true and landed.
+      `netlify/functions/rickfit-telegram.mjs`, hourly Netlify schedule '5 * * * *'.
+      Reads state through a NEW `rickfit_daily_state(p_secret)` RPC - SECURITY
+      DEFINER, same app_config secret gate as the existing nudge RPCs, and it
+      HARDCODES Ricky's client_id so it cannot return another brand's client no
+      matter who calls it. Deliberately does NOT use `nudges_due`/
+      `daily_reminders_due`: those take only p_secret, return every brand, and are
+      paired with *_mark_sent, so calling them here would either mark Kim's and
+      Paul's clients sent without sending or double-send. `src/accountability.js`
+      untouched - its copy is Kim's voice and ships to Paul.
+      Needed the RPC because RLS blocks the publishable key from macro_targets,
+      nutrition_logs and body_measurements. First attempt read them directly and
+      silently returned undefined targets, which would have shipped a nudge saying
+      "Target today: undefined kcal".
+      De-dup is STRUCTURAL not stored: each nudge fires on one London hour, so the
+      hourly schedule can only deliver it once a day. No state table.
+      Schedule: 08:00 brief, 14:00 if nothing logged, 19:00 protein gap,
+      21:00 if neither food nor training. `?hour=N&secret=...` previews any of them.
+      USING ASTRA'S BOT (`Astra_notify138_bot`) and Astra's chat, so gym nudges land
+      alongside Astra operational alerts. Change TELEGRAM_CHAT_ID on the rick-fit
+      site to split them; a separate bot is also cheap.
+- [ ] Original investigation notes, 2026-09-10.
       ALREADY WORKING, zero build needed: web push. Rick.Fit has VAPID_PUBLIC_KEY,
       VAPID_PRIVATE_KEY, VAPID_SUBJECT, VITE_VAPID_PUBLIC_KEY and NUDGE_CRON_SECRET
       all set, and `push-daily-reminder.mjs` carries
