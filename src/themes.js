@@ -171,6 +171,8 @@ export const BRANDS = {
       // Week plans + shopping list. Rick.Fit ONLY - Paul has mealPlans but has
       // never seen the week path, and it is his clients' eating either way.
       weekMealPlans: true,
+      // Rest + hold timers in the guided session. Rick.Fit only - see ClientApp.
+      workoutTimers: true,
       nutritionSupport: true, groupedHome: true, groupedCoach: true, water: true, foodDayComplete: true,
       awards: true, clientProgramAi: true, gettingStarted: true, nutritionExpert: true,
       monitoring: true, coachMealPlans: true,

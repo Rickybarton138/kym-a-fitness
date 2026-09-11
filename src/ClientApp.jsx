@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
+import { WorkoutTimers, useWorkoutTimers } from './WorkoutTimers.jsx'
+
+// Rick.Fit only. GuidedWorkout is shared by all five brands, so the timers are
+// gated the same way the week meal plan is - a flag in themes.js, not a note
+// saying "do not deploy the others".
+const TIMERS_ON = THEME.features?.workoutTimers === true
 import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError} from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
@@ -2601,6 +2607,9 @@ function ResumeBanner({ clientId, onResume }) {
 }
 
 function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastByName }) {
+  // Rest + hold timers. Rick.Fit only: GuidedWorkout is shared by all five brands,
+  // so this follows the same flag pattern as weekMealPlans.
+  const timers = useWorkoutTimers({ enabled: TIMERS_ON, clientId, brand: THEME.slug, planId: plan.id })
   // Restore an in-progress session (survives app-switch / reload), so ticked sets
   // and logged weights aren't lost until they hit Finish.
   const [exs, setExs] = useState(() => {
@@ -2624,19 +2633,23 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
     } catch { /* ignore */ }
   }, [exs])
   const clearSaved = () => {
+    timers.clear()
     try {
       localStorage.removeItem(GW_KEY(plan.id))
       sessionStorage.removeItem('cbk_gw_active')
       clearResume()
     } catch { /* ignore */ }
   }
-  const exit = () => { clearSaved(); onExit && onExit() }
+  const exit = () => { timers.pauseAll(); clearSaved(); onExit && onExit() }
 
   const totalSets = exs.reduce((n, ex) => n + ex.sets.length, 0)
   const doneSets = exs.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0)
   const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0
 
-  const toggleSet = (ei, si) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, done: !s.done })) })))
+  const toggleSet = (ei, si) => {
+    if (!exs[ei].sets[si].done) timers.onSetComplete()
+    setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, done: !s.done })) })))
+  }
   const updateSet = (ei, si, k, v) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : { ...ex, sets: ex.sets.map((s, j) => (j !== si ? s : { ...s, [k]: v })) })))
   const updateDrop = (ei, si, di, k, v) => setExs((xs) => xs.map((ex, i) => (i !== ei ? ex : {
     ...ex,
@@ -2697,6 +2710,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
 
   return (
     <div className="stack gw" style={{ marginTop: 10 }}>
+      {TIMERS_ON && <WorkoutTimers timers={timers} />}
       <div className="gw-progress"><div className="gw-bar" style={{ width: pct + '%' }} /></div>
       <p className="muted-note">{doneSets}/{totalSets} sets done — tick each set as you go and log what you actually lifted.</p>
       {exs.map((ex, ei) => {

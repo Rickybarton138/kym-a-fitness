@@ -769,3 +769,26 @@ html.brand-ricky .auth-brand h1 { text-transform: uppercase; font-weight: 800; l
 html.brand-ricky .eyebrow { letter-spacing: .18em; }
 html.brand-ricky .eyebrow.accent { color: var(--accent); }
 html.brand-ricky .btn.primary { box-shadow: 0 0 18px rgba(46, 232, 92, .28); }
+
+/* Rest + hold timers inside the guided session. Rick.Fit only, behind
+   THEME.features.workoutTimers - GuidedWorkout is shared by all five brands.
+   Lifted from the Codex working copy in OneDrive, timers only: its food and
+   meal-plan changes there are ungated and would land on Kim and Paul. */
+.brand-ricky .workout-timers { position: sticky; top: 0; z-index: 3; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 6px 18px #0005; }
+.workout-timer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.workout-timer { min-width: 0; }
+.workout-timer h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; margin: 0; }
+.workout-timer h3 span { font-size: 10px; color: var(--muted); font-weight: 400; }
+.workout-timer output { display: block; font-size: 36px; font-weight: 750; line-height: 1.25; font-variant-numeric: tabular-nums; margin: 4px 0 8px; }
+.workout-timer.running output, .workout-timer.complete output { color: var(--accent); }
+.workout-timer-actions { display: flex; gap: 4px; }
+.workout-timer-actions .btn { flex: 1; padding: 7px 4px; min-width: 0; min-height: 44px; font-size: 12px; }
+.workout-timer-settings summary { padding: 12px 0 0; font-size: 12px; cursor: pointer; min-height: 36px; }
+.workout-timer-settings[open] summary { padding-bottom: 12px; }
+.workout-timer-settings .field { font-size: 12px; }
+.workout-timer-settings input[type="number"] { min-width: 0; width: 100%; font-size: 16px; }
+.workout-timer-option { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 6px; font-size: 12px; }
+.workout-timer-option input { width: 20px; height: 20px; accent-color: var(--accent); flex-shrink: 0; }
+.workout-timer-notice { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+.workout-timer-notice:not(:empty) { margin-top: 8px; }
+.workout-timers:has(.workout-timer-settings[open]) { position: static; }
