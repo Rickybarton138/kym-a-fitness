@@ -39,6 +39,20 @@ const BRANDS = {
     icon192: '/brands/ricky/icon-192.png', icon512: '/brands/ricky/icon-512.png',
     og: '/brands/ricky/og.png',
   },
+  lennon: {
+    name: 'Lennon GK', short: 'Lennon GK',
+    description: 'Goalkeeper fuelling, prehab and recovery, built around the club week.',
+    theme: '#080f1e', bg: '#080f1e', url: 'https://lennon-gk.netlify.app',
+    icon192: '/brands/lennon/icon-192.png', icon512: '/brands/lennon/icon-512.png',
+    og: '/brands/lennon/og.png',
+  },
+  kelsey: {
+    name: 'Kelsey Fit', short: 'Kelsey Fit',
+    description: 'Glutes, strength and shape. Training, food and progress in one place.',
+    theme: '#150a13', bg: '#150a13', url: 'https://kelsey-fit.netlify.app',
+    icon192: '/brands/kelsey/icon-192.png', icon512: '/brands/kelsey/icon-512.png',
+    og: '/brands/kelsey/og.png',
+  },
 }
 
 const brand = (process.env.BRAND || process.env.VITE_BRAND || 'kim').toLowerCase()

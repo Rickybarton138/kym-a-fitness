@@ -215,13 +215,127 @@ export const BRANDS = {
       '--serif': "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     },
   },
+  // Lennon — Ricky's son, a contracted goalkeeper at Shrewsbury Town (he has
+  // permission to use the club brand; this is his own app, not public marketing).
+  // Shrewsbury's blue and amber.
+  //
+  // DELIBERATELY NOT A PROGRAMME APP. His club has S&C staff and his gym work is
+  // their job; a second programme running alongside theirs is how a young player
+  // ends up overtrained and how a parent ends up contradicting a professional
+  // coach. So `programs`, `templates` and `clientProgramAi` are OFF, and what he
+  // gets instead is everything the club does not sit with him for every day:
+  // fuelling around training and matchdays, hydration, sleep, and goalkeeper
+  // prehab — wrists, shoulders, hips, the joints that take the landings.
+  lennon: {
+    slug: 'lennon',
+    scheme: 'dark',
+    name: 'Lennon GK',
+    tagline: 'Goalkeeper. Fuelled properly.',
+    mark: 'LG',
+    logo: '/brands/lennon/icon-512.png',
+    features: {
+      videos: true, recipes: true, barcode: true, tags: true, agenda: true,
+      progressHub: true, checkinForms: true, checkinAI: true, files: true,
+      nutritionStyle: true, activityFeed: true, exerciseGuides: true,
+      mealPlans: true, coachMealPlans: true, nutritionExpert: true,
+      nutritionSupport: true, groupedHome: true, water: true,
+      foodDayComplete: true, monitoring: true, awards: true,
+      gettingStarted: true, workoutTimers: true,
+    },
+    trainGymName: 'the training ground',
+    equipment: [
+      'Club gym — full S&C provision',
+      'Goalkeeping pitch & handling area',
+      'Med balls & reaction balls',
+      'Bands, mobility & prehab kit',
+      'Recovery — bike, foam rollers',
+    ],
+    vars: {
+      '--bg': '#080f1e',
+      '--surface': '#0e1a30',
+      '--surface-2': '#16243f',
+      '--line': '#22334f',
+      '--text': '#eef4fc',
+      '--muted': '#8fa3bf',
+      '--accent': '#ffb81c',
+      '--accent-hi': '#ffca50',
+      '--on-accent': '#101828',
+      '--ring-track': '#22334f',
+      '--radius': '14px',
+    },
+  },
+
+  // Kelsey — Ricky's daughter. Full gym, and the goal she actually stated:
+  // glutes. So the programme is lower-body led and the app keeps the whole
+  // training side switched on, which is the opposite of her brother's.
+  kelsey: {
+    slug: 'kelsey',
+    scheme: 'dark',
+    name: 'Kelsey Fit',
+    tagline: 'Glutes, strength, shape.',
+    mark: 'K',
+    logo: '/brands/kelsey/icon-512.png',
+    features: {
+      programs: true, templates: true, clientProgramAi: true, exerciseGuides: true,
+      videos: true, recipes: true, barcode: true, tags: true, agenda: true,
+      progressHub: true, checkinForms: true, checkinAI: true, files: true,
+      nutritionStyle: true, activityFeed: true, mealPlans: true,
+      coachMealPlans: true, nutritionExpert: true, nutritionSupport: true,
+      groupedHome: true, water: true, foodDayComplete: true, awards: true,
+      gettingStarted: true, workoutTimers: true, progressPhotos: true,
+    },
+    trainGymName: 'the gym',
+    equipment: [
+      'Hip thrust bench & barbells',
+      'Cable machines & rope attachments',
+      'Leg press & hack squat',
+      'Smith machine',
+      'Full dumbbell range',
+      'Bands & ankle straps',
+    ],
+    vars: {
+      '--bg': '#150a13',
+      '--surface': '#211020',
+      '--surface-2': '#2d182b',
+      '--line': '#3d2439',
+      '--text': '#fbf0f7',
+      '--muted': '#b294a8',
+      '--accent': '#e9548c',
+      '--accent-hi': '#f377a8',
+      '--on-accent': '#1a0812',
+      '--ring-track': '#3d2439',
+      '--radius': '16px',
+    },
+  },
+
   elev8: {
     slug: 'elev8',
     name: 'Elev8u',
     tagline: 'Train. Race. Elevate.',
     logo: '/brands/elev8/logo.png',
     mark: 'E',
-    features: { testing: true, squads: true, squadMode: true, monitoring: true, nutritionExpert: true, activityFeed: true, exerciseGuides: true },
+    // Feature parity with ReDefine (Ricky, 12 Sept: "add all of the
+    // functionality of redefine to the elev8 app"), keeping Elev8's own Hyrox
+    // extras — squads, squad mode, monitoring and the Hyrox testing battery —
+    // which ReDefine does not have.
+    //
+    // Not included: `weekMealPlans`, which is Rick.Fit only and has never run
+    // in front of anyone but Ricky; and `coachMealPlans`, which is Kim's, not
+    // ReDefine's. `parq` IS on — a gym taking on members wants the screening,
+    // and it is a demo selling point — but the wording was signed off by Paul
+    // Andrews for ReDefine, so Elev8u should read it before using it for real.
+    features: {
+      // Elev8's own
+      testing: true, squads: true, squadMode: true, monitoring: true,
+      // and everything ReDefine runs
+      templates: true, programs: true, recipes: true, videos: true,
+      barcode: true, tags: true, supplements: true, shop: true, podcasts: true,
+      agenda: true, progressHub: true, checkinForms: true, checkinAI: true, files: true,
+      nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true,
+      nutritionExpert: true, nutritionSupport: true, groupedHome: true, groupedCoach: true,
+      parq: true, foodDayComplete: true, water: true, awards: true,
+      clientProgramAi: true, gettingStarted: true,
+    },
     trainGymName: 'Elev8u',
     equipment: [
       'Sled track — push & pull',
@@ -294,6 +408,8 @@ const HOST_BRAND = {
   'the-physical-performance-hub.netlify.app': 'pph',
   'elev8-hyrox.netlify.app': 'elev8',
   'rick-fit.netlify.app': 'ricky',
+  'lennon-gk.netlify.app': 'lennon',
+  'kelsey-fit.netlify.app': 'kelsey',
 }
 
 function resolveBrandSlug() {

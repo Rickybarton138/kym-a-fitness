@@ -12,7 +12,9 @@
     "build:paul": "node scripts/build-brand.mjs paul",
     "build:pph": "node scripts/build-brand.mjs pph",
     "build:elev8": "node scripts/build-brand.mjs elev8",
-    "build:ricky": "node scripts/build-brand.mjs ricky"
+    "build:ricky": "node scripts/build-brand.mjs ricky",
+    "build:lennon": "node scripts/build-brand.mjs lennon",
+    "build:kelsey": "node scripts/build-brand.mjs kelsey"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
