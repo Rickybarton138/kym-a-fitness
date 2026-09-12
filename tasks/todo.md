@@ -443,9 +443,46 @@ Then: subscriptions on the connected account, "Manage membership" opens a
 Customer Portal session on that account, and a webhook
 (`customer.subscription.updated` / `.deleted`, `invoice.payment_failed`) writes
 `profiles.status` - which is to say Stripe drives the same switch from item 1.
-BLOCKED ON PAUL: does he have a Stripe dashboard login of his own? MoonClerk is
-a front-end onto a Stripe account - the question is whether that account is his
-to control. Also needs his Standard / Inner Circle prices and intervals.
+UNBLOCKED 2026-09-12: Paul confirms the Stripe account behind his MoonClerk is
+his own.
+
+**His terms, from him, 2026-09-12:**
+- Standard GBP 50/month. Inner Circle GBP 200/month.
+- Minimum commitment 3 months, then one-month rolling.
+- Notice is a WHOLE month, and takes effect after the NEXT payment. His example:
+  "if someone pays on the 20th and they notify me on the 10th, they have one
+  last payment to make and get a full month of coaching at the end."
+
+So the rule is:
+    accessEnds = max(current_period_end + 1 month, subscription_start + 3 months)
+NOT `cancel_at_period_end`. Notice given during a period does not end that
+period - the next payment lands and buys a whole further month. Verified against
+his example plus the edges (notice the day before / the day after a payment,
+notice inside the minimum term, a 31st billing date running into February).
+
+**CONSEQUENCE - the Stripe Customer Portal CANNOT express this.** Its cancel
+options are "immediately" or "at period end", and neither is his rule; it also
+has no concept of a 3-month minimum. So:
+- Turn cancellation OFF in the portal. Keep it for card updates and invoices.
+- "Give notice" lives in the app, which is what Paul asked for anyway ("it would
+  give a notification through to me so I can let them know when their final
+  payment will be"). The app shows the computed date, tells Paul, and on
+  confirmation sets Stripe `cancel_at` to that timestamp.
+- **Do NOT compute the date in JS.** Writing that arithmetic by hand produced
+  two bugs in ten minutes: `setMonth` works in LOCAL time, so 20 Jan + 3 months
+  came out as 19 April once BST was involved; and 31 Jan + 1 month normalised to
+  3 March instead of 28 Feb. Stripe already knows `current_period_end` and
+  anchors billing cycles correctly - read the boundary from the subscription
+  rather than recomputing it. A one-day error here is a dispute about money.
+
+STILL TO ASK PAUL:
+- Upgrade Standard -> Inner Circle mid-month: prorate and start the coaching
+  immediately, or switch at the next billing date?
+- Does an upgrade restart the 3-month minimum, or does the original term stand?
+- Is he VAT-registered? Decides whether GBP 50 / GBP 200 are gross or net.
+- His existing MoonClerk subscriptions: migrate them onto subscriptions we
+  manage, or leave MoonClerk billing the current cohort and use Stripe only for
+  new joiners? (Do not assume - MoonClerk may own those subscription objects.)
 
 ### Order and staging
 0 first (it gates 1). Then 1-3 as one deploy, 4-5 as a second, 6-7 as a third,
