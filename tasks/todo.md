@@ -407,11 +407,22 @@ SMALL, because `nutrition_logs.meal_type` is already stored on every log with a
 time-based fallback (`mealOf`). No migration, no backfill.
 
 ### 6. Client account screen
-Icon top right next to Sign out. Change password (exists, but buried at the
-bottom of the health screen - move it), profile photo (needs a bucket +
-`profiles.avatar_path`), change email, and manage membership.
+Icon top right next to Sign out. Scope confirmed by Ricky 2026-09-12:
+- Display name, profile photo (needs `profiles.avatar_path`), change password
+  (exists, but buried at the bottom of the health screen - move it), push
+  notifications, sign out, and manage membership.
+- **Email is READ-ONLY.** Shown, not editable - "ask your coach to change this".
+  Changing an auth email needs a confirmation round-trip, and locking it removes
+  the single easiest way for a client to lock themselves out of their own
+  account.
+- Changing a password while SIGNED IN needs no email at all
+  (`supabase.auth.updateUser`), so none of this screen depends on item 7.
 
 ### 7. Email: per-brand sender (Ricky picked this 2026-09-12)
+NOTE: with email changes off the table (item 6), the ONLY thing this now buys is
+forgotten-password. Still worth it - a locked-out client currently has no
+self-serve way back in and Paul resets by hand - but it is no longer a
+prerequisite for anything else, so it can move down the order freely.
 Supabase Send Email hook -> Netlify function -> Resend, branded per brand.
 Free tier is 3,000/mo and 100/day; real volume across all five brands is tens a
 month, so GBP 0. Paul first (SPF/DKIM on redefineacademy.com at Squarespace -

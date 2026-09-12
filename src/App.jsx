@@ -71,6 +71,15 @@ export default function App() {
 
   if (!gymActive) return <Suspended onSignOut={signOut} />
 
+  // Paul, 12 Sept: "when people stop working and they have a payment, they
+  // still have access... the ability to pause and then resume as well as fully
+  // disable." Separate from the gym-wide switch above: that one is the whole
+  // gym, this is one person. Their data is untouched either way — a paused
+  // client who comes back in March finds everything exactly where they left it.
+  if (profile.role !== 'trainer' && profile.status && profile.status !== 'active') {
+    return <MembershipHold status={profile.status} note={profile.status_note} onSignOut={signOut} />
+  }
+
   if (profile.role === 'trainer') return <TrainerApp profile={profile} onSignOut={signOut} />
 
   if (!profile.onboarded_at) {
@@ -118,6 +127,31 @@ function ResetPassword({ onDone }) {
           {ok && <p className="notice">Password updated — signing you in…</p>}
           <button className="btn primary big" disabled={busy || ok} type="submit">{busy ? 'Saving…' : 'Save new password'}</button>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// One client on hold, rather than the whole gym. Deliberately warm and
+// specific: a paused client is coming back, and the first thing they need to
+// know is that their training history has not gone anywhere. Neither message
+// mentions money — that conversation is the coach's to have, not the app's.
+function MembershipHold({ status, note, onSignOut }) {
+  const paused = status === 'paused'
+  return (
+    <div className="auth-wrap">
+      <div className="auth-card" style={{ textAlign: 'center' }}>
+        <div className="auth-brand">
+          {THEME.logo ? <img className="brand-logo" src={THEME.logo} alt={THEME.name} /> : <span className="brand-logo-badge">{THEME.mark}</span>}
+          <h1>{THEME.name}</h1>
+        </div>
+        <p className="muted" style={{ marginTop: 12 }}>
+          {paused
+            ? 'Your membership is paused at the moment. Everything you have logged is saved and will be exactly as you left it when you come back.'
+            : 'Your membership has ended. Thanks for training with us — get in touch with your coach any time you would like to pick it back up.'}
+        </p>
+        {note && <p className="muted-note" style={{ marginTop: 10 }}>{note}</p>}
+        <button className="btn ghost" style={{ marginTop: 18 }} onClick={onSignOut}>Sign out</button>
       </div>
     </div>
   )

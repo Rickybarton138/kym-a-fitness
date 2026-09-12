@@ -44,7 +44,7 @@ export default function TrainerApp({ profile, onSignOut }) {
 
   async function loadClients() {
     const { data } = await supabase
-      .from('profiles').select('id, full_name, created_at, membership_tier, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note')
+      .from('profiles').select('id, full_name, created_at, membership_tier, status, status_note, is_test, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note')
       .eq('trainer_id', profile.id).order('created_at', { ascending: true })
     setClients(data || [])
     setLoading(false)
@@ -97,7 +97,13 @@ export default function TrainerApp({ profile, onSignOut }) {
   }
 
   if (selected) {
-    return <ClientDetail client={selected} trainerId={profile.id} onBack={() => setSelected(null)} />
+    return <ClientDetail
+      client={selected} trainerId={profile.id} onBack={() => setSelected(null)}
+      onClientChanged={(patch) => {
+        setSelected((c) => ({ ...c, ...patch }))
+        setClients((cs) => cs.map((c) => (c.id === selected.id ? { ...c, ...patch } : c)))
+      }}
+    />
   }
   if (selectedSquad) {
     return <SquadDetail squad={selectedSquad} clients={clients} onBack={() => setSelectedSquad(null)} />
@@ -164,20 +170,7 @@ export default function TrainerApp({ profile, onSignOut }) {
             <CoachMembers clients={clients} loading={loading} onOpen={setSelected} />
           ) : (
             <>
-              <p className="eyebrow" style={{ marginTop: 8 }}>Your clients ({clients.length})</p>
-              {loading && <p className="muted-note">Loading…</p>}
-              {!loading && clients.length === 0 && <p className="muted-note">No clients yet. Share your code above to get them started.</p>}
-              <div className="stack">
-                {clients.map((c) => (
-                  <button className="tile" key={c.id} onClick={() => setSelected(c)}>
-                    <span className="avatar">{(c.full_name || '?').charAt(0).toUpperCase()}</span>
-                    <div><b>{c.full_name || 'Client'}</b><span>View progress & set targets</span></div>
-                    {c.membership_tier === 'inner_circle' && (
-                      <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: 'var(--accent-hi)', border: '1px solid var(--accent)', borderRadius: 999, padding: '3px 9px' }}>Inner Circle</span>
-                    )}
-                  </button>
-                ))}
-              </div>
+              <ClientList clients={clients} loading={loading} onOpen={setSelected} />
             </>
           )}
         </CoachSection>
@@ -489,6 +482,176 @@ function ClientHealthContext({ client }) {
 // goes nowhere and new signups get stranded. The coach sets a temporary
 // password, reads it out, and the client changes it in My details.
 // The server-side authorisation is in netlify/functions/coach-reset-password.mjs.
+// Paul, 12 Sept: "can I have a toggle on my clients so that I can tag test
+// accounts as test accounts, and then be able to filter between standard, inner
+// circle and test, so I can see what's what."
+//
+// The count is the part that matters commercially. His pricing band is per
+// ACTIVE client, so paused, ended and test accounts are excluded from it —
+// otherwise a client who paused in October quietly pushes him into the next
+// band. The filter chips show their own counts so nothing is hidden, just
+// counted correctly.
+// An active, paying human. What the pricing band is counted on.
+const billable = (c) => !c.is_test && (c.status || 'active') === 'active'
+
+const CLIENT_FILTERS = [
+  { key: 'all', label: 'All', match: () => true },
+  { key: 'standard', label: 'Standard', match: (c) => billable(c) && (c.membership_tier || 'standard') === 'standard' },
+  { key: 'inner_circle', label: 'Inner Circle', match: (c) => billable(c) && c.membership_tier === 'inner_circle' },
+  { key: 'paused', label: 'Paused', match: (c) => c.status === 'paused' },
+  { key: 'ended', label: 'Ended', match: (c) => c.status === 'ended' },
+  { key: 'test', label: 'Test', match: (c) => !!c.is_test },
+]
+
+
+function ClientList({ clients, loading, onOpen }) {
+  const [filter, setFilter] = useState('all')
+  const def = CLIENT_FILTERS.find((f) => f.key === filter) || CLIENT_FILTERS[0]
+  const shown = clients.filter(def.match)
+  const active = clients.filter(billable).length
+  const hidden = clients.length - active
+
+  return (
+    <>
+      <p className="eyebrow" style={{ marginTop: 8 }}>
+        Your clients ({active}{hidden > 0 ? ` active · ${hidden} paused, ended or test` : ''})
+      </p>
+      {loading && <p className="muted-note">Loading…</p>}
+      {!loading && clients.length === 0 && <p className="muted-note">No clients yet. Share your code above to get them started.</p>}
+
+      {clients.length > 0 && (
+        <div className="serving-chips" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+          {CLIENT_FILTERS.map((f) => {
+            const n = clients.filter(f.match).length
+            if (!n && f.key !== 'all') return null
+            return (
+              <button type="button" key={f.key} className={filter === f.key ? 'on' : ''} onClick={() => setFilter(f.key)}>
+                {f.label} ({n})
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {!loading && clients.length > 0 && shown.length === 0 && (
+        <p className="muted-note" style={{ marginTop: 10 }}>Nobody in that group.</p>
+      )}
+
+      <div className="stack" style={{ marginTop: 10 }}>
+        {shown.map((c) => {
+          const st = c.status || 'active'
+          return (
+            <button className="tile" key={c.id} onClick={() => onOpen(c)}>
+              <span className="avatar">{(c.full_name || '?').charAt(0).toUpperCase()}</span>
+              <div>
+                <b>{c.full_name || 'Client'}</b>
+                <span>{st === 'paused' ? 'Paused — everything kept' : st === 'ended' ? 'Ended — everything kept' : 'View progress & set targets'}</span>
+              </div>
+              <span style={{ marginLeft: 'auto', alignSelf: 'center', display: 'flex', gap: 6 }}>
+                {c.is_test && <ClientPill label="Test" muted />}
+                {st !== 'active' && <ClientPill label={st === 'paused' ? 'Paused' : 'Ended'} muted />}
+                {c.membership_tier === 'inner_circle' && st === 'active' && <ClientPill label="Inner Circle" />}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+function ClientPill({ label, muted }) {
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase',
+      color: muted ? 'var(--muted)' : 'var(--accent-hi)',
+      border: `1px solid ${muted ? 'var(--line)' : 'var(--accent)'}`,
+      borderRadius: 999, padding: '3px 9px', whiteSpace: 'nowrap',
+    }}>{label}</span>
+  )
+}
+
+// Paul, 12 Sept: "when people stop working and they have a payment, they still
+// have access... the ability to pause and then resume as well as fully disable."
+//
+// Pause and End both close the door and keep every row. Nothing here deletes
+// anything, and the copy says so, because the fear that stops a coach using a
+// button like this is that it will lose someone's training history.
+//
+// The note is optional and is shown to the CLIENT on their hold screen, so it
+// is worth writing something human in it ("back in November") rather than a
+// reason they should not read.
+const ACCESS = [
+  { key: 'active', label: 'Active', sub: 'Full access' },
+  { key: 'paused', label: 'Paused', sub: 'Locked out, everything kept' },
+  { key: 'ended', label: 'Ended', sub: 'Left — everything still kept' },
+]
+
+function ClientAccess({ client, onChanged }) {
+  const [status, setStatus] = useState(client.status || 'active')
+  const [note, setNote] = useState(client.status_note || '')
+  const [isTest, setIsTest] = useState(!!client.is_test)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const first = (client.full_name || 'This client').split(' ')[0]
+
+  async function change(next) {
+    if (busy) return
+    setBusy(true); setErr('')
+    const { error } = await supabase.rpc('set_client_status', {
+      p_client: client.id, p_status: next, p_note: note.trim() || null,
+    })
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setStatus(next)
+    onChanged?.({ status: next, status_note: note.trim() || null })
+    setSaved(true); setTimeout(() => setSaved(false), 1800)
+  }
+
+  async function toggleTest(v) {
+    setBusy(true); setErr('')
+    const { error } = await supabase.rpc('set_client_test', { p_client: client.id, p_is_test: v })
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setIsTest(v)
+    onChanged?.({ is_test: v })
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">Access</p>
+      <div className="seg small" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+        {ACCESS.map((a) => (
+          <button type="button" key={a.key} className={status === a.key ? 'on' : ''} disabled={busy} onClick={() => change(a.key)}>{a.label}</button>
+        ))}
+      </div>
+      <p className="muted-note" style={{ marginTop: 8 }}>
+        {status === 'active'
+          ? `${first} can sign in and use everything.`
+          : status === 'paused'
+            ? `${first} cannot sign in. Every workout, photo, measurement and food log is kept — put them back to Active and it is all exactly where they left it.`
+            : `${first} cannot sign in. Nothing has been deleted: if they come back, Active restores the lot.`}
+      </p>
+
+      <label className="field" style={{ marginTop: 10 }}>A note for them (optional)
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Paused until November — see you then" />
+      </label>
+      <p className="muted-note">Shown on their screen when they try to sign in. Saved when you set the access above.</p>
+
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 }}>
+        <input type="checkbox" checked={isTest} disabled={busy} onChange={(e) => toggleTest(e.target.checked)} style={{ width: 'auto' }} />
+        This is a test account
+      </label>
+      <p className="muted-note">Test accounts are hidden from your client count and can be filtered out of the list.</p>
+
+      {err && <p className="error">{err}</p>}
+      {saved && <p className="logged-ok">Saved ✓</p>}
+    </div>
+  )
+}
+
 function ResetClientPassword({ client }) {
   const [open, setOpen] = useState(false)
   const [pw, setPw] = useState('')
@@ -559,7 +722,7 @@ function ResetClientPassword({ client }) {
   )
 }
 
-function ClientDetail({ client, trainerId, onBack }) {
+function ClientDetail({ client, trainerId, onBack, onClientChanged }) {
   const [targets, setTargets] = useState(null)
   const [today, setToday] = useState({ protein_g: 0, carbs_g: 0, fat_g: 0, calories: 0 })
   const [logs, setLogs] = useState([])
@@ -663,6 +826,8 @@ function ClientDetail({ client, trainerId, onBack }) {
                     : 'Self-serve tier — calculator, programs and tracking.'}
                 </p>
               </div>
+
+              <ClientAccess client={client} onChanged={onClientChanged} />
 
               <ResetClientPassword client={client} />
 
