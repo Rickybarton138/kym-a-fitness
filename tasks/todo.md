@@ -369,7 +369,7 @@ onboarding. Round 17/23/27/32 green on production.
 Run `node tasks/e2e_tenant_isolation.mjs` on every deploy - nothing tested
 cross-tenant isolation before today.
 
-### 1. Pause / end a client's access (his main ask)
+### 1. Pause / end a client's access — DONE + LIVE 2026-09-12
 "when people stop working and they have a payment, they still have access... the
 ability to pause and then resume as well as fully disable... if somebody pauses
 for a couple of months, keep everything there so that when they come back they
@@ -384,11 +384,11 @@ can get access to everything they've put in."
   pricing band is per active client (Starter, up to 25, he is at ~15), so a
   paused client silently costing him a band would be a bug that bills him.
 
-### 2. Remove clients (coach side)
+### 2. Remove clients (coach side) — DONE + LIVE 2026-09-12 (= status 'ended')
 Not built at all today. = set status 'ended'. Hard delete reserved for test
 accounts, behind its own confirmation.
 
-### 3. Tag + filter test accounts
+### 3. Tag + filter test accounts — DONE + LIVE 2026-09-12
 `profiles.is_test`. Coach dashboard filter: All / Standard / Inner Circle / Test.
 Test accounts excluded from counts and metrics.
 
@@ -450,3 +450,13 @@ to control. Also needs his Standard / Inner Circle prices and intervals.
 ### Order and staging
 0 first (it gates 1). Then 1-3 as one deploy, 4-5 as a second, 6-7 as a third,
 8 last. NOT one deploy carrying all of it to a live coach's clients.
+0-3 DONE + LIVE 2026-09-12. Next: 4-5, the two chart changes.
+
+HOLD-BACK NOTE, now resolved: the week meal-planner no longer needs the
+revert-at-deploy dance. It is behind `features.weekMealPlans` (Rick.Fit only),
+added by the other session in this repo. The revert had started CONFLICTING as
+later commits touched MealPlan.jsx, which is what a deploy-time revert always
+turns into. Round 33 asserts the week option is unreachable on Paul's brand.
+Do NOT verify this by grepping the bundle: brands resolve at RUNTIME from the
+hostname and one bundle carries every brand, so the strings are always present.
+Check what the brand can actually reach.

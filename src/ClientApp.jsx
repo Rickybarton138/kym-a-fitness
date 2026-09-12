@@ -53,6 +53,13 @@ import {
   MEASURE_SITES, BodyTrends,
 } from './ui.jsx'
 
+// The week planner is behind `weekMealPlans` (Rick.Fit only). The tile copy has
+// to follow the flag, or every other brand is promised a shopping list that is
+// not there — the flag was added without this, so Paul's tile advertised it.
+const MEAL_PLAN_SUB = THEME.features?.weekMealPlans
+  ? 'A day, or a week with the shopping list'
+  : 'Build a day around your targets'
+
 const FOCUS_OPTIONS = ['Full body', 'Push', 'Pull', 'Legs', 'Upper body']
 
 // Bottom nav. A brand may define `nav` in themes.js (array of { id, label }) to
@@ -408,7 +415,7 @@ function homeTileDefs(coachFirst) {
     { id: 'food', group: 'Nutrition', show: true, Icon: IconMeal, title: 'Log food', sub: 'Search foods & drinks, add your portion' },
     { id: 'barcode', group: 'Nutrition', show: THEME.features?.barcode, Icon: IconMeal, title: 'Barcode scan', sub: 'Scan a product, log it in a tap' },
     { id: 'recipes', group: 'Nutrition', show: THEME.features?.recipes, Icon: IconMeal, title: 'Recipes', sub: `${coachFirst}’s go-to meals, log in one tap` },
-    { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: 'A day, or a week with the shopping list' },
+    { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: MEAL_PLAN_SUB },
     { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
     { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
     { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: THEME.features?.parq ? 'PAR-Q, health conditions & life circumstances' : 'Health conditions & life circumstances — optional' },
@@ -3663,7 +3670,7 @@ function NutritionHub({ profile, coachName, onGo }) {
         {THEME.features?.mealPlans && (
           <button className="tile tile-hero" onClick={() => onGo('mealplan')}>
             <IconMeal />
-            <div><b>Meal plan</b><span>A day, or a week with the shopping list</span></div>
+            <div><b>Meal plan</b><span>{MEAL_PLAN_SUB}</span></div>
           </button>
         )}
         <button className="tile" onClick={() => onGo('calc')}>

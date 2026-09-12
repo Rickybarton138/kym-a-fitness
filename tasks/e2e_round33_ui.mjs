@@ -111,13 +111,34 @@ const dataAfter = await countRows()
 ok('and everything they put in is still there', JSON.stringify(dataAfter) === JSON.stringify(dataBefore),
   JSON.stringify(dataAfter))
 
+// --- the week planner must stay off Paul's brand -----------------------------
+// `weekMealPlans` is a RUNTIME flag and every brand ships in one bundle, so
+// grepping the bundle for the feature proves nothing — it is always in there.
+// The only honest check is what a client on this brand can actually reach.
+page = await signIn('ollie@redefine.app')
+await page.waitForSelector('.tabbar', { timeout: 30000 })
+await page.locator('.tab', { hasText: 'Nutrition' }).click()
+await page.waitForTimeout(800)
+ok('the meal-plan tile does not promise a week', await page.getByText(/a week with the shopping list/i).count() === 0)
+const mealTile = page.getByText('Meal plan').first()
+if (await mealTile.count()) {
+  await mealTile.click()
+  await page.waitForTimeout(1200)
+  ok('and there is no whole-week option on this brand', await page.getByRole('button', { name: /A whole week/i }).count() === 0)
+} else {
+  ok('and there is no whole-week option on this brand', true, 'no meal-plan tile on this brand')
+}
+await page.close()
+
 // --- the coach's list: filters and an honest count ---------------------------
 await paul.rpc('set_client_test', { p_client: OLLIE, p_is_test: true })
 const coach = await signIn('paul@redefine.app')
 await coach.getByText(/Your clients/).first().waitFor({ timeout: 30000 })
 
 const heading = await coach.getByText(/Your clients \(/).first().innerText()
-ok('the count separates active from the rest', /active/.test(heading), heading)
+// .eyebrow uppercases in CSS and innerText returns what is RENDERED, so this
+// has to be case-insensitive — the first run failed on "20 ACTIVE".
+ok('the count separates active from the rest', /active/i.test(heading), heading)
 ok('a test account is not counted as active', !/^Your clients \(\d+\)$/.test(heading.trim()), heading)
 
 ok('there is a Test filter', await coach.getByRole('button', { name: /^Test \(\d+\)$/ }).count() > 0)
