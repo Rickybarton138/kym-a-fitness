@@ -1574,7 +1574,12 @@ function YourPlanCard({ clientId, onOpen }) {
 }
 
 function Train({ clientId, trainerId, onWorkoutDone, stepTarget }) {
-  const [tab, setTab] = useState(THEME.features?.templates ? 'start' : 'ai')
+  // Opt-out, not opt-in: every existing brand has this undefined and keeps the
+  // generator. Lennon sets it false - his club's S&C staff write his gym work,
+  // and an app that will happily generate a second programme alongside theirs is
+  // how a 16-year-old ends up doing two lower-body days nobody planned together.
+  const AI_GEN = THEME.features?.aiWorkoutGen !== false
+  const [tab, setTab] = useState(THEME.features?.templates ? 'start' : (AI_GEN ? 'ai' : 'own'))
   const [history, setHistory] = useState([])
 
   async function loadHistory() {
@@ -1613,12 +1618,12 @@ function Train({ clientId, trainerId, onWorkoutDone, stepTarget }) {
 
       <div className="seg">
         {THEME.features?.templates && <button type="button" className={tab === 'start' ? 'on' : ''} onClick={() => setTab('start')}>Start a workout</button>}
-        <button type="button" className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>Generate with AI</button>
+        {AI_GEN && <button type="button" className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>Generate with AI</button>}
         <button type="button" className={tab === 'own' ? 'on' : ''} onClick={() => setTab('own')}>Build your own</button>
       </div>
 
       {tab === 'start' && <StartWorkout clientId={clientId} onStarted={onSaved} />}
-      {tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
+      {AI_GEN && tab === 'ai' && <AiPlan clientId={clientId} onSaved={onSaved} />}
       {tab === 'own' && <OwnPlan clientId={clientId} trainerId={trainerId} onSaved={onSaved} history={history} />}
 
       <StepsCatchUp clientId={clientId} target={stepTarget} />

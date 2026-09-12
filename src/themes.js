@@ -234,6 +234,9 @@ export const BRANDS = {
     mark: 'LG',
     logo: '/brands/lennon/icon-512.png',
     features: {
+      // programs ON so his club block can live in the app and he can log against
+      // it; aiWorkoutGen OFF so the app never writes him a programme of its own.
+      programs: true, aiWorkoutGen: false,
       videos: true, recipes: true, barcode: true, tags: true, agenda: true,
       progressHub: true, checkinForms: true, checkinAI: true, files: true,
       nutritionStyle: true, activityFeed: true, exerciseGuides: true,
