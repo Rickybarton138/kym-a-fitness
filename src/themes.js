@@ -314,6 +314,18 @@ export const BRANDS = {
     tagline: 'Train. Race. Elevate.',
     logo: '/brands/elev8/logo.png',
     mark: 'E',
+    // The same grouped five-tab bar ReDefine uses. Without a `nav` a brand keeps
+    // the old six tabs (Today/Train/Fridge/Meal/Body/Coach), which is a poor
+    // showing for a demo now that this brand has twenty-five more screens
+    // behind it. The hubs already suit a Hyrox gym: `trainhub` carries
+    // `testing` and `body` carries `monitoring` (see HUB_CHILDREN).
+    nav: [
+      { id: 'home', label: 'Today' },
+      { id: 'trainhub', label: 'Train' },
+      { id: 'nutrition', label: 'Nutrition' },
+      { id: 'body', label: 'Progress' },
+      { id: 'coachhub', label: 'Coach' },
+    ],
     // Feature parity with ReDefine (Ricky, 12 Sept: "add all of the
     // functionality of redefine to the elev8 app"), keeping Elev8's own Hyrox
     // extras — squads, squad mode, monitoring and the Hyrox testing battery —
