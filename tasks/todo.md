@@ -337,3 +337,105 @@ Still open:
       number. WhatsApp last, if ever - it is the most work for the least gain here.
 - [ ] Asked 2026-09-09: should Rick.Fit be its own repo? Recommendation was no - it
       would fork one codebase into five and every fix would need doing five times.
+
+## Paul's membership + accounts batch (2026-09-12)
+Voice note. Seven asks, plus one thing found while scoping them.
+
+### 0. SECURITY, found while scoping. DONE + LIVE 2026-09-12 (migration `profile_column_grants`)
+`profiles_update_own` is `USING (id = auth.uid())` with no column-level grants,
+and `authenticated` holds UPDATE on every column. Proven against production with
+a demo client's own JWT (restored immediately): a signed-in client can set their
+own `membership_tier`, set `role = 'trainer'`, and set `trainer_id`.
+The third is the serious one - `my_trainer_id()` reads `profiles.trainer_id` for
+the caller, and every coach-content policy (recipes `rc_client_read`, videos,
+programmes, files, community posts) keys off it. So a client can repoint at
+another coach and read that coach's entire library. Cross-tenant isolation is
+the core promise of the white-label product.
+Pre-existing, not caused by this batch - but load-bearing for it: a paused
+client could set `status = 'active'` and let themselves back in.
+Fix: `REVOKE UPDATE (role, trainer_id, membership_tier, active, trainer_code,
+trainer_code_ic, status, is_test) ON public.profiles FROM authenticated, anon;`
+and route coach writes through SECURITY DEFINER RPCs (house pattern already:
+`set_member_tier`, `set_client_health_context`, `set_step_target`).
+DONE: `tasks/migration_profile_column_grants.sql`, applied to production.
+Table-level UPDATE revoked from authenticated + anon; 16 client-owned columns
+granted back. The allow-list locks any FUTURE column by default, so `status`
+and `is_test` arrive definer-only for free.
+Verified: `tasks/e2e_tenant_isolation.mjs` - 8 failing before, 14 passing after,
+including a control proving the leak query can see anything at all. Coach RPCs
+(set_member_tier / set_step_target / set_water_target) still write. A real
+signup with Paul's join code still links, seeds targets and completes
+onboarding. Round 17/23/27/32 green on production.
+Run `node tasks/e2e_tenant_isolation.mjs` on every deploy - nothing tested
+cross-tenant isolation before today.
+
+### 1. Pause / end a client's access (his main ask)
+"when people stop working and they have a payment, they still have access... the
+ability to pause and then resume as well as fully disable... if somebody pauses
+for a couple of months, keep everything there so that when they come back they
+can get access to everything they've put in."
+- `profiles.status` ('active' | 'paused' | 'ended'), default 'active'. NOT a
+  reuse of `profiles.active`, which means "whole gym suspended" and is read off
+  the COACH's row for both roles in `src/App.jsx:24-40`.
+- Gate becomes: the client's own status AND their coach's `active`.
+- Paused and ended keep every row. "Fully disable" = ended, not deleted -
+  reversible, and he may well want them back.
+- Paused/ended/test clients must drop OUT of the active-client count: his
+  pricing band is per active client (Starter, up to 25, he is at ~15), so a
+  paused client silently costing him a band would be a bug that bills him.
+
+### 2. Remove clients (coach side)
+Not built at all today. = set status 'ended'. Hard delete reserved for test
+accounts, behind its own confirmation.
+
+### 3. Tag + filter test accounts
+`profiles.is_test`. Coach dashboard filter: All / Standard / Inner Circle / Test.
+Test accounts excluded from counts and metrics.
+
+### 4. Client calorie chart: the numbers, and an average bar
+Value above each bar, plus an "Avg" bar at the end of the chart itself (the
+average is text-only today, in `src/FoodDiary.jsx` around the `.diary-week`
+block). Keep the over/under colouring. KEEPING the rolling 7-day window - he
+described it ("Sunday to Friday") rather than complained about it, and a fixed
+Mon-Sun week would change what "this week" means in his check-ins.
+
+### 5. Coach chart: totals <-> where the calories come from
+Toggle on the coach's view of a client's chart: totals, or broken down by
+breakfast / lunch / dinner / snacks, "to spot patterns, behaviours and trends".
+Stacked bars per day beat a pie - a pie shows one aggregate, he asked for trends.
+SMALL, because `nutrition_logs.meal_type` is already stored on every log with a
+time-based fallback (`mealOf`). No migration, no backfill.
+
+### 6. Client account screen
+Icon top right next to Sign out. Change password (exists, but buried at the
+bottom of the health screen - move it), profile photo (needs a bucket +
+`profiles.avatar_path`), change email, and manage membership.
+
+### 7. Email: per-brand sender (Ricky picked this 2026-09-12)
+Supabase Send Email hook -> Netlify function -> Resend, branded per brand.
+Free tier is 3,000/mo and 100/day; real volume across all five brands is tens a
+month, so GBP 0. Paul first (SPF/DKIM on redefineacademy.com at Squarespace -
+same DNS as the `app.` CNAME); other brands fall back to a neutral sender.
+This also fixes forgotten-password, which per
+[[kym-a-fitness-auth-email-broken]] has NEVER reached a real client.
+
+### 8. Stripe (Ricky picked "go straight for Stripe billing" 2026-09-12)
+Nothing Stripe exists in this repo and there are no keys.
+Architecture: **Connect, SaaS pattern, direct charges** - each coach connects
+their OWN Stripe (Accounts v2, `dashboard: 'full'`, `fees_collector: 'stripe'`,
+`losses_collector: 'stripe'`). The coach is merchant of record, keeps 100% of
+their client money and pays their own Stripe fees; the platform takes no cut,
+because Ricky's revenue is the GBP 125/mo SaaS fee billed separately. Never hold
+a coach's secret key in Netlify env - that does not scale past Paul and makes
+Ricky liable for someone else's money.
+Then: subscriptions on the connected account, "Manage membership" opens a
+Customer Portal session on that account, and a webhook
+(`customer.subscription.updated` / `.deleted`, `invoice.payment_failed`) writes
+`profiles.status` - which is to say Stripe drives the same switch from item 1.
+BLOCKED ON PAUL: does he have a Stripe dashboard login of his own? MoonClerk is
+a front-end onto a Stripe account - the question is whether that account is his
+to control. Also needs his Standard / Inner Circle prices and intervals.
+
+### Order and staging
+0 first (it gates 1). Then 1-3 as one deploy, 4-5 as a second, 6-7 as a third,
+8 last. NOT one deploy carrying all of it to a live coach's clients.

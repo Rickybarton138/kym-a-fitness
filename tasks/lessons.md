@@ -600,3 +600,41 @@ was right about what it meant and wrong about how it selected. Give a new
 section its own class (`.step-week`, `.step-earlier`) and scope the old
 assertion to it — never re-scope by `nth-child`, which breaks again the next
 time anything is inserted.
+
+## RLS does not restrict COLUMNS (2026-09-12)
+`profiles_update_own` is `USING (id = auth.uid())` and looked like a tight
+policy. It is not a policy about columns, because RLS has none: it decides which
+ROWS you may touch, and `authenticated` held table-level UPDATE, so a client
+owned every column of their own row. From the browser console they could set
+`membership_tier` (self-upgrade to the paid tier), `role = 'trainer'`, and
+`trainer_id` — and `my_trainer_id()` reads that last one, with every
+coach-content policy keyed off it. Proven: a client of one gym repointed and
+read another gym's recipes by name. In a white-label product sharing one
+database, that boundary IS the product, and nothing tested it.
+Rules:
+- A row-level policy plus a table-level grant means the user owns the whole row.
+  For any column only the server should set, use column GRANTs. You cannot
+  revoke one column out of a table-level grant: revoke the table, grant the
+  allowed columns back. The allow-list then locks new columns by default, which
+  is the behaviour you want.
+- Coach-controlled fields already had the right shape here (`set_member_tier`,
+  `set_step_target`, `set_client_dob` — SECURITY DEFINER RPCs). The hole was
+  that the RPC was the polite route, not the only one.
+- Write the test BEFORE the migration and watch it fail. Six assertions failed,
+  the grant went on, the same six passed. That ordering is what makes it proof.
+
+## A negative security assertion needs a control (2026-09-12)
+The isolation test above passed on its first run for three separate wrong
+reasons, and each would have shipped as "verified".
+- `trainer_id` was set to an all-zeros uuid. The write was refused by a FOREIGN
+  KEY, not by permissions, and the test read that as "blocked". Use a real
+  target.
+- "cannot read the other coach's recipes" passed because that coach had no
+  recipes. Any query returning nothing satisfies a no-leak assertion. Add a
+  control that MUST return rows — here, the same query against the client's own
+  coach — so an empty result means isolation rather than an empty table.
+- The test restored the columns it was allowed to write and left the ones it had
+  just proven it could break: a demo account sat on `role='trainer'`,
+  `active=false`, `trainer_code='HACKED'`. A test that can change something must
+  restore it and then ASSERT the restore landed, or it is an attack with a
+  tidy-up intention.
