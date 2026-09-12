@@ -421,13 +421,30 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
 
       <div className="card week-snapshot">
         <p className="eyebrow">This week</p>
+        {/* Paul, 12 Sept: "be able to show each day what the actual total
+            calories was for that day... and maybe have a bar at the end there
+            as well that shows what the average was."
+            The average is drawn INSIDE the chart so it can be compared against
+            the days by eye, which is the point of asking for it — but hollow and
+            behind a divider, because it is a summary of the seven and not an
+            eighth day. Days with nothing logged show a dimmed 0 rather than
+            nothing: "I didn't log" and "I ate nothing" look identical otherwise,
+            and the average already excludes them. */}
         <div className="diary-week">
           {(week || []).map((d, i) => (
             <div className="dw-col" key={i}>
+              <span className={'dw-val' + (d.logged ? '' : ' none')}>{d.logged ? d.calories.toLocaleString() : '0'}</span>
               <div className="dw-bar-wrap"><div className="dw-bar" style={{ height: `${Math.round((d.calories / maxCal) * 100)}%`, background: targets?.calories && d.calories > targets.calories * 1.05 ? '#e5533c' : 'var(--accent)' }} /></div>
               <span className="dw-day">{d.date.toLocaleDateString('en-GB', { weekday: 'narrow' })}</span>
             </div>
           ))}
+          {avg && (
+            <div className="dw-col avg">
+              <span className="dw-val">{avg.calories.toLocaleString()}</span>
+              <div className="dw-bar-wrap"><div className="dw-bar" style={{ height: `${Math.round((avg.calories / maxCal) * 100)}%` }} /></div>
+              <span className="dw-day">Avg</span>
+            </div>
+          )}
         </div>
         {netCal != null && avg && (
           <p className="muted-note" style={{ marginTop: 8 }}>
