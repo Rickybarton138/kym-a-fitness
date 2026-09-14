@@ -7,7 +7,7 @@ const MODEL = 'claude-haiku-4-5-20251001'
 export const handler = async (event) => {
   const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
   try {
-    const { goal, days, equipment, level, weeks, location } = JSON.parse(event.body || '{}')
+    const { goal, days, equipment, level, weeks, location, notes } = JSON.parse(event.body || '{}')
     const d = Math.min(Math.max(Number(days) || 3, 1), 6)
     const w = Math.min(Math.max(Number(weeks) || 4, 1), 16)
     // Where they train changes the answer as much as the kit does: "home, no
@@ -31,6 +31,29 @@ export const handler = async (event) => {
         'Set "equipment" on each exercise to the item from the list it uses, or "bodyweight". ' +
         'If a movement pattern cannot be covered with what is available, choose a different exercise — never invent kit.'
       : ''
+    // Paul, 13 Sept: "on the ai program builder for clients can we add a text
+    // box where they can give a prompt for the type of program they want. For
+    // example being able to specify they want a program for the gym with
+    // weights that also includes scheduled running to increase distance and
+    // pace with running."
+    //
+    // Appended LAST so it outranks the generic goal wording above, and explicit
+    // that a session need not be a lifting session. His own example asks for
+    // running inside a weights programme, which "4-6 exercises per session"
+    // would otherwise quietly refuse — the request has to be able to change the
+    // shape of the answer, not just its contents.
+    const asked = String(notes || '').trim().slice(0, 400)
+    const request = asked
+      ? `\n\nWHAT THEY ASKED FOR, IN THEIR OWN WORDS: "${asked}"\n` +
+        'This takes priority over the generic goal above — build the programme around it. ' +
+        'If they ask for running, rowing, cycling or any conditioning alongside the lifting, give it real ' +
+        'sessions or slots of its own and put the distance, time or pace in the reps field ' +
+        '(for example name "Easy run", sets 1, reps "5 km @ conversational pace"). ' +
+        'If they ask for something to build week on week, say in the DESCRIPTION how it progresses — ' +
+        'keep the reps field to what is prescribed for THIS session (e.g. "5 km @ conversational pace"), ' +
+        'never a week-by-week plan crammed into one line. ' +
+        'Never drop part of the request because it does not fit the usual shape of a lifting session.'
+      : ''
     const prompt =
       `Design a ${w}-week ${level || 'intermediate'} training programme. Goal: "${goal || 'general strength & fitness'}". ` +
       `${d} training sessions per week. ${where} Available equipment: ${equipment || 'full gym'}. ` +
@@ -40,7 +63,7 @@ export const handler = async (event) => {
       `Provide exactly ${d} sessions (one per weekly training day). Use real exercises that match the equipment — ` +
       'if a movement needs kit that is not on the list, choose a different movement. ' +
       'Sensible set/rep/RPE choices for the goal and level. 4-6 exercises per session. Keep finisher short or empty.' +
-      fence
+      fence + request
     const ask = async (extra) => {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -69,7 +92,38 @@ export const handler = async (event) => {
     const anyOffends = (obj) => (Array.isArray(obj.sessions) ? obj.sessions : [])
       .some((s) => (Array.isArray(s.exercises) ? s.exercises : []).some(offends))
 
+    // The request line is a prompt instruction too, and it slips more often than
+    // the equipment fence does: asked for "weights plus scheduled running", one
+    // generation in two came back as four lifting sessions with running
+    // mentioned only in the description. A description that promises running and
+    // a plan that contains none is worse than not supporting it at all — the
+    // client reads the blurb and never notices the programme disagrees.
+    //
+    // So it is checked the same way the equipment is. Only for activities that
+    // are namable: if they asked for running and nothing in the plan mentions
+    // running, say so and ask again. One retry, then accept what comes back.
+    const ACTIVITY = [
+      ['run', /\brun|jog|5k|10k|park ?run/i],
+      ['swimming', /\bswim/i],
+      ['rowing', /\brow(ing|er)?\b/i],
+      ['cycling', /\bcycl|\bbike|spin class/i],
+      ['sprint work', /\bsprint|hill repeat/i],
+      ['conditioning work', /\bcondition|\bcardio|\bhyrox|\bmetcon/i],
+    ]
+    const requestedActivities = asked ? ACTIVITY.filter(([, re]) => re.test(asked)) : []
+    const missingActivities = (obj) => requestedActivities
+      .filter(([, re]) => !(Array.isArray(obj.sessions) ? obj.sessions : []).some((s) =>
+        re.test(`${s.title || ''} ${s.focus || ''}`) ||
+        (Array.isArray(s.exercises) ? s.exercises : []).some((e) => re.test(`${e.name || ''} ${e.reps || ''}`))))
+      .map(([label]) => label)
+
     let p = await ask()
+    const missing = missingActivities(p)
+    if (missing.length) {
+      p = await ask(`\n\nYour previous attempt left out ${missing.join(' and ')}, which they specifically asked for. ` +
+        'Mentioning it in the description is not enough — it must appear as real sessions, or as exercises inside a ' +
+        'session, with the distance, time or pace in the reps field. Rebuild the programme including it.')
+    }
     if (limited && anyOffends(p)) {
       const bad = [...new Set((p.sessions || []).flatMap((s) => (s.exercises || []).filter(offends).map((e) => e.name)))]
       p = await ask(`\n\nYour previous attempt used equipment they do not have: ${bad.join(', ')}. They own ONLY: ${equipment || 'nothing but bodyweight'}. Rebuild it without those, using only what is listed or bodyweight.`)
@@ -83,7 +137,13 @@ export const handler = async (event) => {
       exercises: (Array.isArray(s.exercises) ? s.exercises : []).slice(0, 10).map((e) => ({
         name: String(e.name || '').slice(0, 80),
         sets: int(e.sets, 3),
-        reps: String(e.reps || '').slice(0, 20),
+        // 120, not 20. A rep target is "8-12"; a running slot is "5 km @
+        // conversational pace" and a badly-behaved one is the whole six-week
+        // progression. At 20 it truncated to "5 km @ conversational"; at 60 it
+        // still cut "…1 km cool-d" off mid-word on a real generation. The prompt
+        // asks for progression to go in the description instead, and this is the
+        // backstop for when it does not.
+        reps: String(e.reps || '').slice(0, 120),
         ...(int(e.rpe, 0) ? { rpe: int(e.rpe, 0) } : {}),
         ...(e.equipment ? { equipment: String(e.equipment).slice(0, 60) } : {}),
       })).filter((e) => e.name && !offends(e)),

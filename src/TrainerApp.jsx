@@ -513,8 +513,12 @@ function ClientList({ clients, loading, onOpen }) {
 
   return (
     <>
+      {/* No count until the query is back. It used to render "(0)" for the
+          half-second before the list arrived, which for a coach with twenty
+          clients is a nasty thing to flash on screen — and it made the round-33
+          assertion flaky on a cold deploy, which is how it was noticed. */}
       <p className="eyebrow" style={{ marginTop: 8 }}>
-        Your clients ({active}{hidden > 0 ? ` active · ${hidden} paused, ended or test` : ''})
+        Your clients{loading ? '' : ` (${active}${hidden > 0 ? ` active · ${hidden} paused, ended or test` : ''})`}
       </p>
       {loading && <p className="muted-note">Loading…</p>}
       {!loading && clients.length === 0 && <p className="muted-note">No clients yet. Share your code above to get them started.</p>}

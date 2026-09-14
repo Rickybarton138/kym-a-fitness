@@ -30,6 +30,7 @@ export function BuildMyProgram({ clientId, onDone }) {
   const [goal, setGoal] = useState('Build muscle')
   const [level, setLevel] = useState('Beginner')
   const [weeks, setWeeks] = useState(4)
+  const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [draft, setDraft] = useState(null)
@@ -49,7 +50,7 @@ export function BuildMyProgram({ clientId, onDone }) {
       const res = await fetch('/.netlify/functions/program-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where }),
+        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400) }),
       })
       const j = await res.json()
       if (!j.sessions?.length) throw new Error(j.error || 'Nothing came back — try again.')
@@ -166,6 +167,21 @@ export function BuildMyProgram({ clientId, onDone }) {
           </select>
         </label>
       </div>
+      {/* Paul, 13 Sept: "can we add a text box where they can give a prompt for
+          the type of program they want. For example being able to specify they
+          want a program for the gym with weights that also includes scheduled
+          running to increase distance and pace with running."
+          His own example is the placeholder, because the thing people get wrong
+          with a box like this is not knowing how much they are allowed to ask
+          for. */}
+      <label className="field">Anything in particular? (optional)
+        <textarea
+          className="food-input" style={{ minHeight: 84 }} maxLength={400}
+          value={notes} onChange={(e) => setNotes(e.target.value)}
+          placeholder="e.g. weights in the gym, but with running built in to get my distance and pace up · upper/lower split, nothing overhead, my shoulder is dodgy · training for a Hyrox in November"
+        />
+      </label>
+
       <label className="field">How many weeks
         <select className="ex-select" value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
           {[4, 6, 8, 12].map((w) => <option key={w} value={w}>{w} weeks</option>)}

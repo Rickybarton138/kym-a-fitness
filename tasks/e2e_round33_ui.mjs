@@ -133,7 +133,12 @@ await page.close()
 // --- the coach's list: filters and an honest count ---------------------------
 await paul.rpc('set_client_test', { p_client: OLLIE, p_is_test: true })
 const coach = await signIn('paul@redefine.app')
-await coach.getByText(/Your clients/).first().waitFor({ timeout: 30000 })
+// Wait for the LIST, not the heading. The heading renders before the query
+// returns, and asserting on it raced the load on a cold deploy: it read
+// "Your clients (0)" and failed while Paul had twenty-one. The component no
+// longer prints a count until it knows one, and the test waits for a filter
+// chip, which only exists once there are clients to filter.
+await coach.getByRole('button', { name: /^All \(\d+\)$/ }).waitFor({ timeout: 30000 })
 
 const heading = await coach.getByText(/Your clients \(/).first().innerText()
 // .eyebrow uppercases in CSS and innerText returns what is RENDERED, so this
