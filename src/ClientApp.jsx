@@ -2633,6 +2633,23 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
   const [finished, setFinished] = useState(false)
   const [guideEx, setGuideEx] = useState(null)
 
+  // MIDSESSION_EDIT — Paul, 14 Sept: "when in a live workout can the client have
+  // the option to add extra exercises and swap an exercise in case they can't get
+  // on a machine". Both already existed on the session CARD, but only before you
+  // start, which is the one moment you cannot know a machine is taken. Ricky hit
+  // the same thing the same evening wanting to add flyes mid-session.
+  //
+  // Nothing here writes to the database. The player's contract is that the row is
+  // untouched until Finish, and `exs` already persists to localStorage on every
+  // change, so an added exercise survives a backgrounded app exactly as a ticked
+  // set does.
+  const [swapFor, setSwapFor] = useState(null)
+  const [swapReason, setSwapReason] = useState('')
+  const [swapSug, setSwapSug] = useState(null)
+  const [swapBusy, setSwapBusy] = useState(false)
+  const [swapErr, setSwapErr] = useState('')
+  const [addName, setAddName] = useState('')
+
   // Mark this session active + persist progress as they go.
   useEffect(() => { try { sessionStorage.setItem('cbk_gw_active', plan.id) } catch { /* ignore */ } }, [])
   useEffect(() => { try { localStorage.setItem(GW_KEY(plan.id), JSON.stringify(exs)) } catch { /* ignore */ } }, [exs])
@@ -2657,6 +2674,54 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
   const totalSets = exs.reduce((n, ex) => n + ex.sets.length, 0)
   const doneSets = exs.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0)
   const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0
+
+  function openSwap(i) { setSwapFor(i); setSwapReason(''); setSwapSug(null); setSwapErr('') }
+
+  async function findAlt(i) {
+    setSwapBusy(true); setSwapErr('')
+    try {
+      const res = await fetch('/.netlify/functions/exercise-swap', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: exs[i].name, reason: swapReason }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.name) throw new Error(j?.error || 'No alternative came back.')
+      setSwapSug(j)
+    } catch (e) { setSwapErr(String(e.message || e)) } finally { setSwapBusy(false) }
+  }
+
+  // Spread the existing exercise rather than rebuilding it: sets, set_type and
+  // group all have to survive. Swapping one half of a superset keeps the pairing,
+  // and Lennon's club block is full of them - losing the group letter would
+  // quietly turn a paired session into a straight one.
+  function applySwap(i) {
+    if (!swapSug?.name) return
+    setExs((xs) => xs.map((ex, j) => (j !== i ? ex : {
+      ...ex, name: swapSug.name,
+      cue: swapSug.cue ? `Swapped in — ${swapSug.cue}` : ex.cue,
+      // The coach's demo video was filmed for the movement they prescribed, not
+      // this one. Spreading `ex` keeps it, and a "How to" that plays the
+      // exercise you just swapped AWAY from is worse than no video at all —
+      // someone follows it and does the thing they could not get on.
+      video: null,
+    })))
+    setSwapFor(null); setSwapSug(null); setSwapReason('')
+  }
+
+  // Append only. Every handler here is index-based (toggleSet, updateSet,
+  // updateDrop), so adding at the end leaves existing indices alone; inserting or
+  // removing mid-list would reindex under an in-flight update. done:false matters
+  // too - toPlayer stamps it, and a checkbox bound to undefined is uncontrolled
+  // and will not tick.
+  function addExercise() {
+    const name = addName.trim()
+    if (!name) return
+    setExs((xs) => [...xs, {
+      name, equipment: '', cue: 'Added during the session.',
+      sets: [0, 1, 2].map(() => ({ reps: '', weight: '', done: false })),
+    }])
+    setAddName('')
+  }
 
   const toggleSet = (ei, si) => {
     if (!exs[ei].sets[si].done) timers.onSetComplete()
@@ -2772,10 +2837,46 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
               ))}
             </div>
             {ex.cue && <p className="ex-cue">{ex.cue}</p>}
+            {swapFor === ei ? (
+              <div className="nudge" style={{ marginTop: 8 }}>
+                <p className="muted-note">Machine taken, or it is aggravating something? Say what is wrong and you will get a like-for-like alternative.</p>
+                <input className="input" placeholder="e.g. machine is in use" value={swapReason} onChange={(e) => setSwapReason(e.target.value)} />
+                {swapErr && <p className="error" style={{ marginTop: 6 }}>{swapErr}</p>}
+                {swapSug && (
+                  <div className="ex-body" style={{ marginTop: 8 }}>
+                    <div className="ex-name">{swapSug.name}</div>
+                    {swapSug.cue && <div className="ex-cue">{swapSug.cue}</div>}
+                  </div>
+                )}
+                <div className="nudge-actions" style={{ marginTop: 6 }}>
+                  {!swapSug
+                    ? <button type="button" className="btn primary sm" disabled={swapBusy} onClick={() => findAlt(ei)}>{swapBusy ? 'Finding…' : 'Find alternative'}</button>
+                    : <>
+                      <button type="button" className="btn primary sm" onClick={() => applySwap(ei)}>Use this swap</button>
+                      <button type="button" className="btn ghost sm" disabled={swapBusy} onClick={() => findAlt(ei)}>{swapBusy ? 'Finding…' : 'Try another'}</button>
+                    </>}
+                  <button type="button" className="btn ghost sm" onClick={() => setSwapFor(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className="link-btn inline" style={{ marginTop: 4 }} onClick={() => openSwap(ei)}>Can’t do this? Swap it</button>
+            )}
           </div>
           </div>
         )
       })}
+
+      <div className="gw-add">
+        <p className="eyebrow">Add an exercise</p>
+        <div className="gw-add-row">
+          <input className="input" placeholder="e.g. Cable flye" value={addName}
+            onChange={(e) => setAddName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExercise() } }} />
+          <button type="button" className="btn primary sm" disabled={!addName.trim()} onClick={addExercise}>Add</button>
+        </div>
+        <p className="muted-note">Three sets, blank reps and weight — fill them in as you go. It saves with the rest of the session.</p>
+      </div>
+
       {plan.finisher && <p className="finisher"><b>Finisher:</b> {plan.finisher}</p>}
       {saveErr && (
         <p className="error">{saveErr} Your sets are still here — nothing has been lost.</p>

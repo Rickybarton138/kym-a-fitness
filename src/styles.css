@@ -803,3 +803,9 @@ html.brand-ricky .btn.primary { box-shadow: 0 0 18px rgba(46, 232, 92, .28); }
 .workout-timer-notice { margin: 0; font-size: 13px; font-weight: 600; color: var(--accent); }
 .workout-timer-notice:not(:empty) { margin-top: 8px; }
 .workout-timers:has(.workout-timer-settings[open]) { position: static; }
+
+/* Add-an-exercise inside the live session (Paul's request, 14 Sept). */
+.gw-add { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.gw-add-row { display: flex; gap: 8px; align-items: center; }
+.gw-add-row .input { flex: 1; min-width: 0; font-size: 16px; }
+.gw-add-row .btn { flex-shrink: 0; min-height: 44px; }
