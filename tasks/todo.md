@@ -475,14 +475,31 @@ has no concept of a 3-month minimum. So:
   anchors billing cycles correctly - read the boundary from the subscription
   rather than recomputing it. A one-day error here is a dispute about money.
 
+**ANSWERED BY PAUL 2026-09-12:**
+- **Upgrades take effect from the NEXT BILLING DATE.** No proration, no
+  mid-month switch. Implement as a Stripe **subscription schedule** (phase 1 the
+  current price to period end, phase 2 the new one), not
+  `subscription.update` with a proration flag - a schedule says what it means and
+  survives someone reading it in a year.
+- **MoonClerk is GONE. Everything is native in Stripe already.** No migration,
+  no third party owning the subscription objects. His live subscriptions are
+  ordinary Stripe subscriptions in an account he controls.
+- **"MoonClerk was an app that overlayed Stripe to manage subscriptions a little
+  easier. I'd like something similar."** So the deliverable is not just a client
+  "manage membership" button - it is a COACH-FACING subscription manager: per
+  client, the plan, the amount, the next payment date, the status, failed
+  payments, change plan, and action a notice.
+- **"I don't want people to be able to authorise their own cancellations. I want
+  that to flag to me and tell them their final payment date rather than just hit
+  cancel and it cancel immediately."** Confirms the portal's cancel button stays
+  OFF. The client's action is a REQUEST: it shows them their final payment date
+  and last day of coaching straight away (deterministic from the rule above),
+  and raises it with Paul. Paul actions it - at which point `cancel_at` is set.
+  He keeps the conversation, which is the whole point of a month's notice.
+
 STILL TO ASK PAUL:
-- Upgrade Standard -> Inner Circle mid-month: prorate and start the coaching
-  immediately, or switch at the next billing date?
-- Does an upgrade restart the 3-month minimum, or does the original term stand?
 - Is he VAT-registered? Decides whether GBP 50 / GBP 200 are gross or net.
-- His existing MoonClerk subscriptions: migrate them onto subscriptions we
-  manage, or leave MoonClerk billing the current cohort and use Stripe only for
-  new joiners? (Do not assume - MoonClerk may own those subscription objects.)
+- Does an upgrade restart the 3-month minimum, or does the original term stand?
 
 ### Order and staging
 0 first (it gates 1). Then 1-3 as one deploy, 4-5 as a second, 6-7 as a third,
