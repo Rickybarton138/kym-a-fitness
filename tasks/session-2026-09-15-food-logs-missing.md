@@ -66,8 +66,30 @@ failure, per-client isolation, ordering across a failed flush, no re-send of wha
 already went in, discard, and a corrupt queue. (`node --test tests/` fails on
 this Node/Windows - point it at the file.)
 
-NOT deployed to Kim, Paul, PPH, Elev8, Lennon or Kelsey. Shared codebase, so
-they get it on their next `npm run build:<brand>` + deploy.
+### Rolled out to all seven brands, 15 Sept evening
+
+Each one built with its own `npm run build:<brand>` then
+`netlify deploy --prod --dir=dist --site=<id>` - NOT `--build`, which would run
+netlify.toml's `npm run build` and stamp Kim's branding over every site.
+
+| Brand | Site | Verified live |
+|---|---|---|
+| ricky | rick-fit.netlify.app | Rick.Fit |
+| kim | coached-by-kim.netlify.app | Coached by Kim |
+| paul | app.redefineacademy.com | ReDefine Academy |
+| pph | the-physical-performance-hub.netlify.app | The Physical Performance Hub |
+| elev8 | elev8-hyrox.netlify.app | Elev8u |
+| lennon | lennon-gk.netlify.app | Lennon GK |
+| kelsey | kelsey-fit.netlify.app | Kelsey Fit |
+
+All seven checked after deploying: correct `<title>` and `cbk_food_queue` present
+in the served bundle. `node tasks/e2e_tenant_isolation.mjs` all passed against
+production. Paul's site loaded in a real browser with no bundle errors (the one
+console 400 is a stale refresh token in a fresh profile, not the app).
+
+`bbl-gym-app.netlify.app` was deliberately left alone: themes.js has a `bbl`
+brand but no HOST_BRAND entry and no `build:bbl` script, and the BBL gym product
+lives in `~/thryve-prototype`. Check before assuming it is served from here.
 
 ## Reinstating today - DONE
 
