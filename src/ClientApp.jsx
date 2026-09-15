@@ -32,6 +32,7 @@ import { BuildMyProgram } from './BuildMyProgram.jsx'
 import { StepsCatchUp } from './StepsCatchUp.jsx'
 import { BarcodeScan, MealScan } from './FoodCapture.jsx'
 import { GettingStarted } from './GettingStarted.jsx'
+import { queueFood, readFoodQueue, flushFoodQueue, clearFoodQueue } from './foodQueue.js'
 import { loadClientProgram, sessionForDay, sessionsInWeek, weekFor, startSessionNow } from './todaySession.js'
 import { CameraCapture } from './CameraCapture.jsx'
 import { PROGRAM_DIMS, programTagLabel, programMatches, TRAIN_WHERE } from './programMeta.js'
@@ -124,6 +125,7 @@ export default function ClientApp({ profile, onSignOut }) {
   const [heroImages, setHeroImages] = useState([])
   const [loading, setLoading] = useState(true)
   const [workoutTick, setWorkoutTick] = useState(0) // bumped when a guided session finishes, so Home cards refresh
+  const [pendingFood, setPendingFood] = useState(() => readFoodQueue(profile.id).length)
 
   async function loadAll() {
     setNutritionStyle(profile.nutrition_style)
@@ -186,21 +188,54 @@ export default function ClientApp({ profile, onSignOut }) {
   // (Paul) go back there; everyone else (no coachhub tab) goes back to Home.
   const backFromCoach = () => setScreen(nav.some((n) => n.id === 'coachhub') ? 'coachhub' : 'home')
 
+  // Only reflect on the home "today" total if it's genuinely today — a meal
+  // logged for another day still shows on that day in the food diary.
+  function foldIntoToday(rows) {
+    const startToday = startOfTodayISO()
+    const startTomorrow = new Date(new Date(startToday).getTime() + 86400000).toISOString()
+    const todays = rows.filter((r) => r && r.logged_at >= startToday && r.logged_at < startTomorrow)
+    if (todays.length) setTodayLogs((l) => [...todays, ...l])
+  }
+
+  // Returns true when the row is on the server, false when it is only parked on
+  // this device. Callers must not say "logged" until they have the answer — see
+  // foodQueue.js for the day of food this silently lost.
   async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type, logged_at }, source) {
     const row = {
       client_id: profile.id, source, name: name || null, meal_type: meal_type || mealByHour(),
       protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, fibre_g: fibre_g || 0, calories: calories || 0,
       ...(logged_at ? { logged_at } : {}),
     }
-    const { data } = await supabase.from('nutrition_logs').insert(row).select().single()
-    // Only reflect on the home "today" total if it's genuinely today — a meal
-    // logged for another day still shows on that day in the food diary.
-    if (data) {
-      const startToday = startOfTodayISO()
-      const startTomorrow = new Date(new Date(startToday).getTime() + 86400000).toISOString()
-      if (data.logged_at >= startToday && data.logged_at < startTomorrow) setTodayLogs((l) => [data, ...l])
+    const { data, error } = await supabase.from('nutrition_logs').insert(row).select().single()
+    if (error || !data) {
+      setPendingFood(queueFood(row))
+      return false
     }
+    foldIntoToday([data])
+    return true
   }
+
+  // Retry the parked rows on load and whenever the device comes back online.
+  async function syncFood() {
+    const { rows, left } = await flushFoodQueue(supabase, profile.id)
+    if (rows.length) foldIntoToday(rows)
+    setPendingFood(left)
+    return left
+  }
+
+  useEffect(() => {
+    // The listener goes on unconditionally: the queue is usually empty at mount
+    // and fills later, which is exactly the case that needs the retry.
+    const onOnline = () => { if (readFoodQueue(profile.id).length) syncFood() }
+    const onQueued = () => setPendingFood(readFoodQueue(profile.id).length)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('cbk-food-queued', onQueued)
+    if (readFoodQueue(profile.id).length) syncFood()
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('cbk-food-queued', onQueued)
+    }
+  }, [])
 
   async function saveTargets(next) {
     setTargets(next)
@@ -238,6 +273,16 @@ export default function ClientApp({ profile, onSignOut }) {
           <GettingStarted profile={profile} onGo={setScreen} />
         )}
         <ResumeBanner clientId={profile.id} onResume={() => { setResumeTick((n) => n + 1); setScreen('train') }} />
+        {/* Shown on every screen, not just the food ones: the whole failure this
+            fixes is food that looked saved and was not, so it has to be
+            impossible to miss. */}
+        {pendingFood > 0 && (
+          <PendingFoodBanner
+            count={pendingFood}
+            onRetry={syncFood}
+            onDiscard={() => { clearFoodQueue(profile.id); setPendingFood(0) }}
+          />
+        )}
         {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train key={'train' + resumeTick} onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} stepTarget={profile.step_target} onGo={setScreen} />}
@@ -2613,6 +2658,39 @@ function ResumeBanner({ clientId, onResume }) {
       <div className="nudge-actions" style={{ marginTop: 10 }}>
         <button className="btn primary sm" onClick={go}>Resume session</button>
         <button type="button" className="link-btn" onClick={dismiss}>Not now</button>
+      </div>
+    </div>
+  )
+}
+
+// The food that did not reach the server. It is kept on the device and retried,
+// but the client is told, because the alternative is what happened on 15 Sept:
+// a day of food logged into nothing, with the app saying it had gone in.
+function PendingFoodBanner({ count, onRetry, onDiscard }) {
+  const [trying, setTrying] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  const retry = async () => {
+    setTrying(true); setFailed(false)
+    const left = await onRetry()
+    setTrying(false)
+    if (left > 0) setFailed(true)
+  }
+
+  return (
+    <div className="card resume-card">
+      <p className="eyebrow accent">Not saved yet</p>
+      <p style={{ margin: '4px 0 0', fontWeight: 600 }}>
+        {count === 1 ? '1 item is still on this phone' : `${count} items are still on this phone`}
+      </p>
+      <p className="muted-note">
+        {failed
+          ? 'Still no connection. Nothing has been lost — it stays here and goes in as soon as you are back online.'
+          : 'They did not reach your diary. They will go in by themselves when you are back online.'}
+      </p>
+      <div className="nudge-actions" style={{ marginTop: 10 }}>
+        <button className="btn primary sm" disabled={trying} onClick={retry}>{trying ? 'Trying…' : 'Try now'}</button>
+        <button type="button" className="link-btn" onClick={onDiscard}>Discard them</button>
       </div>
     </div>
   )

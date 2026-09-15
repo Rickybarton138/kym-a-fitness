@@ -161,8 +161,8 @@ export function BarcodeScan({ onLog, onBack }) {
           )}
           {scaled && <p className="muted-note">This portion: {scaled.calories} kcal · {scaled.protein_g}g P · {scaled.carbs_g}g C · {scaled.fat_g}g F</p>}
           <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-          <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={() => { if (scaled) { onLog({ ...scaled, meal_type: meal }); setLogged(true) } }}>
-            {logged ? 'Added to today ✓' : 'Add to today'}
+          <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={async () => { if (scaled) { const ok = (await onLog({ ...scaled, meal_type: meal })) !== false; setLogged(ok ? 'ok' : 'device') } }}>
+            {logged === 'ok' ? 'Added to today ✓' : logged === 'device' ? 'Saved on this phone' : 'Add to today'}
           </button>
         </div>
       )}
@@ -212,7 +212,9 @@ export function MealScan({ onLog }) {
             <div className="chips">{result.items?.map((it, i) => <span className="chip" key={i}>{it}</span>)}</div>
             <MacroRow m={result} />
             <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-            {logged ? <p className="logged-ok">Added to today ✓</p> : <button className="btn primary" onClick={() => { onLog({ ...result, name: result.food_name, meal_type: meal }); setLogged(true) }}>Add to today</button>}
+            {logged
+              ? <p className={logged === 'ok' ? 'logged-ok' : 'muted-note'}>{logged === 'ok' ? 'Added to today ✓' : 'Saved on this phone — it goes in when you are back online'}</p>
+              : <button className="btn primary" onClick={async () => { const ok = (await onLog({ ...result, name: result.food_name, meal_type: meal })) !== false; setLogged(ok ? 'ok' : 'device') }}>Add to today</button>}
           </div>
           <button className="btn ghost" onClick={() => setShowCam(true)}>Scan again</button>
         </div>

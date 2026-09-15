@@ -38,7 +38,7 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState(null)
   const [grams, setGrams] = useState('')
-  const [logged, setLogged] = useState('')
+  const [logged, setLogged] = useState(null) // { text, ok } — null while there is nothing to say
   const [manual, setManual] = useState(false)
   const [meal, setMeal] = useState(defaultMeal || mealByHour())
   const [day, setDay] = useState(todayStr())
@@ -91,38 +91,48 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
     if (data) setCoachFoods((cf) => [data, ...cf])
   }
 
+  // onLog resolves false when the row got no further than this device. Saying
+  // "Added" before that answer is the bug that lost a day of food on 15 Sept, so
+  // the confirmation waits for it. A caller that returns nothing is an older one
+  // that cannot fail loudly — treat that as success rather than crying wolf.
+  async function confirm(payload, name) {
+    const ok = (await onLog(payload)) !== false
+    setLogged({ text: ok ? `Added ${name}` : `${name} is saved on this phone — it goes in when you are back online`, ok })
+    setTimeout(() => setLogged(null), ok ? 2200 : 6000)
+  }
+
   function pick(f) { setSelected(f); if (!f.fixed) setGrams(String(f.s || 100)) }
-  function logSelected() {
+  async function logSelected() {
     const g = Number(grams) || 0
     if (!g || !selected) return
     const factor = g / 100
-    onLog({
-      name: `${selected.n} (${g}g)`,
-      calories: Math.round(selected.k * factor),
-      protein_g: Math.round((selected.p || 0) * factor),
-      carbs_g: Math.round((selected.c || 0) * factor),
-      fat_g: Math.round((selected.f || 0) * factor),
-      fibre_g: Math.round((selected.fb || 0) * factor),
+    const food = selected
+    setSelected(null); setQ(''); setApi([]); setGrams('')
+    await confirm({
+      name: `${food.n} (${g}g)`,
+      calories: Math.round(food.k * factor),
+      protein_g: Math.round((food.p || 0) * factor),
+      carbs_g: Math.round((food.c || 0) * factor),
+      fat_g: Math.round((food.f || 0) * factor),
+      fibre_g: Math.round((food.fb || 0) * factor),
       meal_type: meal,
       logged_at: dayISO(day),
-    })
-    setLogged(selected.n); setSelected(null); setQ(''); setApi([]); setGrams('')
-    setTimeout(() => setLogged(''), 2200)
+    }, food.n)
   }
-  function logFixed() {
+  async function logFixed() {
     if (!selected) return
-    onLog({
-      name: selected.n,
-      calories: selected.k,
-      protein_g: selected.p || 0,
-      carbs_g: selected.c || 0,
-      fat_g: selected.f || 0,
-      fibre_g: selected.fb || 0,
+    const food = selected
+    setSelected(null); setQ(''); setApi([])
+    await confirm({
+      name: food.n,
+      calories: food.k,
+      protein_g: food.p || 0,
+      carbs_g: food.c || 0,
+      fat_g: food.f || 0,
+      fibre_g: food.fb || 0,
       meal_type: meal,
       logged_at: dayISO(day),
-    })
-    setLogged(selected.n); setSelected(null); setQ(''); setApi([])
-    setTimeout(() => setLogged(''), 2200)
+    }, food.n)
   }
 
   if (selected && selected.fixed) {
@@ -178,7 +188,7 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
   return (
     <div className="stack">
       <input className="food-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a food or drink…" autoFocus />
-      {logged && <p className="logged-ok">Added {logged} ✓</p>}
+      {logged && <p className={logged.ok ? 'logged-ok' : 'muted-note'}>{logged.text}{logged.ok ? ' ✓' : ''}</p>}
 
       {q.trim().length >= 1 && (
         <div className="card food-results">
@@ -199,7 +209,7 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
             <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
             <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
           </div>
-          <ManualFood dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { onLog({ ...m, meal_type: meal, logged_at: dayISO(day) }); saveToLibrary(m); setLogged(m.name); setManual(false); setTimeout(() => setLogged(''), 2200) }} onCancel={() => setManual(false)} /></>}
+          <ManualFood dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { saveToLibrary(m); setManual(false); confirm({ ...m, meal_type: meal, logged_at: dayISO(day) }, m.name) }} onCancel={() => setManual(false)} /></>}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { Metric, Loader } from './ui.jsx'
 import { THEME } from './themes.js'
 import { BarcodeScan, MealScan } from './FoodCapture.jsx'
 import { RecipeCreator } from './RecipeCreator.jsx'
+import { queueFood } from './foodQueue.js'
 
 // Per-day food diary — itemised entries grouped by meal, with delete + daily totals
 // vs target, and a weekly-averages summary. Shared by the client (their own diary)
@@ -206,14 +207,19 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     await supabase.from('nutrition_logs').delete().eq('id', id)
     setLogs((l) => l.filter((x) => x.id !== id)); loadWeek()
   }
+  // Returns false when the row only reached this device. Same contract as
+  // ClientApp's logFood — FoodSearch waits on it before it says "Added".
   async function addFood(m) {
     const when = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, 0)
-    await supabase.from('nutrition_logs').insert({
+    const row = {
       client_id: clientId, source: 'manual', name: m.name || 'Food',
       calories: m.calories || 0, protein_g: m.protein_g || 0, carbs_g: m.carbs_g || 0, fat_g: m.fat_g || 0, fibre_g: m.fibre_g || 0,
       meal_type: m.meal_type || mealByHour(day), logged_at: when.toISOString(),
-    })
+    }
+    const { error } = await supabase.from('nutrition_logs').insert(row)
+    if (error) { queueFood(row); return false }
     loadDay(day); loadWeek()
+    return true
   }
   // Paul: "in the food diary, is it possible to copy meals from previous days?
   // MyFitnessPal allows it ... You can also go to a previous day and select copy
