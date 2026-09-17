@@ -7,7 +7,7 @@ const MODEL = 'claude-haiku-4-5-20251001'
 export const handler = async (event) => {
   const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
   try {
-    const { goal, days, equipment, level, weeks, location, notes } = JSON.parse(event.body || '{}')
+    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo } = JSON.parse(event.body || '{}')
     const d = Math.min(Math.max(Number(days) || 3, 1), 6)
     const w = Math.min(Math.max(Number(weeks) || 4, 1), 16)
     // Where they train changes the answer as much as the kit does: "home, no
@@ -54,6 +54,22 @@ export const handler = async (event) => {
         'never a week-by-week plan crammed into one line. ' +
         'Never drop part of the request because it does not fit the usual shape of a lifting session.'
       : ''
+    // Paul, 17 Sept: "start with 1 per week and build gradually to 3 per week
+    // over 12 weeks." The RAMP itself is built in code (buildProgramRows) — the
+    // model only writes one base week. What the model has to get right is the
+    // ORDER, because a lighter week takes the first N sessions: if it hands back
+    // Push / Pull / Legs then week one is an upper-body-only week and the client
+    // never trains their legs for a month.
+    const from = Math.max(1, Number(rampFrom) || 0)
+    const to = Math.max(from, Number(rampTo) || 0)
+    const ramping = rampFrom && rampTo && to > from
+    const rampLine = ramping
+      ? `\n\nIMPORTANT — this programme BUILDS UP: the client starts at ${from} session${from === 1 ? '' : 's'} a week and works up to ${to} by week ${w}. ` +
+        'The early weeks use only the FIRST sessions in your list, so order them so that works: ' +
+        `the first ${from === 1 ? 'session on its own must be a sensible whole week of training' : `${from} sessions on their own must be a sensible whole week of training`}, ` +
+        'covering the whole body rather than one half of a split. Add the more specialised sessions later in the list. ' +
+        'Say in the description that the volume builds up over the programme.'
+      : ''
     const prompt =
       `Design a ${w}-week ${level || 'intermediate'} training programme. Goal: "${goal || 'general strength & fitness'}". ` +
       `${d} training sessions per week. ${where} Available equipment: ${equipment || 'full gym'}. ` +
@@ -63,7 +79,7 @@ export const handler = async (event) => {
       `Provide exactly ${d} sessions (one per weekly training day). Use real exercises that match the equipment — ` +
       'if a movement needs kit that is not on the list, choose a different movement. ' +
       'Sensible set/rep/RPE choices for the goal and level. 4-6 exercises per session. Keep finisher short or empty.' +
-      fence + request
+      fence + rampLine + request
     const ask = async (extra) => {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',

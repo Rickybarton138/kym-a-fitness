@@ -31,6 +31,11 @@ export function BuildMyProgram({ clientId, onDone }) {
   const [level, setLevel] = useState('Beginner')
   const [weeks, setWeeks] = useState(4)
   const [notes, setNotes] = useState('')
+  // Paul, 17 Sept: "start with 1 per week and build gradually to 3 per week over
+  // 12 weeks". `days` stays what it always was — the days they COULD train — and
+  // the ramp decides how many of them a given week actually uses.
+  const [ramp, setRamp] = useState(false)
+  const [rampFrom, setRampFrom] = useState(1)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [draft, setDraft] = useState(null)
@@ -38,19 +43,21 @@ export function BuildMyProgram({ clientId, onDone }) {
 
   const toggleDay = (d) => setDays((ds) => (ds.includes(d) ? ds.filter((x) => x !== d) : sortDays([...ds, d])))
 
+  const rampTo = days.length
   const equipmentText = where === 'gym'
     ? 'Full commercial gym'
     : kit.length ? kit.join(', ') : (where === 'home' ? 'Bodyweight only' : '')
 
   async function generate() {
     if (!days.length) { setErr('Pick at least one day you can train.'); return }
+    if (ramp && rampFrom >= rampTo) { setErr('To build up, start with fewer sessions than the number of days you picked.'); return }
     if (where === 'home_gym' && !kit.length) { setErr('Add the kit you have, or photograph it, so the plan actually fits your setup.'); return }
     setBusy(true); setErr(''); setDraft(null)
     try {
       const res = await fetch('/.netlify/functions/program-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400) }),
+        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(ramp ? { rampFrom, rampTo } : {}) }),
       })
       const j = await res.json()
       if (!j.sessions?.length) throw new Error(j.error || 'Nothing came back — try again.')
@@ -63,7 +70,7 @@ export function BuildMyProgram({ clientId, onDone }) {
     setSaving(true); setErr('')
     try {
       const weeksN = Math.min(Math.max(Number(draft.weeks) || weeks, 1), 16)
-      const rows = buildProgramRows(draft.sessions, weeksN, days)
+      const rows = buildProgramRows(draft.sessions, weeksN, days, ramp ? { from: rampFrom, to: rampTo } : null)
       const { data, error } = await supabase.rpc('create_client_program', {
         p_title: draft.title,
         p_description: draft.description || '',
@@ -88,10 +95,19 @@ export function BuildMyProgram({ clientId, onDone }) {
         <p className="muted-note">
           {draft.weeks} weeks · {sortDays(days).map((d) => WEEKDAYS[d]).join(', ')} · it gets harder each week, with an easier week every fourth.
         </p>
+        {ramp && (
+          <p className="muted-note">
+            Building up from {rampFrom} session{rampFrom === 1 ? '' : 's'} a week to {rampTo} — the early weeks use the
+            first {rampFrom === 1 ? 'session' : `${rampFrom} sessions`} below, and the rest come in as you go.
+          </p>
+        )}
         {draft.sessions.map((s, i) => (
           <div className="card session-card" key={i}>
             <div className="session-title">{s.title}</div>
-            <div className="session-sub">{s.focus}{sortDays(days)[i] != null ? ` · ${WEEKDAYS[sortDays(days)[i]]}` : ''}</div>
+            {/* Under a ramp a session is not pinned to one weekday — an early
+                week uses the days furthest apart, so naming a day here would be
+                a promise the schedule does not keep. */}
+            <div className="session-sub">{s.focus}{!ramp && sortDays(days)[i] != null ? ` · ${WEEKDAYS[sortDays(days)[i]]}` : ''}</div>
             <ol className="ex-list">
               {(s.exercises || []).map((e, j) => (
                 <li className="ex" key={j}>
@@ -154,6 +170,36 @@ export function BuildMyProgram({ clientId, onDone }) {
         ))}
       </div>
       <p className="muted-note">{days.length ? `${days.length} session${days.length === 1 ? '' : 's'} a week, on ${sortDays(days).map((d) => WEEKDAYS[d]).join(', ')}.` : 'Pick the days that realistically work.'}</p>
+
+      {/* Paul, 17 Sept: "can I have it so that I can request to gradually
+          increase sessions over the duration of the program? So start with 1 per
+          week and build gradually to 3 per week over 12 weeks?"
+          The days above stay the days they COULD train; this decides how many of
+          them each week actually uses. Only offered when there is room to build
+          into — with one day picked there is nothing to ramp. */}
+      {days.length > 1 && (
+        <>
+          <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+            <input type="checkbox" checked={ramp} onChange={(e) => setRamp(e.target.checked)} style={{ width: 'auto' }} />
+            Build up gradually
+          </label>
+          {ramp && (
+            <>
+              <label className="field">Start with
+                <select className="ex-select" value={rampFrom} onChange={(e) => setRampFrom(Number(e.target.value))}>
+                  {Array.from({ length: Math.max(1, rampTo - 1) }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>{n} session{n === 1 ? '' : 's'} a week</option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted-note">
+                Starts at {rampFrom} a week and works up to {rampTo} by the end of the {weeks} weeks, holding at each step
+                for a few weeks rather than climbing every week. Easier weeks use the days furthest apart.
+              </p>
+            </>
+          )}
+        </>
+      )}
 
       <div className="grid-2">
         <label className="field">Goal

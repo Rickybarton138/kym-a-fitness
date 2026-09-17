@@ -62,6 +62,24 @@ ok('what they typed reaches the generator', sent && sent.notes === ASK, sent ? J
 ok('along with where and how many days', sent && !!sent.location && !!sent.days, sent ? `${sent.location} / ${sent.days} days` : '')
 ok('a long reps value survives to the draft', await page.getByText(/5 km @ conversational pace/).count() > 0)
 
+// --- the gradual build-up (Paul, 17 Sept) ------------------------------------
+// "start with 1 per week and build gradually to 3 per week over 12 weeks."
+await page.getByRole('button', { name: /Change something/i }).click().catch(() => {})
+await page.waitForTimeout(800)
+
+const rampBox = page.getByLabel(/Build up gradually/i)
+ok('there is a build-up option', await rampBox.count() === 1)
+await rampBox.check()
+await page.waitForTimeout(400)
+ok('and it explains what it will do', await page.getByText(/works up to \d+ by the end/i).count() > 0,
+  (await page.getByText(/works up to/i).first().innerText().catch(() => '')).slice(0, 90))
+
+sent = null
+await page.getByRole('button', { name: /Build my plan|Build me a plan|Generate/i }).first().click()
+await page.waitForTimeout(2500)
+ok('the ramp reaches the generator', sent && sent.rampFrom === 1 && sent.rampTo >= 2,
+  sent ? `${sent.rampFrom} -> ${sent.rampTo}` : 'nothing sent')
+
 ok('no page errors', errors.length === 0, errors.join(' | '))
 
 await browser.close()
