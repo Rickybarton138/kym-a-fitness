@@ -220,11 +220,18 @@ export function ProgramDayPicker({ sessionsPerWeek, initialDays, ownDays, initia
 // Paul: "with measurements, can we add the option to log Waist, Chest, Hips,
 // Thigh, Bicep". One definition, shared by the client's logging screen and the
 // coach's view of it, so the two can never drift apart.
+//
+// Paul again, 21 Sept: "could we add in shoulders and calf measurements too? A
+// couple of people have asked for it." Grouped rather than appended — shoulders
+// sits with chest, calf with thigh — because a form that reads down the body is
+// easier to work through with a tape in one hand.
 export const MEASURE_SITES = [
   { key: 'waist_cm', label: 'Waist' },
   { key: 'chest_cm', label: 'Chest' },
+  { key: 'shoulders_cm', label: 'Shoulders' },
   { key: 'hips_cm', label: 'Hips' },
   { key: 'thigh_cm', label: 'Thigh' },
+  { key: 'calf_cm', label: 'Calf' },
   { key: 'bicep_cm', label: 'Bicep' },
 ]
 export const MEASURE_TRENDS = [

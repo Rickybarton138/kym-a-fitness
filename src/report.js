@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient.js'
 import { aggregateLifts } from './lifts.js'
 import { THEME } from './themes.js'
 import { TEST_BY_KEY } from './perfTests.js'
+import { MEASURE_SITES } from './ui.jsx'
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const num = (v) => (v == null || v === '' ? '—' : v)
@@ -29,8 +30,12 @@ export async function printClientReport(client) {
     const dtxt = delta == null ? '' : ` (${delta > 0 ? '+' : ''}${delta.toFixed(1)} kg since ${new Date(first.measured_at).toLocaleDateString('en-GB')})`
     bodyRows = `<tr><td>Weight</td><td>${num(last.weight_kg)} kg${esc(dtxt)}</td></tr>`
     if (last.body_fat != null) bodyRows += `<tr><td>Body fat</td><td>${num(last.body_fat)}%</td></tr>`
-    for (const [lbl, k] of [['Waist', 'waist_cm'], ['Chest', 'chest_cm'], ['Hips', 'hips_cm'], ['Thigh', 'thigh_cm'], ['Bicep', 'bicep_cm']]) {
-      if (last[k] != null) bodyRows += `<tr><td>${lbl}</td><td>${num(last[k])} cm</td></tr>`
+    // From the shared list, not a second copy of it. This WAS a hand-written
+    // duplicate, so adding shoulders and calf would have put them on the client's
+    // screen and the coach's view and silently left them off the printed report —
+    // which is the one a client actually takes away.
+    for (const s of MEASURE_SITES) {
+      if (last[s.key] != null) bodyRows += `<tr><td>${esc(s.label)}</td><td>${num(last[s.key])} cm</td></tr>`
     }
   }
 
@@ -76,7 +81,9 @@ export async function printClientReport(client) {
   td { padding: 7px 8px; border-bottom: 1px solid #eee; }
   td:first-child { color: #444; }
   .empty { color: #999; font-style: italic; }
-  .foot { margin-top: 34px; padding-top: 12px; border-top: 1px solid #eee; colour: #999; font-size: 11px; }
+  /* opacity, not a colour property: the britfix hook rewrites that word on
+     every save and CSS has no such property, so the rule was dead. */
+  .foot { margin-top: 34px; padding-top: 12px; border-top: 1px solid #eee; opacity: .55; font-size: 11px; }
   @media print { body { padding: 0; } @page { margin: 18mm; } }
 </style></head><body>
   <div class="head">
