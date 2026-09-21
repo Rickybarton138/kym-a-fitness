@@ -29,6 +29,25 @@ const isToday = (d) => d.toDateString() === new Date().toDateString()
 
 const MAX_AHEAD = 14 // days you can pre-log into the future
 
+// Monday of the week containing d. Weeks start Monday here because that is what
+// a UK coach means by "last week", and because a Sunday-start week splits a
+// weekend across two of them.
+const mondayOf = (d) => {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
+  return x
+}
+const weekStartFor = (offset) => {
+  const m = mondayOf(new Date())
+  m.setDate(m.getDate() + offset * 7)
+  return m
+}
+// Whole weeks between the week containing `d` and this one. Rounded, because a
+// clock change makes one of those spans 6 days and 23 hours.
+const offsetForDate = (d) => Math.round((mondayOf(d) - mondayOf(new Date())) / (7 * 86400000))
+const shortDate = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
 // The client's own saved recipes, loggable by the portion, plus a way to build
 // a new one without leaving the diary. Paul: "a tab for their recipes ... or
 // they can create a new one as part of the logging ... recipe creation at the
@@ -127,6 +146,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const [editErr, setEditErr] = useState('')
   const [targets, setTargets] = useState(null)
   const [week, setWeek] = useState(null)
+  const [weekOffset, setWeekOffset] = useState(0) // 0 = this week, -1 = last week
   const [adding, setAdding] = useState(false)
   // "I've finished logging for today" — Paul's ask, so the agenda tick means the
   // day is done rather than merely started. Flag-gated; brands without it never
@@ -160,21 +180,39 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     setMarking(false)
     onChanged?.()
   }
-  async function loadWeek() {
-    const from = new Date(); from.setDate(from.getDate() - 6); from.setHours(0, 0, 0, 0)
+  // Paul, 21 Sept: "the weekly overview with the graph. Can we have the option
+  // both for me and the client to go back week by week and maybe have a calendar
+  // drop down too so they and I can see previous weeks to spot trends?"
+  //
+  // This turned the week from a ROLLING last-7-days into real Monday-to-Sunday
+  // weeks, and that was not optional: "go back a week" on a rolling window gives
+  // you an arbitrary overlapping range, and a date picker has to answer "the
+  // week containing this date". Weeks you can name are also the only ones you
+  // can compare, which is the whole point of the ask.
+  async function loadWeek(offset = weekOffset) {
+    const start = weekStartFor(offset)
+    const end = new Date(start); end.setDate(end.getDate() + 7)
     const { data } = await supabase.from('nutrition_logs').select('calories, protein_g, carbs_g, fat_g, fibre_g, logged_at')
-      .eq('client_id', clientId).gte('logged_at', from.toISOString())
+      .eq('client_id', clientId).gte('logged_at', start.toISOString()).lt('logged_at', end.toISOString())
     const byDay = {}
     ;(data || []).forEach((l) => { const k = new Date(l.logged_at).toDateString(); (byDay[k] = byDay[k] || []).push(l) })
+    const todayKey = new Date(); todayKey.setHours(0, 0, 0, 0)
     const days = []
-    for (let i = 6; i >= 0; i--) { const dd = new Date(); dd.setDate(dd.getDate() - i); const k = dd.toDateString(); days.push({ date: dd, ...sumMacros(byDay[k] || []), logged: !!byDay[k] }) }
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(start); dd.setDate(dd.getDate() + i)
+      const k = dd.toDateString()
+      // The current week is only partly lived. Future days keep their column so
+      // the chart does not change width mid-week, but they are not "a day with
+      // nothing logged" — counting them as a zero would drag every average down.
+      days.push({ date: dd, ...sumMacros(byDay[k] || []), logged: !!byDay[k], future: dd > todayKey })
+    }
     setWeek(days)
   }
   useEffect(() => { loadDay(day) }, [day])
   useEffect(() => {
     supabase.from('macro_targets').select('*').eq('client_id', clientId).maybeSingle().then(({ data }) => setTargets(data))
-    loadWeek()
   }, [])
+  useEffect(() => { loadWeek(weekOffset) }, [weekOffset])
 
   // Correcting an entry after the fact: the portion it was logged at, which meal
   // it belongs to, and which day. Macros are stored as absolutes, so a portion
@@ -288,7 +326,8 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const totals = sumMacros(logs || [])
   const grouped = MEALS.map((m) => ({ meal: m, items: (logs || []).filter((l) => (l.meal_type || mealOf(l.logged_at)) === m) })).filter((g) => g.items.length)
   const isFuture = day > new Date() && !isToday(day)
-  const loggedDays = (week || []).filter((d) => d.logged)
+  const inPast = (week || []).filter((d) => !d.future)
+  const loggedDays = inPast.filter((d) => d.logged)
   const avg = loggedDays.length ? {
     calories: Math.round(loggedDays.reduce((a, d) => a + d.calories, 0) / loggedDays.length),
     protein_g: Math.round(loggedDays.reduce((a, d) => a + d.protein_g, 0) / loggedDays.length),
@@ -300,8 +339,12 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   // Net weekly calories — real total intake (blank days count as zero, same
   // as the bar chart) vs the full weekly target. Paul's check-in question:
   // "are they over or under for the week", not just an average day.
-  const weekTotalCal = (week || []).reduce((s, d) => s + d.calories, 0)
-  const netCal = targets?.calories ? weekTotalCal - targets.calories * 7 : null
+  // Against the days actually lived, not a flat seven. On a Tuesday the old
+  // maths compared two days of eating with a whole week's target and reported
+  // the client 5,000 kcal under.
+  const weekTotalCal = inPast.reduce((s, d) => s + d.calories, 0)
+  const daysSoFar = Math.max(inPast.length, 1)
+  const netCal = targets?.calories ? weekTotalCal - targets.calories * daysSoFar : null
 
   return (
     <div>
@@ -426,7 +469,38 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
       )}
 
       <div className="card week-snapshot">
-        <p className="eyebrow">This week</p>
+        {/* Paul, 21 Sept: "can we have the option both for me and the client to
+            go back week by week and maybe have a calendar drop down too so they
+            and I can see previous weeks to spot trends?" Both, and because this
+            card is the same component for the coach and the client, one set of
+            controls serves them both. Forward is capped at this week — there is
+            nothing to see in a week nobody has eaten yet. */}
+        <div className="wk-nav">
+          <button type="button" className="btn ghost sm" onClick={() => setWeekOffset((o) => o - 1)} aria-label="Previous week">‹</button>
+          <div className="wk-nav-label">
+            <p className="eyebrow" style={{ margin: 0 }}>
+              {weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : 'Week of'}
+            </p>
+            {/* The dates only when the name alone does not locate the week —
+                "Last week · 8 Sep – 14 Sep" is useful, "This week" twice is not. */}
+            {weekOffset !== 0 && (
+              <span className="muted-note">
+                {shortDate(weekStartFor(weekOffset))} – {shortDate(new Date(weekStartFor(weekOffset).getTime() + 6 * 86400000))}
+              </span>
+            )}
+          </div>
+          <button type="button" className="btn ghost sm" disabled={weekOffset >= 0} onClick={() => setWeekOffset((o) => Math.min(0, o + 1))} aria-label="Next week">›</button>
+        </div>
+        <div className="wk-nav-jump">
+          <label className="field">Jump to a week
+            <input
+              type="date" max={dayKey(new Date())}
+              value={dayKey(weekStartFor(weekOffset))}
+              onChange={(e) => { if (e.target.value) setWeekOffset(Math.min(0, offsetForDate(new Date(e.target.value + 'T12:00:00')))) }}
+            />
+          </label>
+          {weekOffset !== 0 && <button type="button" className="link-btn inline" onClick={() => setWeekOffset(0)}>Back to this week</button>}
+        </div>
         {/* Paul, 12 Sept: "be able to show each day what the actual total
             calories was for that day... and maybe have a bar at the end there
             as well that shows what the average was."
@@ -438,8 +512,8 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
             and the average already excludes them. */}
         <div className="diary-week">
           {(week || []).map((d, i) => (
-            <div className="dw-col" key={i}>
-              <span className={'dw-val' + (d.logged ? '' : ' none')}>{d.logged ? d.calories.toLocaleString() : '0'}</span>
+            <div className={'dw-col' + (d.future ? ' ahead' : '')} key={i}>
+              <span className={'dw-val' + (d.logged ? '' : ' none')}>{d.future ? '' : d.logged ? d.calories.toLocaleString() : '0'}</span>
               <div className="dw-bar-wrap"><div className="dw-bar" style={{ height: `${Math.round((d.calories / maxCal) * 100)}%`, background: targets?.calories && d.calories > targets.calories * 1.05 ? '#e5533c' : 'var(--accent)' }} /></div>
               <span className="dw-day">{d.date.toLocaleDateString('en-GB', { weekday: 'narrow' })}</span>
             </div>
@@ -454,7 +528,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
         </div>
         {netCal != null && avg && (
           <p className="muted-note" style={{ marginTop: 8 }}>
-            Net <b className={netCal > 0 ? 'over' : 'under'}>{netCal > 0 ? '+' : ''}{netCal} kcal</b> vs weekly target ({targets.calories} × 7)
+            Net <b className={netCal > 0 ? 'over' : 'under'}>{netCal > 0 ? '+' : ''}{netCal} kcal</b> vs target ({targets.calories} × {daysSoFar} day{daysSoFar === 1 ? '' : 's'})
           </p>
         )}
         {avg ? (
@@ -465,7 +539,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
               <Metric k="Fibre / day" v={`${avg.fibre_g}g`} d={targets?.fibre_g ? `target ${targets.fibre_g}g` : ''} />
             </div>
           </>
-        ) : <p className="muted-note" style={{ marginTop: 8 }}>No food logged this week yet.</p>}
+        ) : <p className="muted-note" style={{ marginTop: 8 }}>{weekOffset === 0 ? 'No food logged this week yet.' : 'Nothing was logged that week.'}</p>}
       </div>
 
       {adding && (
