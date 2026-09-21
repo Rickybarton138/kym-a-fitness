@@ -127,6 +127,11 @@ const ACCESSORIES = {
   calf: { name: 'Single-leg Calf Raise', sets: 3, reps: '15 each side', cue: 'Full stretch at the bottom, pause at the top.', equipment: 'Step' },
   facepull: { name: 'Band Face Pull', sets: 3, reps: '15', cue: 'Band on a bar. Lead with the elbows, finish with the hands by the ears.', equipment: 'Band' },
   wristprep: { name: 'Wrist Prep', sets: 2, reps: '60s', cue: 'Palms down, palms up, fingers back. Rock gently — this is what keeps handstands painless.', equipment: 'Bodyweight' },
+  // The adapted pair. A bad wrist still wants prep, but prep that never reaches
+  // the end of its range; a bad knee wants the hamstring work without the deep
+  // loaded flexion a Nordic asks for on the way down.
+  wristprep_gentle: { name: 'Wrist Prep (pain-free range)', sets: 2, reps: '60s', cue: 'Small circles and gentle rocking, well inside where it complains. Stop at the first pinch.', equipment: 'Bodyweight' },
+  hamwalk: { name: 'Hamstring Bridge Walkout', sets: 3, reps: '8', cue: 'From a bridge, walk the heels out and back with the hips up. Hamstrings, no knee load.', equipment: 'Bodyweight' },
 }
 
 // A session is a list of slots. A `skill` slot resolves to wherever the client
@@ -167,62 +172,214 @@ export const SESSIONS = [
   },
 ]
 
+// ---------------------------------------------------------------------------
+// Adaptations.
+//
+// Ricky, 21 Sept: "can we modify mine to account for bad knees and wrist."
+// His coach programme has said so all along — "no knee strain at all here",
+// "neutral grip keeps the wrist straight, machine not barbell, for exactly that
+// reason" — and the ladders above ignored it completely. A pistol squat is the
+// deepest loaded knee bend there is, and a handstand puts bodyweight through a
+// wrist bent to ninety degrees.
+//
+// These are not easier ladders, they are different ones, and they end somewhere
+// real: a single-leg box squat instead of a pistol, a freestanding FOREARM
+// stand instead of a handstand. Load management, not treatment.
+export const ADAPTATIONS = [
+  {
+    key: 'knees',
+    label: 'Bad knees',
+    sub: 'No deep knee bend and no jumping. Hinge and glute work leads instead, and every squat stops at a height that does not hurt.',
+  },
+  {
+    key: 'wrists',
+    label: 'Bad wrists',
+    sub: 'Nothing on flat palms under load: handles, fists and rings instead, and the handstand ladder runs on the forearms.',
+  },
+]
+
+// Ladders that replace the default when an adaptation is on. A skill with no
+// entry here is left alone: hanging is wrist-neutral and nothing in the pull
+// ladder bends a knee, so `pull` needs no version of its own.
+const VARIANTS = {
+  knees: {
+    legs: {
+      name: 'Hinge & glutes',
+      goal: 'Single-leg box squat',
+      kit: 'Floor, a bench, a box you can set high',
+      steps: [
+        { name: 'Glute Bridge', sets: 3, reps: '15', cue: 'Drive through the heels, ribs down. The knee barely moves — this is all hip.', unlock: '15 reps with the hips locking out' },
+        { name: 'Single-leg Glute Bridge', sets: 3, reps: '12 each side', cue: 'One foot down, the other knee held up. Keep the hips level the whole way.', unlock: '12 each side without the hips tipping' },
+        { name: 'Shoulder-elevated Hip Thrust', sets: 3, reps: '12', cue: 'Shoulders on a bench, chin tucked. Squeeze at the top, do not arch the back.', unlock: '12 reps with a full lockout' },
+        { name: 'Box Squat (comfortable height)', sets: 3, reps: '12', cue: 'Sit back to a box set where the knee is happy. That height is the prescription — do not chase depth.', unlock: '12 reps, and no complaint from the knee the next day' },
+        { name: 'Single-leg Romanian Deadlift', sets: 3, reps: '10 each side', cue: 'Hinge at the hip with a soft knee. You should feel the hamstring, never the kneecap.', unlock: '10 each side, balanced' },
+        { name: 'Hamstring Bridge Walkout', sets: 3, reps: '8', cue: 'From a bridge, walk the heels out and back while the hips stay up.', unlock: '8 slow walkouts' },
+        { name: 'Step-up (low box)', sets: 3, reps: '10 each side', cue: 'Low box. Push through the top foot and lower slowly — no pushing off the back leg.', unlock: '10 each side, controlled on the way down' },
+        { name: 'Single-leg Box Squat (high box)', sets: 4, reps: '8 each side', cue: 'A pistol that never goes deep. Lower the box only after a week of the knee staying quiet.', unlock: null },
+      ],
+    },
+  },
+  wrists: {
+    push: {
+      name: 'Press-up (neutral wrist)',
+      goal: 'Elevated pike press-up',
+      kit: 'Push-up handles, parallettes or a pair of dumbbells',
+      steps: [
+        { name: 'Incline Press-up on Handles', sets: 3, reps: '12', cue: 'Handles on a bench. The wrist stays straight — that is the whole point of them.', unlock: '12 reps with a straight wrist' },
+        { name: 'Press-up on Handles', sets: 3, reps: '10', cue: 'Elbows at 45 degrees. Chest down between the handles, not above them.', unlock: '10 full-range reps' },
+        { name: 'Fist Press-up', sets: 3, reps: '8', cue: 'On the knuckles, wrist in line with the forearm. On a mat, not a hard floor.', unlock: '8 reps with the wrists neutral' },
+        { name: 'Ring Press-up', sets: 3, reps: '8', cue: 'Rings just off the floor, turned out at the top. They let the wrist find its own angle.', unlock: '8 reps with the rings turned out' },
+        { name: 'Archer Press-up on Handles', sets: 3, reps: '6 each side', cue: 'Weight over one arm, the other long. The handle keeps the loaded wrist straight.', unlock: '6 each side' },
+        { name: 'Pike Press-up on Handles', sets: 3, reps: '8', cue: 'Hips high, head down between the handles.', unlock: '8 reps with the head passing the hands' },
+        { name: 'Elevated Pike Press-up on Handles', sets: 3, reps: '6', cue: 'Feet up on a box. As close to overhead pressing as a bad wrist should get.', unlock: null },
+      ],
+    },
+    dip: {
+      name: 'Dip (neutral wrist)',
+      goal: 'Ring dip',
+      kit: 'Parallel bars or rings',
+      steps: [
+        { name: 'Ring Support Hold', sets: 3, reps: '20s', cue: 'Arms locked, rings turned out, shoulders down. It starts here because the bench dip is the one a bad wrist cannot do.', unlock: '20 seconds steady' },
+        { name: 'Parallel Bar Dip (assisted)', sets: 3, reps: '8', cue: 'Band or machine. Neutral grip throughout, elbows back rather than out.', unlock: '8 reps with light assistance' },
+        { name: 'Parallel Bar Dip', sets: 4, reps: '8', cue: 'Down until the upper arm is level with the floor. No lower unless it is comfortable.', unlock: '8 full reps' },
+        { name: 'Weighted Dip', sets: 4, reps: '6', cue: 'Add weight in small steps. Depth first, load second.', unlock: '6 reps with 10% of bodyweight' },
+        { name: 'Ring Dip', sets: 4, reps: '5', cue: 'The rings will wobble. Let them, and keep the elbows in.', unlock: null },
+      ],
+    },
+    core: {
+      name: 'Plank (neutral wrist)',
+      goal: 'Front lever',
+      kit: 'Forearms, handles and a bar',
+      steps: [
+        { name: 'Front Plank on Forearms', sets: 3, reps: '45s', cue: 'Forearms down, ribs down, glutes tight. No weight through the wrist at all.', unlock: '45 seconds without the hips dropping' },
+        { name: 'Hollow Body Hold', sets: 3, reps: '30s', cue: 'Lower back pressed into the floor. Nothing touches the ground but your back.', unlock: '30 seconds with the back flat' },
+        { name: 'Hanging Knee Raise', sets: 3, reps: '12', cue: 'Hanging is wrist-neutral, so this one is unchanged. No swinging.', unlock: '12 reps without swinging' },
+        { name: 'Hanging Straight Leg Raise', sets: 3, reps: '10', cue: 'Legs straight to horizontal, then lower under control.', unlock: '10 reps to horizontal' },
+        { name: 'Tuck L-sit on Handles', sets: 4, reps: '20s', cue: 'On parallettes, never the floor. Shoulders pushed down, knees up.', unlock: '20 seconds' },
+        { name: 'L-sit on Handles', sets: 4, reps: '15s', cue: 'Legs straight and level. The handles keep the wrist out of it.', unlock: '15 seconds with the legs level' },
+        { name: 'Tuck Front Lever', sets: 4, reps: '15s', cue: 'Hanging, knees tucked, back flat and horizontal.', unlock: '15 seconds with a flat back' },
+        { name: 'Advanced Tuck Front Lever', sets: 4, reps: '12s', cue: 'Open the hips to 90 degrees, back still flat.', unlock: '12 seconds' },
+        { name: 'Straddle Front Lever', sets: 4, reps: '10s', cue: 'Legs wide and straight. The wider the legs, the easier it stays.', unlock: '10 seconds' },
+        { name: 'Front Lever', sets: 4, reps: '8s', cue: 'Body in one horizontal line, arms straight, shoulders pulled down.', unlock: null },
+      ],
+    },
+    handstand: {
+      name: 'Forearm stand',
+      goal: 'Freestanding forearm stand',
+      kit: 'A clear wall and a mat',
+      steps: [
+        { name: 'Forearm Plank to Wall', sets: 3, reps: '40s', cue: 'Forearms down, feet walked a little way up the wall. Shoulders stacked over the elbows.', unlock: '40 seconds stacked' },
+        { name: 'Wall Forearm Pike Hold', sets: 3, reps: '30s', cue: 'Feet up the wall to hip height, hips over the shoulders.', unlock: '30 seconds with the hips stacked' },
+        { name: 'Chest-to-Wall Forearm Stand', sets: 4, reps: '30s', cue: 'Belly to the wall, ribs in, toes pointed. Press the forearms down hard.', unlock: '30 seconds still' },
+        { name: 'Forearm Stand Heel Pulls', sets: 4, reps: '5', cue: 'Pull one heel off the wall and find the balance point. Come back if you overshoot.', unlock: '5 balanced seconds off the wall' },
+        { name: 'Freestanding Forearm Stand', sets: 5, reps: 'max hold', cue: 'Steer with the forearms and the head. Bail by turning out, never straight back.', unlock: null },
+      ],
+    },
+  },
+}
+
+// Accessories that change with the joint rather than needing a whole ladder.
+const ACCESSORY_SWAPS = {
+  knees: { nordic: 'hamwalk' },
+  wrists: { wristprep: 'wristprep_gentle' },
+}
+
 export const SKILL_BY_KEY = Object.fromEntries(SKILLS.map((s) => [s.key, s]))
 
 /** Every movement in the system, deduped — what the exercise dropdown offers. */
 export const STEP_NAMES = [...new Set([
   ...SKILLS.flatMap((s) => s.steps.map((st) => st.name)),
+  ...Object.values(VARIANTS).flatMap((bySkill) => Object.values(bySkill).flatMap((v) => v.steps.map((st) => st.name))),
   ...Object.values(ACCESSORIES).map((a) => a.name),
 ])]
 
+/**
+ * The ladder in force for one skill: the default, or the adapted one when an
+ * adaptation covers it. `adapt` is { knees: bool, wrists: bool }.
+ *
+ * Adaptations are checked in ADAPTATIONS order, so if two ever covered the same
+ * skill the answer would be stable rather than depending on object key order.
+ * Today none do.
+ */
+export function ladderFor(skillKey, adapt) {
+  const base = SKILL_BY_KEY[skillKey]
+  if (!base) return null
+  for (const a of ADAPTATIONS) {
+    if (!(adapt || {})[a.key]) continue
+    const v = VARIANTS[a.key]?.[skillKey]
+    if (v) return { ...base, ...v, key: skillKey, adaptedFor: a.key }
+  }
+  return base
+}
+
 /** Clamp an index to a ladder, so bad or stale data cannot render nothing. */
-export function stepIndex(skillKey, raw) {
-  const skill = SKILL_BY_KEY[skillKey]
-  if (!skill) return 0
+export function stepIndex(skillKey, raw, adapt) {
+  const ladder = ladderFor(skillKey, adapt)
+  if (!ladder) return 0
   const n = Number(raw)
   if (!Number.isFinite(n)) return 0
-  return Math.min(Math.max(Math.trunc(n), 0), skill.steps.length - 1)
+  return Math.min(Math.max(Math.trunc(n), 0), ladder.steps.length - 1)
 }
 
 /**
  * Where they are on one ladder.
  * `progress` is { [skillKey]: stepIndex } — everyone starts at step 0.
+ *
+ * The position is stored per skill, not per ladder, so turning an adaptation on
+ * keeps the step number and lands on the matching rung of the other ladder. The
+ * ladders are written to line up roughly; a shorter one clamps. That beats a
+ * second set of positions nobody would keep in sync, and beats being sent back
+ * to step one for adapting.
  */
-export function stepFor(progress, skillKey) {
-  const skill = SKILL_BY_KEY[skillKey]
-  if (!skill) return null
-  const i = stepIndex(skillKey, (progress || {})[skillKey] ?? 0)
-  return { ...skill.steps[i], index: i, last: i === skill.steps.length - 1, of: skill.steps.length, skillKey }
+export function stepFor(progress, skillKey, adapt) {
+  const ladder = ladderFor(skillKey, adapt)
+  if (!ladder) return null
+  const i = stepIndex(skillKey, (progress || {})[skillKey] ?? 0, adapt)
+  return {
+    ...ladder.steps[i],
+    index: i,
+    last: i === ladder.steps.length - 1,
+    of: ladder.steps.length,
+    skillKey,
+    adaptedFor: ladder.adaptedFor || null,
+  }
 }
 
 /** The step after this one, or null at the top of the ladder. */
-export function nextStep(progress, skillKey) {
-  const cur = stepFor(progress, skillKey)
-  const skill = SKILL_BY_KEY[skillKey]
-  if (!cur || !skill || cur.last) return null
-  return skill.steps[cur.index + 1]
+export function nextStep(progress, skillKey, adapt) {
+  const cur = stepFor(progress, skillKey, adapt)
+  const ladder = ladderFor(skillKey, adapt)
+  if (!cur || !ladder || cur.last) return null
+  return ladder.steps[cur.index + 1]
 }
 
 /**
  * Turn a session into something the guided player can run:
  * { title, focus, exercises: [{ name, sets, reps, cue, equipment }], finisher }.
  */
-export function buildSession(sessionKey, progress) {
+export function buildSession(sessionKey, progress, adapt) {
   const s = SESSIONS.find((x) => x.key === sessionKey)
   if (!s) return null
   const exercises = s.slots.map((slot) => {
     if (slot.fixed) {
-      const a = ACCESSORIES[slot.fixed]
-      return { name: a.name, sets: slot.sets || a.sets, reps: a.reps, cue: a.cue, equipment: a.equipment }
+      // An accessory can be swapped out by an adaptation without the session
+      // knowing: the Nordic in the legs session becomes a bridge walkout for a
+      // bad knee, and the session definition stays as it was written.
+      let key = slot.fixed
+      for (const a of ADAPTATIONS) {
+        if ((adapt || {})[a.key] && ACCESSORY_SWAPS[a.key]?.[key]) key = ACCESSORY_SWAPS[a.key][key]
+      }
+      const acc = ACCESSORIES[key]
+      return { name: acc.name, sets: slot.sets || acc.sets, reps: acc.reps, cue: acc.cue, equipment: acc.equipment }
     }
-    const step = stepFor(progress, slot.skill)
+    const step = stepFor(progress, slot.skill, adapt)
     if (!step) return null
     return {
       name: step.name,
       sets: slot.sets || step.sets,
       reps: step.reps,
       cue: step.cue,
-      equipment: SKILL_BY_KEY[slot.skill].kit,
+      equipment: ladderFor(slot.skill, adapt).kit,
     }
   }).filter(Boolean)
   return { title: s.title, focus: s.focus, exercises, finisher: s.finisher || null }
@@ -233,7 +390,18 @@ export function buildSession(sessionKey, progress) {
  * "Tuck Front Lever, 4 × 15s" instead of "3 sets of 10 press-ups" for twelve
  * weeks. Kept here rather than in the function so it can never drift from the
  * ladders it describes.
+ *
+ * With an adaptation on it hands over the adapted ladders INSTEAD, plus the
+ * rule behind them — otherwise the model writes a perfectly good programme out
+ * of the movements it was told to avoid.
  */
-export function laddersForPrompt() {
-  return SKILLS.map((s) => `${s.name} → ${s.goal}: ${s.steps.map((st) => st.name).join(' → ')}`).join('\n')
+export function laddersForPrompt(adapt) {
+  const lines = SKILLS.map((s) => {
+    const ladder = ladderFor(s.key, adapt)
+    return `${ladder.name} → ${ladder.goal}: ${ladder.steps.map((st) => st.name).join(' → ')}`
+  })
+  const rules = ADAPTATIONS.filter((a) => (adapt || {})[a.key]).map((a) => `- ${a.label}: ${a.sub}`)
+  return rules.length
+    ? `${lines.join('\n')}\nHARD CONSTRAINTS, these outrank everything else:\n${rules.join('\n')}`
+    : lines.join('\n')
 }

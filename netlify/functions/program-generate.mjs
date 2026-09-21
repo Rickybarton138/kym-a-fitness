@@ -9,7 +9,7 @@ const MODEL = 'claude-haiku-4-5-20251001'
 export const handler = async (event) => {
   const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
   try {
-    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo, style } = JSON.parse(event.body || '{}')
+    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo, style, adapt } = JSON.parse(event.body || '{}')
     const d = Math.min(Math.max(Number(days) || 3, 1), 6)
     const w = Math.min(Math.max(Number(weeks) || 4, 1), 16)
     // Where they train changes the answer as much as the kit does: "home, no
@@ -83,7 +83,7 @@ export const handler = async (event) => {
 
 THIS IS A CALISTHENICS PROGRAMME. Bodyweight and a bar only, whatever the equipment line says: no barbell, dumbbell, machine or cable.
 Progress it by moving ALONG these ladders, not by adding reps to the same movement week after week:
-${laddersForPrompt()}
+${laddersForPrompt(adapt)}
 Use these exact exercise names. Pick the step that suits the stated experience level, and say in the description which step each skill starts at and what unlocks the next.
 Skill work (handstand, lever, muscle-up) goes FIRST in a session while they are fresh: low reps, well short of failure. Strength work after it.
 Holds go in the reps field as a time, for example sets 4, reps "15s". A hold is not trained to failure — stop each set with a couple of seconds left.`

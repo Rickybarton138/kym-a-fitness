@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { EquipmentScan } from './EquipmentScan.jsx'
 import { buildProgramRows } from './programBuild.js'
@@ -26,10 +26,19 @@ const GOALS = ['Build muscle', 'Lose fat', 'Get stronger', 'General fitness']
 
 export function BuildMyProgram({ clientId, onDone }) {
   const [where, setWhere] = useState('gym')
-  // Calisthenics is a style, not a place: you can do it in a gym, a park or a
+  // Callisthenics is a style, not a place: you can do it in a gym, a park or a
   // spare room, so it sits alongside "where", not inside it.
   const [style, setStyle] = useState('weights')
   const stylePicker = THEME.features?.calisthenics === true
+  // The joints they train around, so a generated programme is built out of the
+  // same adapted ladders the tracker uses. Without this the builder happily
+  // writes a pistol-squat block for someone whose tracker has knees switched on.
+  const [adapt, setAdapt] = useState({})
+  useEffect(() => {
+    if (!stylePicker) return
+    supabase.from('calisthenics_adaptations').select('adaptation').eq('client_id', clientId)
+      .then(({ data }) => setAdapt(Object.fromEntries((data || []).map((r) => [r.adaptation, true]))))
+  }, [clientId])
   const [kit, setKit] = useState([])
   const [days, setDays] = useState([1, 3, 5])
   const [goal, setGoal] = useState('Build muscle')
@@ -62,7 +71,7 @@ export function BuildMyProgram({ clientId, onDone }) {
       const res = await fetch('/.netlify/functions/program-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(stylePicker && style === 'calisthenics' ? { style } : {}), ...(ramp ? { rampFrom, rampTo } : {}) }),
+        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(stylePicker && style === 'calisthenics' ? { style, adapt } : {}), ...(ramp ? { rampFrom, rampTo } : {}) }),
       })
       const j = await res.json()
       if (!j.sessions?.length) throw new Error(j.error || 'Nothing came back — try again.')
@@ -152,6 +161,7 @@ export function BuildMyProgram({ clientId, onDone }) {
             <p className="muted-note">
               Bodyweight and a bar. It builds along the same skill ladders as the Calisthenics screen, so the plan
               picks up wherever you are rather than starting you at press-ups again.
+              {Object.keys(adapt).length > 0 && ` Built around your ${Object.keys(adapt).join(' and ')}, the same as the tracker.`}
             </p>
           )}
         </>

@@ -29,6 +29,18 @@ ok('another client cannot read it', !(seen || []).some((r) => r.client_id === ja
 const { data: mine } = await jamie.from('calisthenics_progress').select('step_index').eq('client_id', jamieId)
 ok('control: the owner can read it back', (mine || []).length === 1 && mine[0].step_index === 3)
 
+// Same again for the adaptations table: which joints someone trains around is
+// theirs, and a coach reads it rather than another client.
+const mineAdapt = await jamie.from('calisthenics_adaptations').upsert({ client_id: jamieId, adaptation: 'knees' })
+ok('a client can record their own adaptation', !mineAdapt.error, mineAdapt.error?.message)
+
+const otherAdapt = await jamie.from('calisthenics_adaptations').insert({ client_id: hannahId, adaptation: 'wrists' })
+ok('a client cannot set an adaptation on someone else', !!otherAdapt.error, otherAdapt.error?.message || 'IT WENT IN')
+
+const { data: seenAdapt } = await hannah.from('calisthenics_adaptations').select('client_id, adaptation')
+ok('another client cannot read their adaptations', !(seenAdapt || []).some((r) => r.client_id === jamieId), JSON.stringify(seenAdapt))
+
+await jamie.from('calisthenics_adaptations').delete().eq('client_id', jamieId)
 await jamie.from('calisthenics_progress').delete().eq('client_id', jamieId)
 console.log(fails ? `\n${fails} FAILED` : '\nAll passed')
 process.exit(fails ? 1 : 0)

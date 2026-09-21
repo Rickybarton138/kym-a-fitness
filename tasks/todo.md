@@ -562,3 +562,31 @@ guided player built from the NEW step, and the saved plan carrying cues);
 `e2e_tenant_isolation.mjs` still green. The live programme function was called
 with style=calisthenics and came back using the ladder names and holds in the
 reps field, which also proves the new `../../src/calisthenics.js` import bundles.
+
+### Adaptations — bad knees and wrists (Ricky, 21 Sept, Rick.Fit)
+"can we modify mine to account for bad knees and wrist." His coach programme has
+said so all along ("no knee strain at all here", "neutral grip keeps the wrist
+straight, machine not barbell, for exactly that reason") and the ladders shipped
+that morning ignored it: a pistol squat is the deepest loaded knee bend there
+is, and a handstand is bodyweight through a wrist at ninety degrees.
+
+- [x] VARIANTS in `calisthenics.js`: knees replaces the legs ladder with a
+      hinge/glute track ending at a single-leg box squat; wrists replaces push,
+      dip, core and handstand with handle/fist/ring versions and a FOREARM stand.
+      Pull is untouched — hanging threatens neither joint.
+- [x] Accessory swaps: Nordic → hamstring bridge walkout (knees), wrist prep →
+      pain-free range (wrists).
+- [x] `calisthenics_adaptations` table (row per active adaptation, so adding
+      "shoulders" later is a code change, not a migration) + RLS + toggles on the
+      screen. Seeded ON for Ricky.
+- [x] Step NUMBER is kept across a swap — adapting must not send you back to
+      step one. Shorter ladders clamp.
+- [x] The AI builder reads the same flags and gets the adapted ladders plus the
+      rule as a HARD CONSTRAINT block, else it writes a pistol block for someone
+      whose tracker says knees.
+- [x] 18 unit tests, 22 end-to-end assertions green against PRODUCTION, 7 RLS
+      assertions. The live function with adapt on came back with box squats,
+      SL RDLs, press-ups on handles and a chest-to-wall forearm stand.
+
+Rick.Fit only this round. Lennon keeps the build from earlier — his toggles
+arrive whenever he is next deployed, default off.

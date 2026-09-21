@@ -28,6 +28,7 @@ const uid = (await api.auth.getUser()).data.user.id
 
 // Start from nothing, so "step 1 of N" below is a real assertion.
 await api.from('calisthenics_progress').delete().eq('client_id', uid)
+await api.from('calisthenics_adaptations').delete().eq('client_id', uid)
 
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage()
@@ -44,18 +45,30 @@ try {
   // Rick.Fit has groupedHome, so Home is section headers and the Training
   // tiles sit behind the first one, collapsed. That is where every other
   // training feature lives too.
-  const openTraining = async () => {
+  const body = () => page.textContent('body')
+
+  // There is no browser history to go back through — screens are state, not
+  // routes, and ClientApp persists the current one in localStorage. So every
+  // return trip reloads, and goes via Home only when the reload did not already
+  // land on the screen.
+  const openCalisthenics = async () => {
+    await page.goto(base)
+    await page.waitForTimeout(3000)
+    if ((await body()).includes('Where you are')) return
+    const todayTab = page.locator('nav button, .tabbar button', { hasText: 'Today' }).first()
+    if (await todayTab.count()) { await todayTab.click(); await page.waitForTimeout(800) }
     await page.locator('.tile-group-title', { hasText: 'Train' }).first().click()
     await page.waitForTimeout(400)
+    await page.locator('.tiles button', { hasText: 'Calisthenics' }).first().click()
+    await page.waitForTimeout(1500)
   }
-  await openTraining()
 
+  await page.locator('.tile-group-title', { hasText: 'Train' }).first().click()
+  await page.waitForTimeout(400)
   const tile = page.locator('.tiles button', { hasText: 'Calisthenics' }).first()
   ok('the Calisthenics tile is in the Training group on Home', await tile.count() > 0)
   await tile.click()
   await page.waitForTimeout(1200)
-
-  const body = () => page.textContent('body')
   const first = await body()
   ok('all six ladders render', ['Pull-up →', 'Press-up →', 'Dip →', 'Squat →', 'Plank →', 'Handstand →']
     .every((t) => first.includes(t)), first.match(/Step 1 of \d+/g)?.length + ' at step 1')
@@ -75,13 +88,7 @@ try {
   // The point of the table: it is still there after a reload.
   // ClientApp persists the current screen (cbk_screen), so a reload lands back
   // on this screen rather than Home — go through Home only if it did not.
-  await page.goto(base)
-  await page.waitForTimeout(3000)
-  if (!(await body()).includes('Where you are')) {
-    await openTraining()
-    await page.locator('.tiles button', { hasText: 'Calisthenics' }).first().click()
-    await page.waitForTimeout(1500)
-  }
+  await openCalisthenics()
   const after = await body()
   ok('the step survives a reload', after.includes('Scapular Pull-up') && !after.includes('Dead Hang'))
 
@@ -99,11 +106,46 @@ try {
   ok('every exercise carries its coaching cue', (plan?.exercises || []).every((e) => e.name && e.cue && e.sets && e.reps),
     JSON.stringify((plan?.exercises || []).map((e) => `${e.name} ${e.sets}x${e.reps}`)))
 
+  // --- Adaptations: "can we modify mine to account for bad knees and wrist" ---
+  await openCalisthenics()
+  const before = await body()
+  ok('without adapting, the legs ladder is the pistol track', before.includes('Squat → Pistol squat'))
+
+  await page.getByRole('checkbox', { name: 'Bad knees' }).check()
+  await page.waitForTimeout(1200)
+  await page.getByRole('checkbox', { name: 'Bad wrists' }).check()
+  await page.waitForTimeout(1200)
+  const adapted = await body()
+  ok('bad knees swaps the whole legs ladder', adapted.includes('Hinge & glutes → Single-leg box squat'))
+  ok('bad wrists turns the handstand into a forearm stand', adapted.includes('Forearm stand → Freestanding forearm stand'))
+  ok('the swap is labelled, not silent', adapted.includes('Swapped for your knees') && adapted.includes('Swapped for your wrists'))
+  ok('the pull ladder is untouched — nothing about it threatens either joint', adapted.includes('Pull-up → Muscle-up'))
+
+  const { data: flags } = await api.from('calisthenics_adaptations').select('adaptation').eq('client_id', uid)
+  ok('both adaptations are stored', (flags || []).map((f) => f.adaptation).sort().join(',') === 'knees,wrists')
+
+  // The step number is kept: pull is still on the step unlocked earlier.
+  ok('adapting does not reset your progress', adapted.includes('Scapular Pull-up'))
+
+  await page.getByRole('button', { name: /Legs & Core/ }).click()
+  await page.waitForTimeout(3000)
+  const adaptedSession = await body()
+  ok('an adapted session contains no deep knee bend', !/Pistol|Skater|Bulgarian/.test(adaptedSession), adaptedSession.match(/Glute Bridge|Box Squat/g)?.join(','))
+  ok('and no Nordic curl for a bad knee', adaptedSession.includes('Hamstring Bridge Walkout'))
+
+  const { data: adaptedPlans } = await api.from('workout_plans')
+    .select('id, exercises').eq('client_id', uid).order('created_at', { ascending: false }).limit(1)
+  const adaptedPlan = adaptedPlans?.[0]
+  const names = (adaptedPlan?.exercises || []).map((e) => e.name)
+  ok('the saved plan is the adapted one', names.includes('Hamstring Bridge Walkout') && !names.some((n) => /Pistol|Nordic/.test(n)), names.join(' | '))
+  if (adaptedPlan) await api.from('workout_plans').delete().eq('id', adaptedPlan.id)
+
   ok('no uncaught errors on any of it', errors.length === 0, errors.join(' | '))
 
   // Clean up: this is a shared database with real clients in it.
   if (plan) await api.from('workout_plans').delete().eq('id', plan.id)
   await api.from('calisthenics_progress').delete().eq('client_id', uid)
+  await api.from('calisthenics_adaptations').delete().eq('client_id', uid)
 } finally {
   await browser.close()
 }
