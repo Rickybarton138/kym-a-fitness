@@ -176,6 +176,9 @@ export const BRANDS = {
       nutritionSupport: true, groupedHome: true, groupedCoach: true, water: true, foodDayComplete: true,
       awards: true, clientProgramAi: true, gettingStarted: true, nutritionExpert: true,
       monitoring: true, coachMealPlans: true,
+      // Calisthenics: the six skill ladders, the sessions built off them and a
+      // bodyweight style in the programme builder. Rick.Fit and Lennon only.
+      calisthenics: true,
       // No PAR-Q: it is a screening form for taking on other people's risk,
       // and there is nobody here but him.
       parq: false,
@@ -244,6 +247,11 @@ export const BRANDS = {
       nutritionSupport: true, groupedHome: true, water: true,
       foodDayComplete: true, monitoring: true, awards: true,
       gettingStarted: true, workoutTimers: true,
+      // Calisthenics is bodyweight work he can do anywhere, and the tracker is
+      // his own to chase. It does NOT reopen app-written programming: the style
+      // only appears in the builder, and aiWorkoutGen stays false above, so the
+      // club keeps owning his gym work.
+      calisthenics: true,
     },
     trainGymName: 'the training ground',
     equipment: [

@@ -1,7 +1,9 @@
 // Curated exercise catalogue reflecting the kit at South Coast Power House.
 // Grouped for a native <optgroup> dropdown so clients pick instead of typing.
+import { THEME } from './themes.js'
+import { STEP_NAMES } from './calisthenics.js'
 
-export const EXERCISE_GROUPS = [
+const BASE_GROUPS = [
   {
     label: 'Legs & Glutes',
     options: [
@@ -44,3 +46,22 @@ export const EXERCISE_GROUPS = [
     ],
   },
 ]
+
+// Calisthenics (Rick.Fit + Lennon GK). The movements come from the skill ladders
+// in calisthenics.js rather than a second hand-kept list, so the dropdown, the
+// tracker and the ready-made sessions can never disagree about what a step is
+// called.
+//
+// Anything already in the catalogue is dropped: the base list has 'Plank',
+// 'Chin-up' and 'Dip' of its own, and a name in two optgroups is a dropdown that
+// looks broken. KNOWN_NAMES in WorkoutRows dedupes silently, so this would not
+// have shown up anywhere except on the screen.
+const BASE_NAMES = new Set(BASE_GROUPS.flatMap((g) => g.options))
+const CALISTHENICS_GROUP = {
+  label: 'Calisthenics',
+  options: STEP_NAMES.filter((n) => !BASE_NAMES.has(n)),
+}
+
+export const EXERCISE_GROUPS = THEME.features?.calisthenics
+  ? [...BASE_GROUPS, CALISTHENICS_GROUP]
+  : BASE_GROUPS

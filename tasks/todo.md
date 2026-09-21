@@ -514,3 +514,51 @@ turns into. Round 33 asserts the week option is unreachable on Paul's brand.
 Do NOT verify this by grepping the bundle: brands resolve at RUNTIME from the
 hostname and one bundle carries every brand, so the strings are always present.
 Check what the brand can actually reach.
+
+## Calisthenics (Ricky, 21 Sept) — Rick.Fit + Lennon GK only
+
+Asked for all three parts: the movements, ready-made sessions, a style the AI
+programme builder understands, and a skill progression tracker.
+
+The shape: ONE ladder model in `src/calisthenics.js` feeds all four surfaces, so
+a step added there shows up in the tracker, in the sessions, in the exercise
+dropdown and in the AI's vocabulary without being written out four times.
+
+- [x] `src/calisthenics.js` — six skill ladders (pull, push, dip, legs, core,
+      handstand), each an ordered list of steps with target, cue and what unlocks
+      the next. Plus SESSIONS as slot lists that resolve against where the client
+      actually is on each ladder.
+- [x] `src/exercises.js` — the ladder step names become a "Calisthenics" optgroup,
+      added to EXERCISE_GROUPS only when `THEME.features.calisthenics`. Every
+      consumer (WorkoutRows dropdown, KNOWN_NAMES, TrainerApp) picks it up free.
+- [x] `themes.js` — `calisthenics: true` on ricky and lennon.
+- [x] Migration `calisthenics_progress` (client_id + skill_key PK, step_index),
+      RLS client-owns-own + trainer read via is_my_client().
+- [x] `src/Calisthenics.jsx` — where you are on each ladder, what the next step
+      needs, and the sessions, started with startSessionNow into the guided player.
+- [x] Train hub tile + screen route + HUB_CHILDREN, all behind the flag. AND the
+      Home tile in `homeTileDefs` — which is the one that matters, because
+      Rick.Fit and Lennon have no `nav` and so never render TrainHub at all.
+      See lessons.md.
+- [x] `program-generate.mjs` — a `style` input; calisthenics gets a prompt block
+      naming the ladders so it writes holds and progressions rather than
+      "3 sets of 10 press-ups" for twelve weeks. Gated in BuildMyProgram behind
+      `calisthenics && aiWorkoutGen` — Lennon has aiWorkoutGen off ON PURPOSE
+      (club S&C owns his programming) and that must not change.
+- [x] Tests for the pure parts (ladder resolution, session building), build, deploy
+      ricky + lennon only.
+
+NOTE for Lennon: his theme is explicit that the app must not write a second
+programme alongside the club's. The tracker and the sessions are additive
+training volume for a contracted academy keeper — his call whether he uses them.
+
+DONE 2026-09-21, live on rick-fit and lennon-gk only.
+Verified: 10 unit tests (`tests/calisthenics.test.mjs`); 12 end-to-end
+assertions driving the real UI on the Rick.Fit theme
+(`tasks/e2e_calisthenics.mjs` — tile, six ladders, tap to advance, the step
+written to the table, the step surviving a reload, the session opening in the
+guided player built from the NEW step, and the saved plan carrying cues);
+4 RLS assertions on the new table (`tasks/e2e_calisthenics_rls.mjs`);
+`e2e_tenant_isolation.mjs` still green. The live programme function was called
+with style=calisthenics and came back using the ladder names and holds in the
+reps field, which also proves the new `../../src/calisthenics.js` import bundles.

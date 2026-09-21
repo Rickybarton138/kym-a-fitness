@@ -1,13 +1,15 @@
 // Coach tool: draft a multi-session training programme from a prompt (goal, days,
 // equipment, level). Returns a header + one session per training day, each with
 // real exercises. The coach reviews and publishes to the programme library.
+import { laddersForPrompt } from '../../src/calisthenics.js'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
 export const handler = async (event) => {
   const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
   try {
-    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo } = JSON.parse(event.body || '{}')
+    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo, style } = JSON.parse(event.body || '{}')
     const d = Math.min(Math.max(Number(days) || 3, 1), 6)
     const w = Math.min(Math.max(Number(weeks) || 4, 1), 16)
     // Where they train changes the answer as much as the kit does: "home, no
@@ -70,6 +72,22 @@ export const handler = async (event) => {
         'covering the whole body rather than one half of a split. Add the more specialised sessions later in the list. ' +
         'Say in the description that the volume builds up over the programme.'
       : ''
+    // Calisthenics is a different sport, not a gym programme with the barbells
+    // removed. Asked plainly for "bodyweight" the model writes three sets of ten
+    // press-ups for twelve weeks, because without the ladders it has no way to
+    // make a programme harder except by adding reps. Handing it the same
+    // progressions the tracker uses gives it somewhere to go, and keeps the
+    // exercise names identical to the ones the app already knows.
+    const styling = style === 'calisthenics'
+      ? `
+
+THIS IS A CALISTHENICS PROGRAMME. Bodyweight and a bar only, whatever the equipment line says: no barbell, dumbbell, machine or cable.
+Progress it by moving ALONG these ladders, not by adding reps to the same movement week after week:
+${laddersForPrompt()}
+Use these exact exercise names. Pick the step that suits the stated experience level, and say in the description which step each skill starts at and what unlocks the next.
+Skill work (handstand, lever, muscle-up) goes FIRST in a session while they are fresh: low reps, well short of failure. Strength work after it.
+Holds go in the reps field as a time, for example sets 4, reps "15s". A hold is not trained to failure — stop each set with a couple of seconds left.`
+      : ''
     const prompt =
       `Design a ${w}-week ${level || 'intermediate'} training programme. Goal: "${goal || 'general strength & fitness'}". ` +
       `${d} training sessions per week. ${where} Available equipment: ${equipment || 'full gym'}. ` +
@@ -79,7 +97,7 @@ export const handler = async (event) => {
       `Provide exactly ${d} sessions (one per weekly training day). Use real exercises that match the equipment — ` +
       'if a movement needs kit that is not on the list, choose a different movement. ' +
       'Sensible set/rep/RPE choices for the goal and level. 4-6 exercises per session. Keep finisher short or empty.' +
-      fence + rampLine + request
+      fence + styling + rampLine + request
     const ask = async (extra) => {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',

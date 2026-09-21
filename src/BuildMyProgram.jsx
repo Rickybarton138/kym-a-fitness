@@ -5,6 +5,7 @@ import { buildProgramRows } from './programBuild.js'
 import { sortDays } from './lib.js'
 import { WEEKDAYS } from './booking.js'
 import { TRAIN_WHERE } from './programMeta.js'
+import { THEME } from './themes.js'
 
 // Paul, 4 Sept: "The program library is awesome but I wonder if it could be an
 // option to let people use the ai to create a programme where they can state if
@@ -25,6 +26,10 @@ const GOALS = ['Build muscle', 'Lose fat', 'Get stronger', 'General fitness']
 
 export function BuildMyProgram({ clientId, onDone }) {
   const [where, setWhere] = useState('gym')
+  // Calisthenics is a style, not a place: you can do it in a gym, a park or a
+  // spare room, so it sits alongside "where", not inside it.
+  const [style, setStyle] = useState('weights')
+  const stylePicker = THEME.features?.calisthenics === true
   const [kit, setKit] = useState([])
   const [days, setDays] = useState([1, 3, 5])
   const [goal, setGoal] = useState('Build muscle')
@@ -57,7 +62,7 @@ export function BuildMyProgram({ clientId, onDone }) {
       const res = await fetch('/.netlify/functions/program-generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(ramp ? { rampFrom, rampTo } : {}) }),
+        body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(stylePicker && style === 'calisthenics' ? { style } : {}), ...(ramp ? { rampFrom, rampTo } : {}) }),
       })
       const j = await res.json()
       if (!j.sessions?.length) throw new Error(j.error || 'Nothing came back — try again.')
@@ -135,6 +140,22 @@ export function BuildMyProgram({ clientId, onDone }) {
   return (
     <div className="stack">
       <p className="muted-note">Answer three things and the AI builds you a plan that fits where you train and the days you can do.</p>
+
+      {stylePicker && (
+        <>
+          <p className="eyebrow">What kind of training?</p>
+          <div className="seg" style={{ marginBottom: 6 }}>
+            <button type="button" className={style === 'weights' ? 'on' : ''} onClick={() => setStyle('weights')}>Weights</button>
+            <button type="button" className={style === 'calisthenics' ? 'on' : ''} onClick={() => setStyle('calisthenics')}>Calisthenics</button>
+          </div>
+          {style === 'calisthenics' && (
+            <p className="muted-note">
+              Bodyweight and a bar. It builds along the same skill ladders as the Calisthenics screen, so the plan
+              picks up wherever you are rather than starting you at press-ups again.
+            </p>
+          )}
+        </>
+      )}
 
       <p className="eyebrow">Where do you train?</p>
       {TRAIN_WHERE.map((w) => (

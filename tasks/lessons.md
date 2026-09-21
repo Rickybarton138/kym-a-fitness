@@ -638,3 +638,26 @@ reasons, and each would have shipped as "verified".
   `active=false`, `trainer_code='HACKED'`. A test that can change something must
   restore it and then ASSERT the restore landed, or it is an attack with a
   tidy-up intention.
+
+## The britfix hook edits files after you write them (2026-09-21)
+A global hook rewrites American spellings to British in any file written through
+the Write/Edit tools. Writing `src/calisthenics.js` came back with its first
+comment reading "Callisthenics", and a `\n` inside a JS string literal in
+`program-generate.mjs` came back as a REAL newline, which is a syntax error the
+build reports miles from the cause.
+- It only touched comments here. It does not know the difference between prose
+  and an identifier, so a rewrite of `features.calisthenics` or a session key
+  would silently switch the feature off with everything still compiling.
+- After writing a file through the tools, `node --input-type=module -e "import(...)"`
+  it, or grep for the identifier you care about. The build alone did not catch
+  the newline: only importing the function did.
+- Prefer template literals over `\n` escapes in strings that get written this way.
+
+## A feature flag is not a route (2026-09-21)
+The calisthenics tile went into TrainHub first, which looked right — every other
+training screen is listed there. TrainHub only renders for brands that define
+`nav` in themes.js, which is Paul and Elev8. Rick.Fit and Lennon use
+DEFAULT_NAV, so the tile was live, flagged on, and unreachable.
+`homeTileDefs` is the list that every brand actually reads. Check which of the
+two a brand uses before deciding a screen is wired up, and drive it in a browser
+on the brand that asked for it — the build passes either way.

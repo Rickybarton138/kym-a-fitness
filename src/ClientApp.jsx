@@ -29,6 +29,7 @@ import { LiftProgress } from './LiftProgress.jsx'
 import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { Awards } from './Awards.jsx'
 import { BuildMyProgram } from './BuildMyProgram.jsx'
+import { Calisthenics } from './Calisthenics.jsx'
 import { StepsCatchUp } from './StepsCatchUp.jsx'
 import { BarcodeScan, MealScan } from './FoodCapture.jsx'
 import { GettingStarted } from './GettingStarted.jsx'
@@ -85,7 +86,7 @@ const DEFAULT_NAV = [
 ]
 // So a hub tab stays lit while you're inside one of its screens.
 const HUB_CHILDREN = {
-  trainhub:  ['train', 'programs', 'myprogram', 'muscles', 'testing', 'strava'],
+  trainhub:  ['train', 'programs', 'myprogram', 'muscles', 'testing', 'strava', 'calisthenics'],
   nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert', 'health'],
   body:      ['body', 'growth', 'monitoring'],
   coachhub:  ['ask', 'form', 'content', 'community', 'mygroups', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
@@ -304,6 +305,9 @@ export default function ClientApp({ profile, onSignOut }) {
           />
         )}
         {screen === 'testing' && <Testing clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'calisthenics' && THEME.features?.calisthenics && (
+          <Calisthenics clientId={profile.id} onGo={setScreen} onBack={() => setScreen(THEME.nav ? 'trainhub' : 'home')} />
+        )}
         {screen === 'muscles' && (
           <div className="stack">
             <button className="link-btn" onClick={() => setScreen('home')}>‹ Back</button>
@@ -452,6 +456,7 @@ function homeTileDefs(coachFirst) {
     { id: 'classes', group: 'Training', hero: true, show: THEME.features?.booking, Icon: IconTrain, title: 'Book a class', sub: 'See the timetable & book your spot' },
     { id: 'train', group: 'Training', show: true, Icon: IconTrain, title: 'Today’s session', sub: 'A plan built for your gym’s kit' },
     { id: 'programs', group: 'Training', hero: true, show: THEME.features?.programs, Icon: IconTrain, title: 'Program library', sub: `Follow a full plan built by ${coachFirst}` },
+    { id: 'calisthenics', group: 'Training', hero: true, show: THEME.features?.calisthenics, Icon: IconTrain, title: 'Calisthenics', sub: 'Skill ladders, and sessions built from the step you are on' },
     { id: 'muscles', group: 'Training', show: true, Icon: IconTrain, title: 'Muscle targeter', sub: 'Tap a muscle, get exercises to train it' },
     { id: 'strava', group: 'Training', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
     { id: 'testing', group: 'Training', show: THEME.features?.testing, Icon: IconTest, title: 'Performance testing', sub: 'Log your tests & track your PBs' },
@@ -3762,6 +3767,12 @@ function TrainHub({ clientId, coachName, onGo, stepTarget }) {
           <button className="tile" onClick={() => onGo('programs')}>
             <IconTrain />
             <div><b>Program library</b><span>Follow a full plan built by {coachFirst}</span></div>
+          </button>
+        )}
+        {THEME.features?.calisthenics && (
+          <button className="tile" onClick={() => onGo('calisthenics')}>
+            <IconTrain />
+            <div><b>Calisthenics</b><span>Skill ladders, and sessions built from the step you are on</span></div>
           </button>
         )}
         <button className="tile" onClick={() => onGo('muscles')}>
