@@ -213,3 +213,54 @@ export function friendlyError(e) {
   if (/jwt|token|not authenticated|expired/i.test(raw)) return 'Your session expired — sign in again and it will still be here.'
   return raw
 }
+
+// Paul, 23 Sept: "when you manually change the calorie target it doesn't then
+// adjust the macros accordingly to ensure they add up to the new target. Can we
+// have it adjust the macros as well automatically when manually adjusting the
+// calorie target and potentially trying to keep the protein target the same but
+// just adjust the carbs and fats to meet the new target?"
+//
+// Exactly that: protein is held, and the remaining energy is split between carbs
+// and fat. The split KEPT is whatever the client is already on rather than a
+// house default — someone deliberately running low-carb should not be quietly
+// moved back to the middle because they dropped their calories by 100. Only when
+// there is no existing split to read (a brand-new row) does it fall back, to
+// 35% of the non-protein energy, which lands fat at about a quarter of the total
+// and matches the rule the coach card applies.
+export function rebalanceMacros(prev, calories) {
+  const cal = Math.max(0, Math.round(Number(calories) || 0))
+  const protein_g = Math.max(0, Math.round(Number(prev?.protein_g) || 0))
+  // Protein alone can exceed a very low calorie target. Hold it anyway — it is
+  // the number the client asked to keep — and leave carbs and fat at zero
+  // rather than inventing negative food.
+  const rest = Math.max(0, cal - protein_g * 4)
+  const prevFatCal = (Number(prev?.fat_g) || 0) * 9
+  const prevCarbCal = (Number(prev?.carbs_g) || 0) * 4
+  const prevRest = prevFatCal + prevCarbCal
+  const fatShare = prevRest > 0 ? prevFatCal / prevRest : 0.35
+  const fat_g = Math.round((rest * fatShare) / 9)
+  const carbs_g = Math.max(0, Math.round((rest - fat_g * 9) / 4))
+  return { ...prev, calories: cal, protein_g, carbs_g, fat_g }
+}
+
+// What those macros actually come to, for showing the client the sum they asked
+// to be made correct.
+export const macroCalories = (t) =>
+  Math.round((Number(t?.protein_g) || 0) * 4 + (Number(t?.carbs_g) || 0) * 4 + (Number(t?.fat_g) || 0) * 9)
+
+// The target that was in force on a given day. Rows are {effective_from, ...},
+// newest first; the answer is the most recent one that had already started.
+//
+// Paul: looking back at a previous week used to re-score it against today's
+// target. A day is judged by what it was aiming at, not what the client is
+// aiming at now.
+export function targetOn(history, date, fallback = null) {
+  if (!history || !history.length) return fallback
+  const d = typeof date === 'string' ? date : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  // Rows arrive newest-first, so the first one that started on or before the day
+  // in question is the one that applied.
+  const row = history.find((h) => h.effective_from <= d)
+  // Before the earliest row we know nothing, so the oldest target we DO have is
+  // the closest honest answer — better than silently using today's.
+  return row || history[history.length - 1] || fallback
+}

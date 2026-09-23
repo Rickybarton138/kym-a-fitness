@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
-import { sumMacros, mealByHour } from './lib.js'
+import { sumMacros, mealByHour, targetOn } from './lib.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { Metric, Loader } from './ui.jsx'
 import { THEME } from './themes.js'
@@ -147,6 +147,9 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const [targets, setTargets] = useState(null)
   const [week, setWeek] = useState(null)
   const [weekOffset, setWeekOffset] = useState(0) // 0 = this week, -1 = last week
+  // The dated trail of what the target HAS been, so a past day is scored against
+  // the target it was actually chasing. Newest first.
+  const [history, setHistory] = useState([])
   const [adding, setAdding] = useState(false)
   // "I've finished logging for today" — Paul's ask, so the agenda tick means the
   // day is done rather than merely started. Flag-gated; brands without it never
@@ -204,15 +207,18 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
       // The current week is only partly lived. Future days keep their column so
       // the chart does not change width mid-week, but they are not "a day with
       // nothing logged" — counting them as a zero would drag every average down.
-      days.push({ date: dd, ...sumMacros(byDay[k] || []), logged: !!byDay[k], future: dd > todayKey })
+      days.push({ date: dd, ...sumMacros(byDay[k] || []), logged: !!byDay[k], future: dd > todayKey, target: targetOn(history, dd, targets) })
     }
     setWeek(days)
   }
   useEffect(() => { loadDay(day) }, [day])
   useEffect(() => {
     supabase.from('macro_targets').select('*').eq('client_id', clientId).maybeSingle().then(({ data }) => setTargets(data))
+    supabase.from('macro_target_history').select('*').eq('client_id', clientId)
+      .order('effective_from', { ascending: false })
+      .then(({ data }) => setHistory(data || []))
   }, [])
-  useEffect(() => { loadWeek(weekOffset) }, [weekOffset])
+  useEffect(() => { loadWeek(weekOffset) }, [weekOffset, history, targets])
 
   // Correcting an entry after the fact: the portion it was logged at, which meal
   // it belongs to, and which day. Macros are stored as absolutes, so a portion
@@ -335,7 +341,9 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     fat_g: Math.round(loggedDays.reduce((a, d) => a + d.fat_g, 0) / loggedDays.length),
     fibre_g: Math.round(loggedDays.reduce((a, d) => a + d.fibre_g, 0) / loggedDays.length),
   } : null
-  const maxCal = Math.max((targets?.calories || 0), ...(week || []).map((d) => d.calories), 1)
+  // What this particular day was aiming at, not what the client aims at now.
+  const dayTarget = targetOn(history, day, targets)
+  const maxCal = Math.max((dayTarget?.calories || 0), ...(week || []).map((d) => d.calories), 1)
   // Net weekly calories — real total intake (blank days count as zero, same
   // as the bar chart) vs the full weekly target. Paul's check-in question:
   // "are they over or under for the week", not just an average day.
@@ -344,7 +352,11 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   // the client 5,000 kcal under.
   const weekTotalCal = inPast.reduce((s, d) => s + d.calories, 0)
   const daysSoFar = Math.max(inPast.length, 1)
-  const netCal = targets?.calories ? weekTotalCal - targets.calories * daysSoFar : null
+  const weekTargetCal = inPast.reduce((s, d) => s + (Number(d.target?.calories) || 0), 0)
+  const netCal = weekTargetCal ? weekTotalCal - weekTargetCal : null
+  // Only worth naming a single number when the target did not move mid-week.
+  const oneTarget = inPast.length && inPast.every((d) => d.target?.calories === inPast[0].target?.calories)
+    ? Number(inPast[0].target?.calories) || 0 : null
 
   return (
     <div>
@@ -358,7 +370,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
 
       <div className="card">
         <div className="macro-row">
-          <span><b>{totals.calories}</b>{targets?.calories ? ` / ${targets.calories}` : ''} kcal</span>
+          <span><b>{totals.calories}</b>{dayTarget?.calories ? ` / ${dayTarget.calories}` : ''} kcal</span>
           <span><b>{totals.protein_g}</b>g P</span>
           <span><b>{totals.carbs_g}</b>g C</span>
           <span><b>{totals.fat_g}</b>g F</span>
@@ -514,7 +526,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
           {(week || []).map((d, i) => (
             <div className={'dw-col' + (d.future ? ' ahead' : '')} key={i}>
               <span className={'dw-val' + (d.logged ? '' : ' none')}>{d.future ? '' : d.logged ? d.calories.toLocaleString() : '0'}</span>
-              <div className="dw-bar-wrap"><div className="dw-bar" style={{ height: `${Math.round((d.calories / maxCal) * 100)}%`, background: targets?.calories && d.calories > targets.calories * 1.05 ? '#e5533c' : 'var(--accent)' }} /></div>
+              <div className="dw-bar-wrap"><div className="dw-bar" style={{ height: `${Math.round((d.calories / maxCal) * 100)}%`, background: d.target?.calories && d.calories > d.target.calories * 1.05 ? '#e5533c' : 'var(--accent)' }} /></div>
               <span className="dw-day">{d.date.toLocaleDateString('en-GB', { weekday: 'narrow' })}</span>
             </div>
           ))}
@@ -528,12 +540,12 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
         </div>
         {netCal != null && avg && (
           <p className="muted-note" style={{ marginTop: 8 }}>
-            Net <b className={netCal > 0 ? 'over' : 'under'}>{netCal > 0 ? '+' : ''}{netCal} kcal</b> vs target ({targets.calories} × {daysSoFar} day{daysSoFar === 1 ? '' : 's'})
+            Net <b className={netCal > 0 ? 'over' : 'under'}>{netCal > 0 ? '+' : ''}{netCal} kcal</b> vs target ({oneTarget ? `${oneTarget} × ${daysSoFar} day${daysSoFar === 1 ? '' : 's'}` : `${weekTargetCal.toLocaleString()} over ${daysSoFar} day${daysSoFar === 1 ? '' : 's'} — your target changed`})
           </p>
         )}
         {avg ? (
           <>
-            <p className="muted-note" style={{ marginTop: netCal != null ? 4 : 8 }}>Average over {loggedDays.length} logged day{loggedDays.length === 1 ? '' : 's'}: <b>{avg.calories} kcal</b>{targets?.calories ? ` (target ${targets.calories})` : ''} · {avg.carbs_g}g C · {avg.fat_g}g F</p>
+            <p className="muted-note" style={{ marginTop: netCal != null ? 4 : 8 }}>Average over {loggedDays.length} logged day{loggedDays.length === 1 ? '' : 's'}: <b>{avg.calories} kcal</b>{oneTarget ? ` (target ${oneTarget})` : ''} · {avg.carbs_g}g C · {avg.fat_g}g F</p>
             <div className="metrics-2" style={{ marginTop: 10 }}>
               <Metric k="Protein / day" v={`${avg.protein_g}g`} d={targets?.protein_g ? `target ${targets.protein_g}g` : ''} emphasize />
               <Metric k="Fibre / day" v={`${avg.fibre_g}g`} d={targets?.fibre_g ? `target ${targets.fibre_g}g` : ''} />

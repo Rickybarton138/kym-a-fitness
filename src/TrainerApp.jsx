@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays } from './lib.js'
+import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays, rebalanceMacros, macroCalories } from './lib.js'
 import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { Awards } from './Awards.jsx'
@@ -728,6 +728,7 @@ function ResetClientPassword({ client }) {
 
 function ClientDetail({ client, trainerId, onBack, onClientChanged }) {
   const [targets, setTargets] = useState(null)
+  const [targetErr, setTargetErr] = useState('')
   const [today, setToday] = useState({ protein_g: 0, carbs_g: 0, fat_g: 0, calories: 0 })
   const [logs, setLogs] = useState([])
   const [measurements, setMeasurements] = useState([])
@@ -781,11 +782,19 @@ function ClientDetail({ client, trainerId, onBack, onClientChanged }) {
   }
   useEffect(() => { load() }, [])
 
+  // Same silent-failure fix as the client's editor: the result was never
+  // looked at, so "Saved ✓" appeared whether or not the row had been written.
   async function saveTargets() {
-    await supabase.from('macro_targets').upsert({ client_id: client.id, ...targets, updated_at: new Date().toISOString() })
+    setTargetErr('')
+    const { error } = await supabase.from('macro_targets')
+      .upsert({ client_id: client.id, ...targets, updated_at: new Date().toISOString() })
+    if (error) { setTargetErr(error.message); return }
     setSaved(true); setTimeout(() => setSaved(false), 1500)
   }
-  const set = (k) => (e) => setTargets((s) => ({ ...s, [k]: Number(e.target.value) || 0 }))
+  const set = (k) => (e) => { setTargets((s) => ({ ...s, [k]: Number(e.target.value) || 0 })); setTargetErr('') }
+  // Changing the calories holds protein and moves carbs and fat to match, the
+  // same rule the client's own editor uses.
+  const setCalories = (e) => { setTargets((s) => rebalanceMacros(s, e.target.value)); setTargetErr('') }
   const latest = measurements[measurements.length - 1]
   const first = measurements[0]
   // Macro rule (Paul): fat <= 25% of calories, protein 2.0 g/kg bodyweight, carbs
@@ -888,7 +897,7 @@ function ClientDetail({ client, trainerId, onBack, onClientChanged }) {
               <div className="card">
                 <p className="eyebrow">Set macro targets</p>
                 <div className="grid-2">
-                  <label className="field">Calories<input type="number" value={targets.calories} onChange={set('calories')} /></label>
+                  <label className="field">Calories<input type="number" value={targets.calories} onChange={setCalories} /></label>
                   <label className="field">Protein (g)<input type="number" value={targets.protein_g} onChange={set('protein_g')} /></label>
                   <label className="field">Carbs (g)<input type="number" value={targets.carbs_g} onChange={set('carbs_g')} /></label>
                   <label className="field">Fat (g)<input type="number" value={targets.fat_g} onChange={set('fat_g')} /></label>
@@ -899,8 +908,10 @@ function ClientDetail({ client, trainerId, onBack, onClientChanged }) {
                     {protPerKg != null && <span style={{ color: (protPerKg < 1.5 || protPerKg > 2.2) ? 'var(--gold, #e0a83d)' : 'var(--muted)' }}>{'  ·  '}Protein {protPerKg.toFixed(1)} g/kg{(protPerKg < 1.5 || protPerKg > 2.2) ? ' — outside 1.5–2.2' : ''}</span>}
                   </p>
                 )}
+                <p className="muted-note">Those macros come to <b>{macroCalories(targets).toLocaleString()} kcal</b>.</p>
+                {targetErr && <p className="error">{targetErr} Nothing was saved — the numbers above are still what you typed.</p>}
                 <div className="nudge-actions">
-                  <button className="btn primary sm" onClick={saveTargets}>{saved ? 'Saved ✓' : 'Save targets'}</button>
+                  <button className="btn primary sm" onClick={saveTargets}>{saved ? 'Saved ✓' : targetErr ? 'Try again' : 'Save targets'}</button>
                   {bw && <button type="button" className="btn ghost sm" onClick={applyMacroRule} title="Protein 2g/kg, fat 25% of calories, carbs fill the rest">Apply the rule</button>}
                 </div>
                 {!bw && <p className="muted-note" style={{ marginTop: 6 }}>Add a bodyweight in their measurements to auto-apply the protein rule.</p>}

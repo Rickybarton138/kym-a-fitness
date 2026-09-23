@@ -7,7 +7,7 @@ import { WorkoutTimers, useWorkoutTimers } from './WorkoutTimers.jsx'
 // gated the same way the week meal plan is - a flag in themes.js, not a note
 // saying "do not deploy the others".
 const TIMERS_ON = THEME.features?.workoutTimers === true
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError} from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError, rebalanceMacros, macroCalories } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -238,9 +238,14 @@ export default function ClientApp({ profile, onSignOut }) {
     }
   }, [])
 
+  // Throws on failure so the caller can keep the form open and say so. It used
+  // to set the new targets on screen FIRST and ignore the result, which is why
+  // a write that never landed still looked like it had.
   async function saveTargets(next) {
+    const { error } = await supabase.from('macro_targets')
+      .upsert({ client_id: profile.id, ...next, updated_at: new Date().toISOString() })
+    if (error) throw new Error(error.message)
     setTargets(next)
-    await supabase.from('macro_targets').upsert({ client_id: profile.id, ...next, updated_at: new Date().toISOString() })
   }
 
   async function addMeasurement(m) {
@@ -437,7 +442,7 @@ function Home({ profile, name, coachName, heroImages, targets, consumed, remaini
         {' · '}<button className="link-btn inline" onClick={() => onGo('diary')}>food diary</button>
       </p>
 
-      {editing && <TargetEditor targets={targets} onSave={(t) => { onSaveTargets(t); setEditing(false) }} />}
+      {editing && <TargetEditor targets={targets} onSave={async (t) => { await onSaveTargets(t); setEditing(false) }} />}
 
       <HomeTiles coachFirst={coachFirst} onGo={onGo} />
     </div>
@@ -531,16 +536,50 @@ function HomeTiles({ coachFirst, onGo }) {
 
 function TargetEditor({ targets, onSave }) {
   const [v, setV] = useState({ ...targets })
-  const set = (k) => (e) => setV((s) => ({ ...s, [k]: Number(e.target.value) || 0 }))
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const [rebalanced, setRebalanced] = useState(false)
+
+  // Paul, 23 Sept: changing the calorie target used to leave the macros where
+  // they were, so the four numbers no longer added up to each other. Protein is
+  // held and carbs and fat move, keeping whatever split the client is already on.
+  const setCalories = (e) => {
+    setV((s) => rebalanceMacros(s, e.target.value))
+    setRebalanced(true)
+    setErr('')
+  }
+  const set = (k) => (e) => { setV((s) => ({ ...s, [k]: Number(e.target.value) || 0 })); setErr('') }
+
+  // Paul: "if they update all the calories and macros in one go and then save it
+  // doesn't save it." Nothing here used to look at the result: the row was sent,
+  // the editor closed, and the numbers on screen were the ones typed — so a
+  // write that never landed was indistinguishable from one that did until the
+  // next reload. Now the editor stays open and says so, with the values intact.
+  async function save() {
+    setSaving(true); setErr('')
+    try {
+      await onSave(v)
+    } catch (e) {
+      setErr(friendlyError(e) + ' Your numbers are still here — try again.')
+      setSaving(false)
+    }
+  }
+
+  const sum = macroCalories(v)
+  const off = Math.abs(sum - (Number(v.calories) || 0))
+
   return (
     <div className="card">
       <div className="grid-2">
-        <label className="field">Calories<input type="number" value={v.calories} onChange={set('calories')} /></label>
+        <label className="field">Calories<input type="number" value={v.calories} onChange={setCalories} /></label>
         <label className="field">Protein (g)<input type="number" value={v.protein_g} onChange={set('protein_g')} /></label>
         <label className="field">Carbs (g)<input type="number" value={v.carbs_g} onChange={set('carbs_g')} /></label>
         <label className="field">Fat (g)<input type="number" value={v.fat_g} onChange={set('fat_g')} /></label>
       </div>
-      <button className="btn primary" onClick={() => onSave(v)}>Save targets</button>
+      {rebalanced && <p className="muted-note">Carbs and fat adjusted to match — your protein is unchanged. Edit any of them if you would rather set them yourself.</p>}
+      <p className="muted-note">Those macros come to <b>{sum.toLocaleString()} kcal</b>{off > 25 ? ` — ${off} off your calorie target` : ''}.</p>
+      {err && <p className="error">{err}</p>}
+      <button className="btn primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : err ? 'Try again' : 'Save targets'}</button>
     </div>
   )
 }
