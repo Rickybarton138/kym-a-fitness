@@ -3674,12 +3674,37 @@ function MyProgram({ clientId, onBack, onGo }) {
   const [openId, setOpenId] = useState(null)
   const [starting, setStarting] = useState(null)
   const [guideEx, setGuideEx] = useState(null)
+  // Paul, 28 Sept: "with standard membership can we have it that when they go
+  // into their assigned programme that they can have a button to change programme. I
+  // think at the moment it looks like they haven't got the ability to remove the
+  // existing programme."
+  //
+  // He is right about this screen. Both actions already existed — picking a new
+  // programme in the library deactivates the old one, and the library carries a
+  // "Stop following" — but neither was reachable from the plan itself, which is
+  // where you are standing when you decide you want off it.
+  const [confirmStop, setConfirmStop] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const [stopErr, setStopErr] = useState('')
   useEffect(() => { loadClientProgram(clientId).then(setProg) }, [clientId])
 
   async function start(sess) {
     setStarting(sess.id)
     await startSessionNow(clientId, sess)
     onGo('train')
+  }
+
+  // By client rather than by assignment id: loadClientProgram does not return
+  // one, and "the active row for this client" is the same thing the coach's own
+  // Stop button targets.
+  async function stopFollowing() {
+    setStopping(true); setStopErr('')
+    const { error } = await supabase.from('client_programs')
+      .update({ active: false }).eq('client_id', clientId).eq('active', true)
+    setStopping(false)
+    if (error) { setStopErr(friendlyError(error) + ' Nothing has changed — try again.'); return }
+    setConfirmStop(false)
+    setProg(null)
   }
 
   if (prog === undefined) return <Loader text="Loading your plan…" />
@@ -3689,8 +3714,9 @@ function MyProgram({ clientId, onBack, onGo }) {
         <button className="link-btn" onClick={onBack}>‹ Back</button>
         <p className="eyebrow">Your plan</p>
         <h1 className="h1">No plan yet.</h1>
-        <p className="lead">You’re not on a programme yet — you can still start a session whenever you want.</p>
-        <button type="button" className="btn primary" onClick={() => onGo('train')}>Start a workout</button>
+        <p className="lead">You’re not on a programme yet — pick one from the library, or start a one-off session whenever you want.</p>
+        {THEME.features?.programs && <button type="button" className="btn primary" onClick={() => onGo('programs')}>Browse programmes</button>}
+        <button type="button" className="btn ghost" onClick={() => onGo('train')}>Start a workout</button>
       </div>
     )
   }
@@ -3708,6 +3734,31 @@ function MyProgram({ clientId, onBack, onGo }) {
         {prog.dayMap.length ? ` Training ${prog.dayMap.map((d) => WEEKDAYS[d]).join(', ')}.` : ''}
       </p>
       <p className="muted-note">{prog.byCoach ? 'Set for you by your coach.' : 'You picked this one from the library.'}</p>
+
+      {/* Changing and stopping, from the plan itself. Picking a new programme
+          already replaced the old one — the library does that — so "Change" is
+          a route to the library rather than a second mechanism. */}
+      {THEME.features?.programs && (
+        confirmStop ? (
+          <div className="card">
+            <p className="muted-note">
+              Stop following {prog.title}? Nothing you have already done is deleted — every session you logged stays in
+              your history{prog.byCoach ? ', and your coach can put you back on it' : ', and you can start it again any time'}.
+            </p>
+            {stopErr && <p className="error">{stopErr}</p>}
+            <div className="nudge-actions">
+              <button type="button" className="btn primary sm" disabled={stopping} onClick={stopFollowing}>{stopping ? 'Stopping…' : 'Yes, stop it'}</button>
+              <button type="button" className="btn ghost sm" disabled={stopping} onClick={() => { setConfirmStop(false); setStopErr('') }}>Keep it</button>
+            </div>
+          </div>
+        ) : (
+          <div className="nudge-actions">
+            <button type="button" className="btn ghost sm" onClick={() => onGo('programs')}>Change programme</button>
+            <button type="button" className="btn ghost sm" onClick={() => setConfirmStop(true)}>Stop following</button>
+          </div>
+        )
+      )}
+
       {guideEx && <ExerciseGuide ex={guideEx} onClose={() => setGuideEx(null)} />}
 
       {Array.from({ length: prog.cycleWeeks }, (_, i) => i + 1).map((w) => {
