@@ -37,7 +37,16 @@ self.addEventListener('notificationclick', (e) => {
   const url = (e.notification.data && e.notification.data.url) || '/'
   e.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-    for (const c of all) { if ('focus' in c) return c.focus() }
+    // An already-open app used to be merely focused, which dropped the url and
+    // left the person looking at whatever screen they were on last — a
+    // notification about the weekly review opening Home is a dead end. Focus it
+    // AND tell it where to go; the app listens for this message.
+    for (const c of all) {
+      if ('focus' in c) {
+        try { c.postMessage({ type: 'cbk-open', url }) } catch { /* no channel */ }
+        return c.focus()
+      }
+    }
     if (self.clients.openWindow) return self.clients.openWindow(url)
   })())
 })

@@ -6,7 +6,20 @@ import ClientApp from './ClientApp.jsx'
 import TrainerApp from './TrainerApp.jsx'
 import Onboarding from './Onboarding.jsx'
 
+// Development-only preview of the coaching UI, at /?coachpreview=1.
+// The real screens are behind authentication and this task must not use a
+// production account, so the harness renders them from fixtures instead. Guarded
+// by import.meta.env.DEV, which Vite replaces with `false` in a production
+// build, so the whole branch (and the import) is dropped from the bundle.
+const COACH_PREVIEW = import.meta.env.DEV && (() => {
+  try { return new URLSearchParams(window.location.search).has('coachpreview') } catch { return false }
+})()
+
 export default function App() {
+  if (COACH_PREVIEW) {
+    const Preview = React.lazy(() => import('./CoachPreview.jsx'))
+    return <React.Suspense fallback={null}><Preview /></React.Suspense>
+  }
   const [session, setSession] = useState(undefined) // undefined = loading
   const [profile, setProfile] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)

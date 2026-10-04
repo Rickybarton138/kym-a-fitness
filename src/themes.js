@@ -1,3 +1,4 @@
+import { HOST_BRAND as HOSTS } from './brandHosts.js'
 // White-label branding. Each coach's app is the SAME product with a different
 // skin. The active brand is chosen by ?brand=<slug> (remembered per device),
 // defaulting to Kim. All screens read the resolved THEME below, so adding a new
@@ -176,6 +177,12 @@ export const BRANDS = {
       nutritionSupport: true, groupedHome: true, groupedCoach: true, water: true, foodDayComplete: true,
       awards: true, clientProgramAi: true, gettingStarted: true, nutritionExpert: true,
       monitoring: true, coachMealPlans: true,
+      // The proactive coaching engine: the Today card, the daily readiness
+      // check-in, the weekly review, activity-aware chat and the notification
+      // preferences. Rick.Fit ONLY for now — it is a new authenticated endpoint
+      // and a new set of tables, and it proves itself on his own training before
+      // it goes near a paying client's app.
+      coach: true,
       // Calisthenics: the six skill ladders, the sessions built off them and a
       // bodyweight style in the programme builder. Rick.Fit and Lennon only.
       calisthenics: true,
@@ -422,18 +429,10 @@ export const BRANDS = {
 // every gym: each domain LOCKS to its brand (no ?brand= switching, no other
 // gym's look ever shows). Hosts not listed here (coached-by-kim, localhost) keep
 // the multi-brand behaviour below.
-const HOST_BRAND = {
-  'redefine-academy.netlify.app': 'paul',
-  'app.redefineacademy.com': 'paul',
-  'redefineacademy.com': 'paul',
-  'www.redefineacademy.com': 'paul',
-  'coached-by-kim.netlify.app': 'kim',
-  'the-physical-performance-hub.netlify.app': 'pph',
-  'elev8-hyrox.netlify.app': 'elev8',
-  'rick-fit.netlify.app': 'ricky',
-  'lennon-gk.netlify.app': 'lennon',
-  'kelsey-fit.netlify.app': 'kelsey',
-}
+// Host -> brand now lives in brandHosts.js, so a Netlify function can resolve
+// the brand from the request Host header without importing this module (which
+// reads import.meta.env at module scope and cannot load outside Vite).
+const HOST_BRAND = HOSTS
 
 function resolveBrandSlug() {
   try {

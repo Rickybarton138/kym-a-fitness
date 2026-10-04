@@ -30,6 +30,12 @@ import { ProgressPhotos } from './ProgressPhotos.jsx'
 import { Awards } from './Awards.jsx'
 import { BuildMyProgram } from './BuildMyProgram.jsx'
 import { Calisthenics } from './Calisthenics.jsx'
+import { CoachCard } from './CoachCard.jsx'
+import { CoachFeedback } from './CoachFeedback.jsx'
+import { CoachMemory } from './CoachMemory.jsx'
+import { Readiness } from './Readiness.jsx'
+import { WeeklyReview } from './WeeklyReview.jsx'
+import { coachCall, coachChanged } from './coachClient.js'
 import { StepsCatchUp } from './StepsCatchUp.jsx'
 import { BarcodeScan, MealScan } from './FoodCapture.jsx'
 import { GettingStarted } from './GettingStarted.jsx'
@@ -86,7 +92,7 @@ const DEFAULT_NAV = [
 ]
 // So a hub tab stays lit while you're inside one of its screens.
 const HUB_CHILDREN = {
-  trainhub:  ['train', 'programs', 'myprogram', 'muscles', 'testing', 'strava', 'calisthenics'],
+  trainhub:  ['train', 'programs', 'myprogram', 'muscles', 'testing', 'strava', 'calisthenics', 'readiness'],
   nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert', 'health'],
   body:      ['body', 'growth', 'monitoring'],
   coachhub:  ['ask', 'form', 'content', 'community', 'mygroups', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
@@ -108,6 +114,33 @@ export default function ClientApp({ profile, onSignOut }) {
   // never mounted again.
   const [resumeTick, setResumeTick] = useState(0)
   useEffect(() => { try { localStorage.setItem('cbk_screen', screen) } catch { /* private mode */ } }, [screen])
+
+  // Opening the right screen from a notification, in both of the cases that
+  // happen: a cold start, where the url carries ?screen=, and an app that is
+  // already open, where the service worker focuses this window and posts the
+  // url to it (focusing alone used to leave them wherever they were).
+  useEffect(() => {
+    const allowed = new Set(['home', 'train', 'food', 'review', 'readiness', 'body', 'ask', 'mealplan'])
+    const go = (raw) => {
+      if (!raw) return
+      try {
+        const target = new URL(raw, window.location.origin).searchParams.get('screen')
+        if (target && allowed.has(target)) setScreen(target)
+      } catch { /* not a url we understand */ }
+    }
+    go(window.location.href)
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('screen')) {
+        params.delete('screen')
+        const qs = params.toString()
+        window.history.replaceState({}, '', window.location.pathname + (qs ? '?' + qs : ''))
+      }
+    } catch { /* ignore */ }
+    const onMessage = (e) => { if (e.data?.type === 'cbk-open') go(e.data.url) }
+    navigator.serviceWorker?.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage)
+  }, [])
   // Targets are seeded at signup, so having them proves nothing about whether
   // the client has ever looked. Opening the screen is the signal.
   useEffect(() => {
@@ -213,6 +246,7 @@ export default function ClientApp({ profile, onSignOut }) {
       return false
     }
     foldIntoToday([data])
+    coachChanged('meal')
     return true
   }
 
@@ -275,6 +309,9 @@ export default function ClientApp({ profile, onSignOut }) {
         <WelcomeSheet profile={profile} coachName={coachName} />
         {/* Paul's "walk through" for standard members, on Home only so it never
             gets in the way once they are actually using a screen. */}
+        {screen === 'home' && THEME.features?.coach && (
+          <CoachCard profile={profile} onGo={setScreen} />
+        )}
         {screen === 'home' && THEME.features?.gettingStarted && (
           <GettingStarted profile={profile} onGo={setScreen} />
         )}
@@ -310,6 +347,12 @@ export default function ClientApp({ profile, onSignOut }) {
           />
         )}
         {screen === 'testing' && <Testing clientId={profile.id} onBack={() => setScreen('home')} />}
+        {screen === 'readiness' && THEME.features?.coach && (
+          <Readiness onBack={() => setScreen('home')} onGo={setScreen} />
+        )}
+        {screen === 'review' && THEME.features?.coach && (
+          <WeeklyReview onBack={() => setScreen('home')} onGo={setScreen} />
+        )}
         {screen === 'calisthenics' && THEME.features?.calisthenics && (
           <Calisthenics clientId={profile.id} onGo={setScreen} onBack={() => setScreen(THEME.nav ? 'trainhub' : 'home')} />
         )}
@@ -461,6 +504,8 @@ function homeTileDefs(coachFirst) {
     { id: 'classes', group: 'Training', hero: true, show: THEME.features?.booking, Icon: IconTrain, title: 'Book a class', sub: 'See the timetable & book your spot' },
     { id: 'train', group: 'Training', show: true, Icon: IconTrain, title: 'Today’s session', sub: 'A plan built for your gym’s kit' },
     { id: 'programs', group: 'Training', hero: true, show: THEME.features?.programs, Icon: IconTrain, title: 'Program library', sub: `Follow a full plan built by ${coachFirst}` },
+    { id: 'readiness', group: 'Training', show: THEME.features?.coach, Icon: IconAsk, title: 'Daily check-in', sub: 'Sleep, energy, soreness, time — then what to do about today' },
+    { id: 'review', group: 'Progress & Body', hero: true, show: THEME.features?.coach, Icon: IconTest, title: 'Weekly review', sub: 'Planned against done, food, steps and one thing to change' },
     { id: 'calisthenics', group: 'Training', hero: true, show: THEME.features?.calisthenics, Icon: IconTrain, title: 'Calisthenics', sub: 'Skill ladders, and sessions built from the step you are on' },
     { id: 'muscles', group: 'Training', show: true, Icon: IconTrain, title: 'Muscle targeter', sub: 'Tap a muscle, get exercises to train it' },
     { id: 'strava', group: 'Training', show: true, Icon: IconBody, title: 'Connect Strava', sub: 'Pull your runs, rides & workouts into the app' },
@@ -714,13 +759,13 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
     const { data } = await supabase.from('daily_steps')
       .upsert({ client_id: profile.id, day: today, steps: n, updated_at: new Date().toISOString() }, { onConflict: 'client_id,day' })
       .select().single()
-    if (data) setSteps(data)
+    if (data) { setSteps(data); coachChanged('steps') }
     setSavingSteps(false)
   }
   async function markTrained() {
     setMarking(true)
     const { error } = await supabase.from('workout_completions').insert({ client_id: profile.id, source: 'agenda' })
-    if (!error) setTrainedToday(true)
+    if (!error) { setTrainedToday(true); coachChanged('workout') }
     setMarking(false)
   }
 
@@ -2889,6 +2934,10 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
       clearSaved()
       if (data) onDone && onDone(data)
       onFinishedToday && onFinishedToday()
+      // Confirmed: the plan row came back and the completion is recorded. Only
+      // now is the coaching layer told, so feedback can never appear over a
+      // session that did not save.
+      coachChanged('workout')
       setFinished(true)
     } catch (e) {
       setSaveErr(friendlyError(e))
@@ -2902,6 +2951,9 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
       <div className="stack" style={{ marginTop: 10 }}>
         <p className="logged-ok big">Session complete ✓</p>
         <p className="muted-note">Logged and saved — nice work. It’s in your weights-lifted progress.</p>
+        {/* Mounted only here, after the plan row and the completion both came
+            back. The comparison it draws is against COMPLETED sessions only. */}
+        {THEME.features?.coach && <CoachFeedback kind="workout" />}
         <button className="btn ghost sm" onClick={exit}>Done</button>
       </div>
     )
@@ -3474,17 +3526,32 @@ function AskKim({ clientId, coachName }) {
     supabase.from('brain_chats').select('*').eq('client_id', clientId).order('created_at', { ascending: true }).limit(50).then(({ data }) => setChats(data || []))
   }, [])
 
+  // Rick.Fit asks the authenticated coaching endpoint, which loads the activity
+  // context server-side and saves the conversation itself. Every other brand
+  // keeps the original `analyze` path untouched — that function has no auth and
+  // is live for their paying clients, so it is not the place to add one.
+  const activityAware = THEME.features?.coach === true
+
   async function ask() {
     const question = q.trim()
     if (!question || busy) return
     setBusy(true); setError('')
     const tempId = 'temp-' + Date.now()
     setChats((c) => [...c, { id: tempId, question, answer: null }])
-    setQ('')
+    // The question is NOT cleared yet. A failed request used to lose what they
+    // typed, which on a phone means retyping the lot.
     try {
-      const { answer } = await analyze({ mode: 'ask', question, knowledge, comms })
-      const { data } = await supabase.from('brain_chats').insert({ client_id: clientId, question, answer }).select().single()
-      setChats((c) => c.map((x) => (x.id === tempId ? (data || { id: tempId, question, answer }) : x)))
+      if (activityAware) {
+        const res = await coachCall('chat', { question })
+        setChats((c) => c.map((x) => (x.id === tempId
+          ? { id: tempId, question, answer: res.answer, used: res.used }
+          : x)))
+      } else {
+        const { answer } = await analyze({ mode: 'ask', question, knowledge, comms })
+        const { data } = await supabase.from('brain_chats').insert({ client_id: clientId, question, answer }).select().single()
+        setChats((c) => c.map((x) => (x.id === tempId ? (data || { id: tempId, question, answer }) : x)))
+      }
+      setQ('')
     } catch (err) {
       setError(err.message)
       setChats((c) => c.filter((x) => x.id !== tempId))
@@ -3506,7 +3573,7 @@ function AskKim({ clientId, coachName }) {
             <div className="bubble q">{c.question}</div>
             {c.answer === null
               ? <div className="bubble a typing"><span className="spinner tiny" /> {coachFirst}’s brain is thinking…</div>
-              : <div className="bubble a">{c.answer}</div>}
+              : <div className="bubble a">{c.answer}<UsedRecords used={c.used} /></div>}
           </div>
         ))}
       </div>
@@ -3517,6 +3584,27 @@ function AskKim({ clientId, coachName }) {
         <button className="btn primary" disabled={busy || !q.trim()} onClick={ask}>Ask</button>
       </div>
       <p className="disclaimer-note">General guidance in {coachFirst}’s style — not medical advice. For anything specific, message {coachFirst}.</p>
+      {activityAware && <CoachMemory />}
+    </div>
+  )
+}
+
+// The compact "which of your records produced this" note under an answer.
+// Shown collapsed: it is the difference between a personalised answer and a
+// plausible one, but nobody wants fourteen bullet points in a chat bubble.
+function UsedRecords({ used }) {
+  const [open, setOpen] = useState(false)
+  if (!used?.evidence?.length) return null
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? 'Hide your records' : `Based on ${used.evidence.length} of your records`}
+      </button>
+      {open && (
+        <ul className="muted-note" style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+          {used.evidence.map((e, i) => <li key={i}>{e}</li>)}
+        </ul>
+      )}
     </div>
   )
 }

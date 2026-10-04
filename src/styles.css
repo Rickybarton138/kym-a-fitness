@@ -821,3 +821,29 @@ html.brand-ricky .btn.primary { box-shadow: 0 0 18px rgba(46, 232, 92, .28); }
 .gw-add-row { display: flex; gap: 8px; align-items: center; }
 .gw-add-row .input { flex: 1; min-width: 0; font-size: 16px; }
 .gw-add-row .btn { flex-shrink: 0; min-height: 44px; }
+
+/* Coaching engine (Rick.Fit). The skeletons exist to hold the card's height
+   while it loads: this card sits at the top of Home and resolves after a
+   network round trip, so without a reserved box everything below it jumps. */
+.coach-card { min-height: 168px; }
+.coach-skeleton { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 6px; }
+.coach-skeleton .sk { display: block; height: 12px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%; animation: sk-shimmer 1.4s ease-in-out infinite; }
+.coach-skeleton .sk-title { height: 18px; width: 62%; }
+.coach-skeleton .sk-line { width: 100%; }
+.coach-skeleton .sk-line.short { width: 48%; }
+@keyframes sk-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .coach-skeleton .sk { animation: none; } }
+.coach-why { border-top: 1px solid var(--line); padding-top: 8px; }
+/* Five-point scales for the readiness check-in. 44px tall so they are a real
+   touch target on a phone, and they stay on one row at 320px. */
+.seg.seg-five { grid-template-columns: repeat(5, 1fr); }
+.seg.seg-five button { min-height: 44px; padding: 10px 2px; font-size: 14px; }
+
+/* The secondary controls on the coaching cards (dismiss, snooze, "what is this
+   based on") measured 29px tall at 375px, which is under the 44px a thumb
+   wants. Scoped to these rows on purpose: .link-btn is used across every brand
+   and widening it everywhere would move layouts this task must not touch. */
+.coach-actions { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.coach-actions .link-btn { min-height: 44px; display: inline-flex; align-items: center; }
