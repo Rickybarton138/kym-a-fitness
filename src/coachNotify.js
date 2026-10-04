@@ -16,7 +16,11 @@ import { inQuietHours, londonDay } from './coachTime.js'
 
 export const CATEGORIES = {
   session_due: { label: 'An approaching session', default: true },
-  follow_up: { label: 'A follow-up I asked for', default: true },
+  // No `follow_up` category. It was offered as a switch before anything could
+  // generate one — there is no "ask me about this later" mechanism feeding it —
+  // and a toggle that does nothing is worse than a missing feature, because it
+  // quietly teaches people the settings are decorative.
+
   review_ready: { label: 'The weekly review is ready', default: true },
   food_gap: { label: 'Nothing logged by the afternoon', default: false },
 }
