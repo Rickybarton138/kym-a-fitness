@@ -506,6 +506,12 @@ function homeTileDefs(coachFirst) {
     { id: 'train', group: 'Training', show: true, Icon: IconTrain, title: 'Today’s session', sub: 'A plan built for your gym’s kit' },
     { id: 'programs', group: 'Training', hero: true, show: THEME.features?.programs, Icon: IconTrain, title: 'Program library', sub: `Follow a full plan built by ${coachFirst}` },
     { id: 'readiness', group: 'Training', show: THEME.features?.coach, Icon: IconAsk, title: 'Daily check-in', sub: 'Sleep, energy, soreness, time — then what to do about today' },
+    // The notification settings had exactly one route in: a small "Level 2 ·
+    // adjust" link inside the coach's check-in card, which is easy to miss and
+    // impossible to find if you are looking for the word "notifications".
+    // Flag-gated, so the brands that have lived with the buried link keep the
+    // Home screen they have.
+    { id: 'nudges', group: 'Coach & Community', show: THEME.features?.coach, Icon: IconAsk, title: 'Notifications', sub: 'Phone reminders and what the coach is allowed to nudge you about' },
     { id: 'review', group: 'Progress & Body', hero: true, show: THEME.features?.coach, Icon: IconTest, title: 'Weekly review', sub: 'Planned against done, food, steps and one thing to change' },
     { id: 'calisthenics', group: 'Training', hero: true, show: THEME.features?.calisthenics, Icon: IconTrain, title: 'Calisthenics', sub: 'Skill ladders, and sessions built from the step you are on' },
     { id: 'muscles', group: 'Training', show: true, Icon: IconTrain, title: 'Muscle targeter', sub: 'Tap a muscle, get exercises to train it' },
