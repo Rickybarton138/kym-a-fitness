@@ -264,3 +264,29 @@ export function targetOn(history, date, fallback = null) {
   // the closest honest answer — better than silently using today's.
   return row || history[history.length - 1] || fallback
 }
+
+// Paul, 4 Oct: "have we been able to add dates to the previous sessions for
+// clients and coaches to be able to see when past sessions were completed?"
+// Not until now — the session cards showed the focus and an exercise count and
+// nothing to place them in time, so a list of past sessions all looked alike.
+//
+// workout_completions records that a client trained on a DAY, not which session
+// it was, so there is no completion timestamp to show per session. What there
+// is: the day it was scheduled for, and the day it was made. For a session the
+// client started themselves those are the same day they did it; for one the
+// coach assigned, `scheduled_for` is the day it is meant for. Labelled so it
+// never claims more than it knows.
+export function sessionDateLabel(plan, now = new Date()) {
+  const raw = plan?.scheduled_for || plan?.created_at
+  if (!raw) return null
+  const d = new Date(String(raw).length <= 10 ? raw + 'T12:00:00' : raw)
+  if (Number.isNaN(d.getTime())) return null
+  const day = new Date(d); day.setHours(0, 0, 0, 0)
+  const today = new Date(now); today.setHours(0, 0, 0, 0)
+  const diff = Math.round((day - today) / 86400000)
+  const date = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+  if (diff === 0) return 'Today'
+  if (diff === -1) return 'Yesterday'
+  if (diff > 0) return `For ${date}`
+  return date
+}

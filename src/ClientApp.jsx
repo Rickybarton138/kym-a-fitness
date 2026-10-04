@@ -7,7 +7,7 @@ import { WorkoutTimers, useWorkoutTimers } from './WorkoutTimers.jsx'
 // gated the same way the week meal plan is - a flag in themes.js, not a note
 // saying "do not deploy the others".
 const TIMERS_ON = THEME.features?.workoutTimers === true
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError, rebalanceMacros, macroCalories } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError, rebalanceMacros, macroCalories, sessionDateLabel } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -33,6 +33,7 @@ import { Calisthenics } from './Calisthenics.jsx'
 import { CoachCard } from './CoachCard.jsx'
 import { CoachFeedback } from './CoachFeedback.jsx'
 import { CoachMemory } from './CoachMemory.jsx'
+import { CoachNotifications } from './CoachNotifications.jsx'
 import { Readiness } from './Readiness.jsx'
 import { WeeklyReview } from './WeeklyReview.jsx'
 import { coachCall, coachChanged } from './coachClient.js'
@@ -991,6 +992,7 @@ function NudgeSettings({ clientId, onBack }) {
       {saved && <p className="logged-ok">Saved ✓</p>}
 
       <PushReminders clientId={clientId} />
+      {THEME.features?.coach && <CoachNotifications clientId={clientId} />}
     </div>
   )
 }
@@ -3131,7 +3133,7 @@ function SessionCard({ plan, onUpdate, clientId, trainerId, onWorkoutDone, histo
       <button type="button" className="session-head" onClick={() => setOpen((o) => !o)}>
         <div>
           <div className="session-title">{plan.title}</div>
-          <div className="session-sub">{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'}{squadLocked ? ' · Squad session, logged with your coach' : plan.assigned_by ? ' · From your coach' : ''}</div>
+          <div className="session-sub">{sessionDateLabel(plan) ? sessionDateLabel(plan) + ' · ' : ''}{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'}{squadLocked ? ' · Squad session, logged with your coach' : plan.assigned_by ? ' · From your coach' : ''}</div>
         </div>
         <span className="chev">{open ? '−' : '+'}</span>
       </button>

@@ -19,7 +19,7 @@ export const LIB_IMG = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@mai
 
 // Bump when the matching changes, so cached results re-match instead of being
 // trusted forever. exercise_guides.images_v records what produced a row.
-export const MATCHER_V = 2
+export const MATCHER_V = 4
 
 export const nameKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
@@ -67,6 +67,50 @@ const GENERIC = new Set([
   'gym', 'station', 'unit', 'equipment',
 ])
 
+// Words that change WHICH exercise it is, not merely how it is described.
+// Paul's client, 4 Oct, on a tricep pushdown whose pictures showed someone on an
+// incline bench. That particular one was a stale cache, but re-matching the rest
+// turned up the same shape of error still live: "Dumbbell Lateral Raise" matched
+// "Dumbbell LYING REAR Lateral Raise" and "Barbell Bench Press" matched "Barbell
+// GUILLOTINE Bench Press" — both because the longer name shares MORE words, and
+// the extra ones cost almost nothing.
+//
+// They should cost a lot. A rear delt raise is not a lateral raise and a
+// guillotine press is a neck-level variant nobody should be shown by accident.
+// An unasked-for variant word on the candidate is penalised hard; a variant the
+// client DID ask for and the candidate lacks is penalised too, but less — a
+// plain demo of the right movement beats a vivid demo of the wrong one.
+const VARIANT = new Set([
+  // 'side' is NOT here: for a raise it is the standard name, not a variant, and
+  // penalising it moved "Lateral Raise" off Side Lateral Raise and onto a
+  // resistance-band version.
+  'lying', 'rear', 'front', 'incline', 'decline', 'seated', 'standing',
+  'kneeling', 'bent', 'guillotine', 'reverse', 'underhand', 'overhand', 'wide',
+  'close', 'narrow', 'behind', 'overhead', 'single', 'one', 'alternating', 'hammer',
+  'sumo', 'romanian', 'bulgarian', 'split', 'pause', 'deficit', 'jump',
+  'explosive', 'isometric', 'negative', 'assisted', 'suspended', 'landmine',
+])
+
+// Names a gym uses that the library spells differently. Not a general synonym
+// system — just the handful where the everyday name shares too few words with
+// the library's to clear the floor, so the client got no picture at all.
+// "Back squat" is the one that mattered: the library calls it "Barbell Squat",
+// they share only "squat", and one of the most common lifts in the app has been
+// showing no demo since the matcher was tightened.
+const ALIASES = {
+  'back squat': 'barbell squat',
+  'barbell back squat': 'barbell squat',
+  'front squat': 'front barbell squat',
+  'ohp': 'barbell shoulder press',
+  'overhead press': 'barbell shoulder press',
+  'military press': 'barbell shoulder press',
+  'bent over row': 'bent over barbell row',
+  'rdl': 'romanian deadlift',
+  'hip thrust': 'barbell hip thrust',
+  'skull crusher': 'ez bar skullcrusher',
+  'skullcrusher': 'ez bar skullcrusher',
+}
+
 const movementsIn = (ss) => ss.filter((t) => MOVEMENTS.has(t))
 
 export function buildLibrary(arr) {
@@ -82,7 +126,8 @@ export function buildLibrary(arr) {
  * Returns image PATHS from the library; callers prefix LIB_IMG.
  */
 export function matchOne(name, lib) {
-  const key = nameKey(name)
+  const raw = nameKey(name)
+  const key = ALIASES[raw] || raw
   const exact = lib.find((e) => e.key === key)
   if (exact) return { images: exact.images, name: exact.name, score: Infinity }
 
@@ -109,6 +154,13 @@ export function matchOne(name, lib) {
     if (e.stems.some((t) => t === 'barbell' || t === 'dumbbell')) s += 3
     else if (e.stems.some((t) => GOOD_EQUIP.includes(t))) s += 2
     if (e.stems.some((t) => BAD_EQUIP.includes(t))) s -= 4
+    // A variant the candidate adds and nobody asked for is the expensive one:
+    // that is how "lateral raise" became a lying rear raise. 14 is deliberately
+    // more than the 3 a dumbbell in the name earns back.
+    s -= 14 * e.stems.filter((t) => VARIANT.has(t) && !q.includes(t)).length
+    // One the client asked for and the candidate lacks is wrong too, but a plain
+    // demo of the right movement is still worth more than none.
+    s -= 6 * q.filter((t) => VARIANT.has(t) && !e.stems.includes(t)).length
     if (s > bs) { bs = s; best = e }
   }
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays, rebalanceMacros, macroCalories } from './lib.js'
+import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays, rebalanceMacros, macroCalories, sessionDateLabel } from './lib.js'
 import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { Awards } from './Awards.jsx'
@@ -1928,7 +1928,7 @@ function CoachSessionCard({ plan, trainerId, onUpdated }) {
       <button type="button" className="session-head" onClick={() => setOpen((o) => !o)}>
         <div>
           <div className="session-title">{plan.title}</div>
-          <div className="session-sub">{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'} · {source}</div>
+          <div className="session-sub">{sessionDateLabel(plan) ? sessionDateLabel(plan) + ' · ' : ''}{plan.focus} · {exs.length} exercise{exs.length === 1 ? '' : 's'} · {source}</div>
         </div>
         <span className="chev">{open ? '−' : '+'}</span>
       </button>
