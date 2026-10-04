@@ -57,68 +57,59 @@ from the Authorisation header, verifies it against `/auth/v1/user`, and then run
 every query with that token so RLS applies as the user. There is no service-role
 key involved and none should be added.
 
-## 3. Notifications — deliberately NOT switched on
+## 3. Notifications — LIVE as of 2026-10-04
 
-`netlify/functions/coach-notify.mjs` has **no `export const config = { schedule }`**,
-which is how every other scheduled function here opts in, and it additionally
-refuses to send unless `COACH_NOTIFY_ENABLED=true`. Both are deliberate.
+Done and deployed. `tasks/migration_coach_push.sql` is applied: three
+secret-gated SECURITY DEFINER functions, `coach_push_state`, `coach_push_claim`
+and `coach_push_settle`. `COACH_NOTIFY_ENABLED=true` is set on the Rick.Fit site
+only (checked: Kim's site does not have it), and `coach-notify.mjs` carries
+`schedule: '7 * * * *'`.
 
-Before it can send anything, one thing has to be built that is not in this
-change: **a brand-scoped queue RPC.**
+**The old global queue is not used.** `nudges_due`, `daily_reminders_due` and
+`coach_alerts_due` take only a secret and return every brand's clients; that is
+why Rick.Fit's deploy can push to Kim's and Paul's. `coach_push_state` takes the
+brand and joins `coach_notification_prefs`, so there are three independent gates:
+the secret, the brand, and an opt-in row that defaults to false.
 
-The existing nudge RPCs (`nudges_due`, `daily_reminders_due`, `coach_alerts_due`)
-take only `p_secret` and return **every brand's clients**. Every brand's site runs
-its own hourly copy against that one global queue, which is why Rick.Fit's deploy
-can already push to Kim's and Paul's clients. Reusing that pattern here would put
-Rick.Fit's coaching wording on a paying client's lock screen, so this function
-does not call those RPCs at all.
+Proven on production, with the test rows removed afterwards: a client opted in on
+the **kim** brand returned `kim_queue: 1` and `ricky_queue: 0` from the same
+function in the same query.
 
-What is needed, roughly:
+Also checked: a wrong secret into the RPC gets `bad secret`; `app_config` returns
+`[]` to the publishable key, so the secret cannot be read out; the sender refuses
+a manual call without the secret; and it refuses to run at all if the brand
+cannot be resolved from the Host header, rather than falling back to "everyone".
 
-```sql
-create or replace function public.coach_push_due(p_secret text, p_brand text)
-returns table (
-  client_id uuid, brand text, coach_id uuid,
-  endpoint text, p256dh text, auth text,
-  prefs jsonb, sent_today int, sent_keys text[]
-)
-language plpgsql security definer set search_path = public as $$
-begin
-  if p_secret is distinct from (select value from app_config where key = 'nudge_secret') then
-    raise exception 'no';
-  end if;
-  return query
-  select p.id, np.brand, p.trainer_id,
-         ps.endpoint, ps.p256dh, ps.auth,
-         to_jsonb(np) - 'client_id',
-         (select count(*)::int from coach_notifications n
-            where n.client_id = p.id and n.brand = p_brand
-              and n.sent_at >= date_trunc('day', now() at time zone 'Europe/London')),
-         (select coalesce(array_agg(n.dedupe_key), '{}') from coach_notifications n
-            where n.client_id = p.id and n.brand = p_brand and n.sent_at is not null)
-  from coach_notification_prefs np
-  join profiles p on p.id = np.client_id
-  join push_subscriptions ps on ps.client_id = p.id
-  where np.brand = p_brand and np.enabled;
-end $$;
-```
+One correction worth noting: the functions were first created with
+`revoke all ... from anon`, which made them uncallable — the Netlify function
+uses the publishable key, which authenticates as `anon`, so the 401 came from the
+gateway before the body ran. Execute is now granted and the secret inside is the
+gate, which is the same pattern `nudge_drop` already used.
 
-`p_brand` is the point of it. The sender resolves the brand from its own Host
-header (`brandForHost`), never from the request body, and `recipientAllowed()` in
-`src/coachNotify.js` refuses any row whose brand does not match — with a named
-reason, so a wiring mistake lands in the ledger instead of on a stranger's phone.
+**A notification is claimed before it is sent.** The row goes into
+`coach_notifications` first and the unique index on
+`(client_id, brand, dedupe_key)` decides who wins, so two instances in the same
+minute cannot both send. Dead subscriptions are pruned via `nudge_drop`.
 
-When that exists:
+### What is still needed from the user
 
-1. Dry run first. It reports what it WOULD send and sends nothing:
-   `POST /.netlify/functions/coach-notify  {"secret": "<NUDGE_CRON_SECRET>", "dryRun": true}`
-2. Check every decision line names the expected client and brand.
-3. Set `COACH_NOTIFY_ENABLED=true` on the Rick.Fit site only.
-4. Add `export const config = { schedule: '0 * * * *' }` to the function.
+Nothing is sent to anybody until they opt in, on their own device:
 
-Per-client preferences live in `coach_notification_prefs` and default to
-`enabled: false` — so even with all of the above, nobody receives anything until
-they turn it on themselves.
+1. Train tab → Phone reminders → **Turn on phone reminders** (browser permission
+   plus the push subscription). On iPhone the app has to be installed to the Home
+   Screen first.
+2. The **Coach notifications** card below it → switch it on, choose categories,
+   usual time, quiet hours and a daily cap.
+
+Until step 1 and 2 are both done the queue is empty — verified: a live run
+returns `inQueue: 0, sent: 0`.
+
+### Not yet proven
+
+No notification has actually been delivered to a device, because that needs a
+real subscription and there is none on this account yet. The send path
+(claim → webpush → settle → prune) is written and its decision logic is covered
+by 13 tests, but the delivery itself is unverified.
 
 ## 4. What is verified and what is not
 
