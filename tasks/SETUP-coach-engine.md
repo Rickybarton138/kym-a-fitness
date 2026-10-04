@@ -1,61 +1,43 @@
-# Rick.Fit coaching engine — what has to be done before it works
+# Rick.Fit coaching engine — state of play
 
-Written 2026-10-04. **Nothing in this file has been applied.** The task that
-produced this code was explicitly not to deploy or change production
-infrastructure, so the migration is written and not run, and the feature is
-behind `THEME.features.coach`, which is on for `ricky` only.
+Last updated 2026-10-04, after everything below was applied and deployed. The
+history matters less than the current state, so this is written as "what is
+true now".
 
-Until step 1 is done the app does not break — every new table read is written to
-treat "table missing" as "not loaded", and the UI says so where it matters
-("Suggestions are not being saved yet", "Memory is not set up on the server
-yet"). But nothing persists, and several things cannot work at all.
+Live on **rick-fit.netlify.app only**, behind `THEME.features.coach`. No other
+brand has the flag, and none of their sites has been redeployed.
 
 ---
 
-## 1. Apply the migration
+## 1. Database — APPLIED
 
-```
-tasks/migration_coach_engine.sql
-```
+`tasks/migration_coach_engine.sql` and `tasks/migration_coach_push.sql` are both
+applied to `ezwmfbuuopsnpanebtal`.
 
-Six new tables (`coach_suggestions`, `coach_reviews`, `coach_memory`,
-`coach_notification_prefs`, `coach_notifications`, `coach_usage`), each with RLS
-written out per table, plus four alterations to existing tables.
+Six tables: `coach_suggestions`, `coach_reviews`, `coach_memory`,
+`coach_notification_prefs`, `coach_notifications`, `coach_usage` — each with RLS
+on and two policies (client owns own, their coach may read). Four alterations:
+`soreness` and `minutes_available` on `readiness_checkins`, `used` and `brand` on
+`brain_chats`. One new unique index, `readiness_checkins (client_id, checked_on)`,
+which the table did not have — it deleted nothing, as there were no duplicate
+days.
 
-**Read this part before running it.** The migration adds a unique index on
-`readiness_checkins (client_id, checked_on)`, which the table does not have
-today — it has only an `id` primary key, so nothing currently stops two
-check-ins for the same day and the upsert the engine does has no conflict target.
-To add the index it first **deletes duplicate rows**, keeping the newest of each
-day. Check what that would remove first:
+Three secret-gated SECURITY DEFINER functions for the push queue:
+`coach_push_state`, `coach_push_claim`, `coach_push_settle`.
 
-```sql
-select client_id, checked_on, count(*)
-from readiness_checkins group by 1, 2 having count(*) > 1;
-```
+Checked after applying: `node tasks/e2e_tenant_isolation.mjs` green,
+`node tasks/e2e_calisthenics_rls.mjs` green.
 
-If that returns nothing, the delete is a no-op. There were 10 rows in the table
-when this was written.
+## 2. Configuration — DONE
 
-The other alterations are additive and safe: `soreness` and `minutes_available`
-on `readiness_checkins`, `used` and `brand` on `brain_chats`.
+- `ANTHROPIC_API_KEY` was already on the site; the coaching endpoint reuses it.
+- `COACH_NOTIFY_ENABLED=true`, set on the Rick.Fit site only and read back to
+  confirm. Kim's site does not have it.
+- `NUDGE_CRON_SECRET` was already there and is unchanged.
 
-Apply with the Supabase MCP `apply_migration`, the SQL editor, or
-`supabase db push`. Afterwards:
-
-```sh
-node tasks/e2e_tenant_isolation.mjs    # must stay green
-```
-
-## 2. Nothing else is required for the app
-
-`ANTHROPIC_API_KEY` is already set on the Rick.Fit site (the existing AI features
-use it). The coaching endpoint reads the same variable. No new secrets.
-
-The endpoint authenticates callers itself: it reads the Supabase access token
-from the Authorisation header, verifies it against `/auth/v1/user`, and then runs
-every query with that token so RLS applies as the user. There is no service-role
-key involved and none should be added.
+No service-role key is involved anywhere, and none should be added: the endpoint
+reads the caller's Supabase token, verifies it, and runs every query as them, so
+RLS does the isolation.
 
 ## 3. Notifications — LIVE as of 2026-10-04
 
@@ -111,30 +93,30 @@ real subscription and there is none on this account yet. The send path
 (claim → webpush → settle → prune) is written and its decision logic is covered
 by 13 tests, but the delivery itself is unverified.
 
-## 4. What is verified and what is not
+## 4. What is verified, and what is still not
 
-**Verified here:** 98 unit tests (74 of them new) covering recommendation
-priority, missing-versus-zero, planned-versus-completed, date and DST
-boundaries, notification suppression and de-duplication, brand and account
-isolation, stale-response ordering, failed saves, and the auth rules
-(token-derived identity, refused impersonation, body limits, key never logged,
-timeout handling). Rick.Fit, Kim and Paul production builds all pass. The UI was
-driven at 320px and 375px in a real browser through a development-only fixture
-harness (`/?coachpreview=1`, `import.meta.env.DEV` only).
+**Verified.** 98 unit tests (74 new): recommendation priority, missing-versus-zero,
+planned-versus-completed, date and DST boundaries, notification suppression and
+de-duplication, brand and account isolation, stale-response ordering, failed
+saves, and the auth rules (identity from the token, refused impersonation, body
+limits, key never logged, timeout handling). Rick.Fit, Kim and Paul builds pass.
+Both RLS suites pass against production after the migration. On the live site:
+the endpoint returns 401 without a token and with a forged one; the notification
+queue is brand-scoped (demonstrated with a seeded row, since removed); a wrong
+secret into the RPC is refused; `app_config` is unreadable to the publishable
+key. The UI was driven at 320px and 375px in a real browser.
 
-**Not verified, and why:**
+**Still not verified:**
 
-- **Anything that needs the new tables.** The migration is not applied, so the
-  suggestion cache, saved reviews, memory, notification preferences and the usage
-  counter have never run against a real database. The code paths that read them
-  are written and tested against mocks, including the "table is missing" branch.
-- **The live endpoint end to end.** It has never been called against production
-  data, because that would mean using a real account.
 - **The AI prose.** No model call has been made from this code. The prompts are
-  built and asserted in tests; the text that comes back is unseen.
-- **The real screens at mobile width.** The harness reproduces the components'
-  markup and classes and is checked in a browser, but it does not mount
-  `CoachCard`, `Readiness` or `WeeklyReview` themselves — those need a session.
-  Layout and CSS are verified; the components' own behaviour at that width is not.
-- **The service-worker notification click.** The code is written and the app side
-  listens for it, but it needs a real push to prove.
+  built and asserted in tests; the first sentence it writes to anybody will be
+  the first anyone has read.
+- **A delivered notification.** The queue is empty because there is no push
+  subscription on the account yet, so claim → send → settle → prune has never run
+  end to end against a device.
+- **The real screens at mobile width.** The dev harness (`/?coachpreview=1`)
+  reproduces the components' markup and classes, and is checked in a browser, but
+  it does not mount `CoachCard`, `Readiness` or `WeeklyReview` — those need a
+  session. Layout and CSS are verified; the components' own behaviour is not.
+- **The service-worker notification click.** Written on both sides, needs a real
+  push to prove.
