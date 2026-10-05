@@ -661,3 +661,18 @@ DEFAULT_NAV, so the tile was live, flagged on, and unreachable.
 `homeTileDefs` is the list that every brand actually reads. Check which of the
 two a brand uses before deciding a screen is wired up, and drive it in a browser
 on the brand that asked for it — the build passes either way.
+
+## A feature flag is not a route — the second time (2026-10-04)
+Already written down on 2026-09-21 after the calisthenics tile went into
+TrainHub, which Rick.Fit never renders. Repeated anyway: the notification
+settings screen had exactly one way in — an inline "Level 2 · adjust" link
+inside the coach's check-in card on Home — and I told Ricky to look in the Train
+tab. There was nothing there, or anywhere.
+- Shipping a screen means shipping the tap that reaches it, on the brand that
+  asked for it. `homeTileDefs` is what Rick.Fit and Lennon actually read;
+  TrainHub only exists for brands with a `nav` key (Paul, Elev8).
+- Before telling anyone where to find something, open it the way they would:
+  sign in on that brand and click through. A one-minute browser check would have
+  caught both of these.
+- Writing the lesson down is not applying it. This one goes in the pre-ship list,
+  not the archive.
