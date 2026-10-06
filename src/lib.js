@@ -277,7 +277,10 @@ export function targetOn(history, date, fallback = null) {
 // coach assigned, `scheduled_for` is the day it is meant for. Labelled so it
 // never claims more than it knows.
 export function sessionDateLabel(plan, now = new Date()) {
-  const raw = plan?.scheduled_for || plan?.created_at
+  // A real completion beats a scheduled or created date, and is labelled so a
+  // coach can tell "they did this" from "this is pencilled in".
+  const done = plan?.completed_at
+  const raw = done || plan?.scheduled_for || plan?.created_at
   if (!raw) return null
   const d = new Date(String(raw).length <= 10 ? raw + 'T12:00:00' : raw)
   if (Number.isNaN(d.getTime())) return null
@@ -285,6 +288,7 @@ export function sessionDateLabel(plan, now = new Date()) {
   const today = new Date(now); today.setHours(0, 0, 0, 0)
   const diff = Math.round((day - today) / 86400000)
   const date = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+  if (done) return diff === 0 ? 'Done today' : diff === -1 ? 'Done yesterday' : `Done ${date}`
   if (diff === 0) return 'Today'
   if (diff === -1) return 'Yesterday'
   if (diff > 0) return `For ${date}`

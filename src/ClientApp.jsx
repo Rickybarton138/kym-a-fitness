@@ -2926,7 +2926,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
     try {
       const exercises = fromPlayer(exs)
       const { data, error } = await supabase.from('workout_plans')
-        .update({ exercises }).eq('id', plan.id).select().single()
+        .update({ exercises, completed_at: new Date().toISOString() }).eq('id', plan.id).select().single()
       if (error) throw new Error(error.message)
 
       // Mark today complete once — guard against a duplicate if they already tapped "Done".

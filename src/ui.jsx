@@ -92,26 +92,66 @@ export function Loader({ text }) {
   )
 }
 
-export function TrendChart({ data, field }) {
-  const w = 300, h = 120, pad = 10
+export const measuredOn = (d) => {
+  if (!d) return null
+  const dt = new Date(String(d).length <= 10 ? d + 'T12:00:00' : d)
+  return Number.isNaN(dt.getTime()) ? null : dt
+}
+const shortDay = (d) => (measuredOn(d) || new Date()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
+// Paul, 6 Oct: "with the measurements, it shows the graph below, can we add into
+// the graph the axis data that shows time and the measurement changes?"
+//
+// It was a bare sparkline: a shape with no numbers on it, so you could see that
+// something had moved but not what it moved from, to, or over how long. Now it
+// carries a value axis and dated ends.
+//
+// Deliberately restrained: three gridlines, hairline, in the muted ink the rest
+// of the app uses for secondary text, never the series colour. The latest value
+// is the only point labelled directly — a number on every point is noise on a
+// 320px-wide chart.
+export function TrendChart({ data, field, unit = '' }) {
   if (!data || data.length < 2) {
     return <p className="muted-note">Log at least two measurements to see your trend.</p>
   }
+  const w = 320, h = 150
+  const padL = 34, padR = 10, padT = 12, padB = 24   // room for the axes
   const ys = data.map((d) => Number(d[field]))
-  const min = Math.min(...ys) - 0.5, max = Math.max(...ys) + 0.5
-  const span = max - min || 1
-  const pts = data.map((d, i) => {
-    const x = pad + (i / (data.length - 1)) * (w - pad * 2)
-    const y = pad + (1 - (Number(d[field]) - min) / span) * (h - pad * 2)
-    return [x, y]
-  })
+  const lo = Math.min(...ys), hi = Math.max(...ys)
+  // A flat series would give a zero span and put the line on an edge; give it
+  // some air so it reads as "unchanged" rather than as a boundary.
+  const minV = lo === hi ? lo - 1 : lo - (hi - lo) * 0.15
+  const maxV = lo === hi ? hi + 1 : hi + (hi - lo) * 0.15
+  const span = maxV - minV || 1
+  const x = (i) => padL + (i / (data.length - 1)) * (w - padL - padR)
+  const y = (v) => padT + (1 - (Number(v) - minV) / span) * (h - padT - padB)
+
+  const pts = data.map((d, i) => [x(i), y(d[field])])
   const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ')
-  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} ${h - pad} L${pts[0][0].toFixed(1)} ${h - pad} Z`
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} ${h - padB} L${pts[0][0].toFixed(1)} ${h - padB} Z`
+  const ticks = [maxV, (maxV + minV) / 2, minV]
+  const round = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10)
+  const last = data[data.length - 1]
+
   return (
-    <svg className="trend" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Trend">
+    <svg className="trend" viewBox={`0 0 ${w} ${h}`} role="img"
+      aria-label={`${field} from ${round(ys[0])}${unit} on ${shortDay(data[0].measured_at)} to ${round(ys[ys.length - 1])}${unit} on ${shortDay(last.measured_at)}`}>
+      {ticks.map((v, i) => (
+        <g key={i}>
+          <line x1={padL} x2={w - padR} y1={y(v)} y2={y(v)} stroke="var(--line)" strokeWidth="1" />
+          <text x={padL - 5} y={y(v) + 3} textAnchor="end" fontSize="9" fill="var(--muted)">{round(v)}</text>
+        </g>
+      ))}
       <path d={area} fill="var(--accent)" opacity="0.12" />
       <path d={line} fill="none" stroke="var(--accent-hi)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="4" fill="var(--accent-hi)" />
+      {/* Dated ends rather than a tick per reading: with a dozen measurements the
+          labels would collide, and what a coach wants from the x axis is the
+          period it covers. */}
+      <text x={padL} y={h - 8} fontSize="9" fill="var(--muted)">{shortDay(data[0].measured_at)}</text>
+      <text x={w - padR} y={h - 8} textAnchor="end" fontSize="9" fill="var(--muted)">{shortDay(last.measured_at)}</text>
+      <text x={pts[pts.length - 1][0]} y={Math.max(10, pts[pts.length - 1][1] - 8)} textAnchor="end"
+        fontSize="10" fontWeight="700" fill="var(--text)">{round(ys[ys.length - 1])}{unit}</text>
     </svg>
   )
 }
@@ -255,6 +295,17 @@ export function BodyTrends({ measurements }) {
   const series = rows.filter((m) => m[active.key] != null)
   return (
     <>
+      {/* Paul, 5 Oct: "on the coaches view, when in a clients tab, can it
+          display the date their measurements were added?" The card showed the
+          numbers and the change with nothing to say WHEN — so a coach could not
+          tell last week's weigh-in from one in July. Shared component, so the
+          client sees it too, which is right: they are their own dates. */}
+      <p className="muted-note" style={{ marginBottom: 8 }}>
+        Last measured <b>{shortDay(latest.measured_at)}</b>
+        {rows.length > 1 && rows[0].measured_at !== latest.measured_at
+          ? ` · ${rows.length} readings since ${shortDay(rows[0].measured_at)}`
+          : ''}
+      </p>
       <div className="metrics-2">
         {MEASURE_TRENDS.map((t) => {
           if (latest[t.key] == null) return null
@@ -271,7 +322,7 @@ export function BodyTrends({ measurements }) {
           ))}
         </div>
       )}
-      {series.length > 0 && <TrendChart data={series} field={active.key} />}
+      {series.length > 0 && <TrendChart data={series} field={active.key} unit={active.unit} />}
     </>
   )
 }

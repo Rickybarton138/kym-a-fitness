@@ -72,18 +72,39 @@ export function aggregateLifts(plans, manual) {
 // train can see exactly what they did last time, not just a pre-filled number.
 // Expects plans newest-first (matches every existing history query in the app)
 // and keeps the first — i.e. most recent — match per exercise name.
+// The last time they actually DID each exercise. Plans arrive newest-first, so
+// the first entry carrying logged sets wins and a skipped week is passed over —
+// Paul, 6 Oct: "if they miss a session or skip an exercise one week it shows as
+// empty the following week."
+//
+// Skipping an empty week already worked. What did not: a session the COACH
+// wrote with target reps and weights, which the client never performed, looked
+// exactly like one they had — so "last time" could hand back the coach's own
+// prescription as if it were a lift. `completed_at` is what tells them apart.
+//
+// Two passes, not one. Completed sessions are the truth; everything else is a
+// fallback for history logged before that column existed, so an old account does
+// not suddenly lose its numbers.
 export function lastSetsByName(plans) {
+  const list = plans || []
+  const loggedSets = (ex) => (Array.isArray(ex.sets)
+    ? ex.sets.filter((s) => String(s.reps ?? '').trim() || String(s.weight ?? '').trim())
+    : [])
   const map = {}
-  for (const p of plans || []) {
-    for (const ex of p.exercises || []) {
-      const key = (ex.name || '').trim().toLowerCase()
-      if (!key || map[key]) continue
-      const sets = Array.isArray(ex.sets)
-        ? ex.sets.filter((s) => String(s.reps ?? '').trim() || String(s.weight ?? '').trim())
-        : []
-      if (!sets.length) continue
-      map[key] = { sets, date: p.created_at || null }
+  const collect = (only) => {
+    for (const p of list) {
+      if (only && !p.completed_at) continue
+      if (!only && p.completed_at) continue
+      for (const ex of p.exercises || []) {
+        const key = (ex.name || '').trim().toLowerCase()
+        if (!key || map[key]) continue
+        const sets = loggedSets(ex)
+        if (!sets.length) continue
+        map[key] = { sets, date: p.completed_at || p.created_at || null, confirmed: !!p.completed_at }
+      }
     }
   }
+  collect(true)   // sessions we know were done
+  collect(false)  // then older history, which predates the marker
   return map
 }
