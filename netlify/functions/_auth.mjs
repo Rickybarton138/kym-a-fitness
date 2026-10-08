@@ -19,9 +19,12 @@
 //      does not want one: account isolation is then enforced by the database,
 //      not by my remembering to add `.eq('client_id', id)` to every query.
 //
-// `analyze.mjs` is deliberately untouched. It serves four other brands' paying
-// clients with no Authorization header; adding auth there would break all of
-// them, and the coaching chat lives here instead.
+// `analyze.mjs` stays deliberately unauthenticated. It serves four other brands'
+// paying clients with no Authorization header; adding auth there would break all
+// of them, and the coaching chat lives here instead. It does now import the CORS
+// constant below, because the native shell is a different origin and every
+// endpoint the client calls needs the headers — that is presentation, not auth,
+// and none of the above changes.
 
 import { brandForHost } from '../../src/brandHosts.js'
 
