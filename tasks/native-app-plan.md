@@ -46,8 +46,20 @@ capability, and there is an obvious one Paul asked for in August and never got:
 cannot be done from a PWA — that is on record in todo.md as "NOT feasible" — and
 it is the single feature that both earns the app and gets it past review.
 
-**Still unanswered from August, and it gates the design:** what do Paul's clients
-actually track steps on? Phone, or a watch, and which? Ask him before building.
+**ANSWERED by Paul, 8 Oct:** "Apple health and android health will be the main
+ones. Some use FitBit, some use Garmin watches but I think if we're pulling from
+Apple/Android/Samsung health that should cover it for steps."
+
+He is right, and it makes Phase 2 considerably smaller than it looked. Fitbit,
+Garmin and Samsung all write into the platform health store — Apple Health on
+iOS, Health Connect on Android. So reading the OS health store covers every watch
+his clients own, and there is NO need for per-vendor integrations: no Fitbit
+OAuth, no Garmin API, no Samsung SDK, and no four separate sets of credentials,
+rate limits and terms to maintain. Two integrations, not five.
+
+Worth knowing the limits of that: a watch only reaches the health store if the
+client has that vendor's sync switched on, and Garmin in particular is opt-in per
+data type. Expect to have to tell clients to turn it on rather than assume it.
 
 **3. Whose account is it published under?**
 An app called "ReDefine Academy" published by "Ricky Barton t/a Rick.AI" is
