@@ -14,7 +14,9 @@ import { CameraCapture } from './CameraCapture.jsx'
 // Both take onLog(macros) and nothing else, which is why they drop straight
 // into the diary sheet as well as their own screens.
 
-export function BarcodeScan({ onLog, onBack }) {
+// `pick` makes this choose an INGREDIENT rather than log a food — no meal, and
+// the button says so. Same scanner and the same Open Food Facts lookup.
+export function BarcodeScan({ onLog, onBack, pick }) {
   const [code, setCode] = useState('')
   const [state, setState] = useState('idle') // idle | loading | found | notfound | error
   const [product, setProduct] = useState(null)
@@ -160,9 +162,9 @@ export function BarcodeScan({ onLog, onBack }) {
             </div>
           )}
           {scaled && <p className="muted-note">This portion: {scaled.calories} kcal · {scaled.protein_g}g P · {scaled.carbs_g}g C · {scaled.fat_g}g F</p>}
-          <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+          {!pick && <label className="field" style={{ marginTop: 8 }}>Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>}
           <button className="btn primary" style={{ marginTop: 10 }} disabled={!scaled || g <= 0} onClick={async () => { if (scaled) { const ok = (await onLog({ ...scaled, meal_type: meal })) !== false; setLogged(ok ? 'ok' : 'device') } }}>
-            {logged === 'ok' ? 'Added to today ✓' : logged === 'device' ? 'Saved on this phone' : 'Add to today'}
+            {logged === 'ok' ? (pick ? 'Added ✓' : 'Added to today ✓') : logged === 'device' ? 'Saved on this phone' : pick ? 'Add to recipe' : 'Add to today'}
           </button>
         </div>
       )}

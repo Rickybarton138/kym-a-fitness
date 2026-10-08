@@ -31,7 +31,13 @@ const dayLabel = (s) => {
 // when adding on a client's behalf from ClientDetail. NOT the same as whose
 // diary this is: a coach adding food to a client's diary is still the
 // contributor for library-attribution/RLS purposes.
-export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
+// `pick` turns this from "log a food" into "choose a food". Paul, 8 Oct:
+// "in the clients recipe creation bit, when manually creating recipes can we add
+// the option for either searching and barcode scanning for the individual
+// items?" An ingredient has no meal and no day, so those controls are hidden
+// and the button says what it actually does. Everything else — coach foods,
+// Open Food Facts, the gram/serving maths — is the same code the diary uses.
+export function FoodSearch({ onLog, defaultMeal, contributorId, coachId, pick }) {
   const [q, setQ] = useState('')
   const [api, setApi] = useState([])
   const [coachFoods, setCoachFoods] = useState([])
@@ -146,11 +152,13 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
           <span><b>{selected.f || 0}g</b> fat</span>
           <span className="kcal"><b>{selected.k}</b> kcal</span>
         </div>
-        <div className="grid-2">
-          <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-          <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
-        </div>
-        <button className="btn primary" onClick={logFixed}>Add food{day !== todayStr() ? ` · ${dayLabel(day)}` : ''}</button>
+        {!pick && (
+          <div className="grid-2">
+            <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+            <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
+          </div>
+        )}
+        <button className="btn primary" onClick={logFixed}>{pick ? 'Add to recipe' : `Add food${day !== todayStr() ? ` · ${dayLabel(day)}` : ''}`}</button>
       </div>
     )
   }
@@ -176,11 +184,13 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
           <span><b>{Math.round((selected.f || 0) * factor)}g</b> fat</span>
           <span className="kcal"><b>{Math.round(selected.k * factor)}</b> kcal</span>
         </div>
-        <div className="grid-2">
-          <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-          <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
-        </div>
-        <button className="btn primary" disabled={!g} onClick={logSelected}>Add food{day !== todayStr() ? ` · ${dayLabel(day)}` : ''}</button>
+        {!pick && (
+          <div className="grid-2">
+            <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+            <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
+          </div>
+        )}
+        <button className="btn primary" disabled={!g} onClick={logSelected}>{pick ? 'Add to recipe' : `Add food${day !== todayStr() ? ` · ${dayLabel(day)}` : ''}`}</button>
       </div>
     )
   }
@@ -205,16 +215,18 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId }) {
 
       {!manual
         ? <button className="btn ghost" onClick={() => setManual(true)}>Can’t find it? Add manually</button>
-        : <><div className="grid-2">
-            <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
-            <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
-          </div>
-          <ManualFood dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { saveToLibrary(m); setManual(false); confirm({ ...m, meal_type: meal, logged_at: dayISO(day) }, m.name) }} onCancel={() => setManual(false)} /></>}
+        : <>{!pick && (
+            <div className="grid-2">
+              <label className="field">Meal<select value={meal} onChange={(e) => setMeal(e.target.value)}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></label>
+              <label className="field">Day<input type="date" value={day} onChange={(e) => setDay(e.target.value || todayStr())} /></label>
+            </div>
+          )}
+          <ManualFood pick={pick} dayLabel={day !== todayStr() ? dayLabel(day) : ''} onLog={(m) => { saveToLibrary(m); setManual(false); confirm({ ...m, meal_type: meal, logged_at: dayISO(day) }, m.name) }} onCancel={() => setManual(false)} /></>}
     </div>
   )
 }
 
-function ManualFood({ onLog, onCancel, dayLabel }) {
+function ManualFood({ onLog, onCancel, dayLabel, pick }) {
   const [name, setName] = useState('')
   const [kcal, setKcal] = useState('')
   const [p, setP] = useState('')
@@ -237,7 +249,7 @@ function ManualFood({ onLog, onCancel, dayLabel }) {
         <label className="field">Fibre (g)<input type="number" inputMode="decimal" value={fb} onChange={(e) => setFb(e.target.value)} /></label>
       </div>
       <div className="nudge-actions">
-        <button className="btn primary sm" disabled={!name.trim() || !kcal} onClick={add}>Add food{dayLabel ? ` · ${dayLabel}` : ''}</button>
+        <button className="btn primary sm" disabled={!name.trim() || !kcal} onClick={add}>{pick ? 'Add to recipe' : `Add food${dayLabel ? ` · ${dayLabel}` : ''}`}</button>
         <button className="btn ghost sm" onClick={onCancel}>Cancel</button>
       </div>
     </div>

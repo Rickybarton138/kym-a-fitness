@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { scaleImageToBase64 } from './lib.js'
+import { THEME } from './themes.js'
+import { FoodSearch } from './FoodSearch.jsx'
+import { BarcodeScan } from './FoodCapture.jsx'
 
 // Create a recipe three ways: import from a link, build your own (ingredients +
 // servings -> per-portion macros), or paste text / snap a screenshot (great for
@@ -99,6 +102,23 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
   const [bTitle, setBTitle] = useState('')
   const [bServings, setBServings] = useState('1')
   const [rows, setRows] = useState([{ name: '', calories: '', protein_g: '', carbs_g: '', fat_g: '' }])
+  // Which ingredient row is being filled from the food database, and how.
+  const [picking, setPicking] = useState(null)
+
+  // A chosen food lands in the row with its macros already worked out for the
+  // portion they picked, and closes the picker — the next thing they want is the
+  // next ingredient, not to admire this one.
+  function fillRow(i, f) {
+    setRows((rs) => rs.map((row, j) => (j !== i ? row : {
+      name: f.name || row.name,
+      calories: String(Math.round(Number(f.calories) || 0)),
+      protein_g: String(Math.round(Number(f.protein_g) || 0)),
+      carbs_g: String(Math.round(Number(f.carbs_g) || 0)),
+      fat_g: String(Math.round(Number(f.fat_g) || 0)),
+      fibre_g: String(Math.round(Number(f.fibre_g) || 0)),
+    })))
+    setPicking(null)
+  }
 
   async function callAI(payload) {
     setBusy(true); setError('')
@@ -120,16 +140,21 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
 
   function buildDraft() {
     const n = Math.max(1, Number(bServings) || 1)
+    // Fibre is summed too now. Typed by hand nobody filled it in, so it was not
+    // worth a column in the row; picked from the food database it arrives for
+    // free, and dropping it here would quietly lose it on the way to the recipe.
     const tot = rows.reduce((a, r) => ({
       calories: a.calories + (Number(r.calories) || 0), protein_g: a.protein_g + (Number(r.protein_g) || 0),
       carbs_g: a.carbs_g + (Number(r.carbs_g) || 0), fat_g: a.fat_g + (Number(r.fat_g) || 0),
-    }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 })
+      fibre_g: a.fibre_g + (Number(r.fibre_g) || 0),
+    }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 })
     setDraft({
       title: bTitle.trim() || 'My recipe', servings: n,
       ingredients: rows.map((r) => r.name.trim()).filter(Boolean),
       method: '', image_url: null, source_url: null,
       calories: Math.round(tot.calories / n), protein_g: Math.round(tot.protein_g / n),
       carbs_g: Math.round(tot.carbs_g / n), fat_g: Math.round(tot.fat_g / n),
+      fibre_g: Math.round(tot.fibre_g / n),
     })
   }
   const setRow = (i, k, v) => setRows((r) => r.map((row, j) => (j === i ? { ...row, [k]: v } : row)))
@@ -176,6 +201,28 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
                 {rows.map((r, i) => (
                   <div className="card" key={i} style={{ background: 'var(--surface-2)' }}>
                     <input className="ex-name-in" value={r.name} onChange={(e) => setRow(i, 'name', e.target.value)} placeholder="Ingredient (e.g. 500g beef mince)" />
+                    {/* Paul, 8 Oct: "when manually creating recipes can we add the
+                        option for either searching and barcode scanning for the
+                        individual items?" Typing the macros of every ingredient by
+                        hand is the slowest thing in the app; the food database and
+                        the scanner already know them. */}
+                    <div className="nudge-actions" style={{ marginTop: 6 }}>
+                      <button type="button" className="btn ghost sm" onClick={() => setPicking(picking?.row === i && picking.how === 'search' ? null : { row: i, how: 'search' })}>
+                        {picking?.row === i && picking.how === 'search' ? 'Close' : 'Search foods'}
+                      </button>
+                      {THEME.features?.barcode && (
+                        <button type="button" className="btn ghost sm" onClick={() => setPicking(picking?.row === i && picking.how === 'scan' ? null : { row: i, how: 'scan' })}>
+                          {picking?.row === i && picking.how === 'scan' ? 'Close' : 'Scan a barcode'}
+                        </button>
+                      )}
+                    </div>
+                    {picking?.row === i && (
+                      <div className="card" style={{ background: 'var(--surface)', marginTop: 8 }}>
+                        {picking.how === 'search'
+                          ? <FoodSearch pick clientId={clientId} contributorId={clientId} onLog={(f) => { fillRow(i, f); return true }} />
+                          : <BarcodeScan pick onLog={(f) => { fillRow(i, f); return true }} />}
+                      </div>
+                    )}
                     <div className="grid-2" style={{ marginTop: 6 }}>
                       <label className="field">kcal<input type="number" value={r.calories} onChange={(e) => setRow(i, 'calories', e.target.value)} /></label>
                       <label className="field">Protein<input type="number" value={r.protein_g} onChange={(e) => setRow(i, 'protein_g', e.target.value)} /></label>
