@@ -2,7 +2,14 @@
 // database. Returns normalised per-100g macros. Best-effort — the app falls back
 // to its built-in common-foods list if this is unavailable.
 
+import { CORS } from './_auth.mjs'
+
 export const handler = async (event) => {
+  // The native shell runs on https://localhost, so every call to these
+  // functions is cross-origin and the browser preflights it. Without this
+  // the request never leaves the device. See tasks/native-app-plan.md.
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
+
   const q = (event.queryStringParameters?.q || '').trim()
   if (q.length < 2) return json(200, { results: [] })
   try {
@@ -46,5 +53,5 @@ function r1(v) {
 }
 
 function json(statusCode, obj) {
-  return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(obj) }
+  return { statusCode, headers: CORS, body: JSON.stringify(obj) }
 }

@@ -3,6 +3,7 @@
 
 import { kbForPrompt } from '../../src/nutritionExpert.js'
 import { LEVELS } from '../../src/accountability.js'
+import { CORS } from './_auth.mjs'
 
 // Model routing by job (cost lever). Vision stays on Opus for macro/photo
 // accuracy; client-facing coaching text runs on Sonnet; mechanical/internal
@@ -360,8 +361,13 @@ function buildFormPrompt(exercise, persona) {
 }
 
 export const handler = async (event) => {
+  // The native shell runs on https://localhost, so every call to these
+  // functions is cross-origin and the browser preflights it. Without this
+  // the request never leaves the device. See tasks/native-app-plan.md.
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
+
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method not allowed' }
+    return json(405, { error: 'POST only.' })
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -646,7 +652,7 @@ ${sample}`,
 function json(statusCode, obj) {
   return {
     statusCode,
-    headers: { 'content-type': 'application/json' },
+    headers: CORS,
     body: JSON.stringify(obj),
   }
 }

@@ -1,5 +1,6 @@
 // On-demand: send a single test push to the caller's own subscription.
 import webpush from 'web-push'
+import { CORS } from './_auth.mjs'
 
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
@@ -10,7 +11,11 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 }
 
 export const handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed' }
+  // The native shell runs on https://localhost, so every call to these
+  // functions is cross-origin and the browser preflights it. Without this
+  // the request never leaves the device. See tasks/native-app-plan.md.
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
+  if (event.httpMethod !== 'POST') return json(405, { error: 'POST only.' })
   if (!process.env.VAPID_PRIVATE_KEY) return json(500, { error: 'Push not configured on the server.' })
   let body
   try { body = JSON.parse(event.body || '{}') } catch { return json(400, { error: 'Invalid JSON.' }) }
@@ -30,5 +35,5 @@ export const handler = async (event) => {
 }
 
 function json(statusCode, obj) {
-  return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(obj) }
+  return { statusCode, headers: CORS, body: JSON.stringify(obj) }
 }

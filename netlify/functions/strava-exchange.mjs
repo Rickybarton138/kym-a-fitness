@@ -1,6 +1,12 @@
 // Exchange the OAuth code from Strava for tokens. Keeps the client secret server-side.
+import { CORS } from './_auth.mjs'
+
 export const handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed' }
+  // The native shell runs on https://localhost, so every call to these
+  // functions is cross-origin and the browser preflights it. Without this
+  // the request never leaves the device. See tasks/native-app-plan.md.
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
+  if (event.httpMethod !== 'POST') return json(405, { error: 'POST only.' })
   const id = process.env.STRAVA_CLIENT_ID, secret = process.env.STRAVA_CLIENT_SECRET
   if (!id || !secret) return json(500, { error: 'Strava is not configured on the server.' })
   let body
@@ -25,5 +31,5 @@ export const handler = async (event) => {
 }
 
 function json(statusCode, obj) {
-  return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(obj) }
+  return { statusCode, headers: CORS, body: JSON.stringify(obj) }
 }

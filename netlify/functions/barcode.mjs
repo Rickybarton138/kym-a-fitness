@@ -4,6 +4,7 @@
 //                            -> { status:'not_found' }
 // Everything is per 100g; the client scales by the portion the user enters.
 //
+import { CORS } from './_auth.mjs'
 // The photo path exists because BarcodeDetector is Chromium-only: on iPhone the
 // screen said "scan the barcode" with no way to scan one. Every EAN/UPC has its
 // digits printed underneath, so reading those off a photo works on any device.
@@ -55,6 +56,11 @@ function num(v) {
 const round = (v) => (v == null ? null : Math.round(v))
 
 export const handler = async (event) => {
+  // The native shell runs on https://localhost, so every call to these
+  // functions is cross-origin and the browser preflights it. Without this
+  // the request never leaves the device. See tasks/native-app-plan.md.
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' }
+
   if (event.httpMethod !== 'POST') return json(405, { error: 'POST only.' })
 
   let body
@@ -112,5 +118,5 @@ export const handler = async (event) => {
 }
 
 function json(statusCode, obj) {
-  return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(obj) }
+  return { statusCode, headers: CORS, body: JSON.stringify(obj) }
 }
