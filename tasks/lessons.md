@@ -676,3 +676,29 @@ tab. There was nothing there, or anywhere.
   caught both of these.
 - Writing the lesson down is not applying it. This one goes in the pre-ship list,
   not the archive.
+
+## A silent installer is a blocked installer (2026-10-08)
+`winget install` for the JDK ran for over ten minutes in a background shell and
+produced zero bytes of output and nothing on disk. It was not slow. A
+machine-scope MSI wants UAC, and in a non-interactive session that prompt is
+invisible and waits forever.
+- Zero output plus no artefact is a block, not progress. Downloads print
+  progress; a stalled elevation prompt prints nothing at all.
+- Prefer the zip over the installer for dev toolchains. Temurin and the Android
+  cmdline-tools both ship as plain zips that extract to a user directory, need
+  no admin, and leave the machine's PATH alone.
+- Kill the stalled task before switching approach, or it sits there holding a
+  lock on whatever it half-created.
+
+## The native shell is a different origin (2026-10-08)
+The Capacitor build runs on `https://localhost`, so every call to
+app.redefineacademy.com is cross-origin. Ten endpoints already set CORS; the
+other eight the client calls never needed it, because the web app is same-origin
+and nothing ever preflighted them.
+- Barcode scan, meal and fridge scan, food search, Strava and push test would
+  all have failed on Ricky's phone with nothing in the UI to explain why.
+- Found it by probing production with curl and an `Origin: https://localhost`
+  header — not by reading the code and reasoning about it. Four lines of curl
+  settled what an afternoon of reading would have left as a guess.
+- Generalises: anything that quietly assumed same-origin breaks only once it is
+  running on a phone. Check it before each native phase, not after.
