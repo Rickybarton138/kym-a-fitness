@@ -99,7 +99,7 @@ installed, which I can do.
 
 Each phase ends somewhere useful, so it can stop between any two.
 
-**Phase 1 — Capacitor in, Android running.** Add Capacitor, generate the Android
+**Phase 1 — Capacitor in, Android running. DONE 8 Oct, see below.** Add Capacitor, generate the Android
 project, wire `VITE_DEFAULT_BRAND=paul`, icons and splash from the existing brand
 assets, and get a real APK running on a device. No store, no account needed.
 *Ends with: an installable ReDefine Android app.*
@@ -158,3 +158,87 @@ Google Play account (if not already held), Apple signing identities and App Stor
 Connect app records, anything requiring the Apple or Google account password,
 pressing Submit, and answering the question Paul was asked in August about what
 his clients track steps on.
+
+## Phase 1, as built (8 Oct 2026)
+
+`android/app/build/outputs/apk/debug/app-debug.apk` — 7.9 MB, debug-signed,
+sideloadable. Verified with `aapt2 dump badging` rather than trusting a zero
+exit code:
+
+    package: name='uk.co.rickai.redefineacademy' versionCode='1' versionName='1.0'
+    application-label:'ReDefine Academy'
+    minSdkVersion:'24'  targetSdkVersion:'36'
+
+minSdk 24 means Android 7 and up, which is everything his clients will be on.
+
+### The toolchain on this machine
+
+No Android Studio, and none needed. `winget install` for the JDK sat for over
+ten minutes producing nothing and installing nothing — a machine-scope MSI wants
+UAC, and in a non-interactive session that prompt is invisible and waits
+forever. Both pieces went in as plain zips instead, which need no elevation:
+
+| Piece | Where | Why that version |
+|---|---|---|
+| Temurin JDK 21.0.12.1 LTS | `C:\Users\info\tools\jdk21` | AGP 8.13 floors at 17, Capacitor 8 wants 21; 21 clears both |
+| Android cmdline-tools | `C:\Users\info\tools\android-sdk` | platform-tools 37.0.1, platforms;android-36, build-tools;36.0.0 |
+
+Three traps, all of which cost a cycle or would have:
+
+- The cmdline-tools zip extracts to `cmdline-tools/bin`, but `sdkmanager`
+  demands `cmdline-tools/latest/bin` or it cannot find its own SDK root.
+- `sdkmanager --licenses` prompts per licence and blocks forever on a null
+  stdin. Pipe `yes` into it.
+- `org.gradle.java.home` is not enough on its own. That setting tells Gradle
+  which JDK to build with, but the `gradlew` launcher needs a JVM before Gradle
+  exists, so `JAVA_HOME` has to be set in the environment too. The first build
+  failed on exactly this.
+
+Wiring, chosen so no future session needs to export anything:
+
+- `android/local.properties` holds `sdk.dir` (gitignored, machine-local)
+- `C:\Users\info\.gradle\gradle.properties` holds `org.gradle.java.home`.
+  Deliberately NOT `android/gradle.properties`: that file is committed, and
+  hardcoding this machine's path there would break the Codemagic build in
+  Phase 4.
+- `JAVA_HOME`, `ANDROID_HOME`, `ANDROID_SDK_ROOT` set as user env vars.
+
+First build took 21m30s cold (Gradle distribution, AGP and the whole AndroidX
+graph). Rebuilds are incremental.
+
+### What the native build found that the web build never could
+
+Most of the endpoints the client app calls refuse a cross-origin preflight. The
+shell runs on `https://localhost`, so every call to app.redefineacademy.com is
+cross-origin; the web app is same-origin and never needed the headers. Probed
+against production rather than reasoned about:
+
+    barcode        preflight=405  allow-origin=(none)
+    food-search    preflight=200  allow-origin=(none)
+    analyze        preflight=405  allow-origin=(none)
+    coach          preflight=204  allow-origin=*
+
+In the app that is barcode scan, meal and fridge scan, food search, Strava and
+the push test — most of the food logging Paul asked for last week — failing with
+nothing in the UI to explain why. Fixed by giving the eight client-called
+endpoints the house `CORS` headers from `_auth.mjs` plus an OPTIONS
+short-circuit. **Deployed as a draft and verified there; still needs promoting
+to production.**
+
+This is the general shape of the risk for Phases 2-4: the native shell is a
+different origin, and anything that quietly assumed same-origin breaks only once
+it is running on a phone.
+
+### Left for later, deliberately
+
+- **Store icon art.** The launcher icon is Paul's full lockup, which is correct
+  but reduces to an unreadable wordmark at 48dp. The bolt alone would read, and
+  it cannot be extracted from this artwork — the wordmark is knocked out of the
+  bolt and most letters break its outline, so masking leaves holes. Redrawing
+  the mark is Paul's call. Phase 5.
+- **The update prompt.** `UpdatePrompt.jsx` polls `/version.json`, which inside
+  the shell resolves to the copy bundled in the APK and therefore never
+  changes. That is the right behaviour natively — updates come from the store,
+  not from a refresh — so it is left alone, not fixed.
+- **Release signing.** This is the debug key. A Play upload needs a real
+  keystore, which is Phase 5 work and belongs somewhere safer than the repo.
