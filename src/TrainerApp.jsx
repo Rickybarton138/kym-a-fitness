@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
-import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays, rebalanceMacros, macroCalories, sessionDateLabel } from './lib.js'
+import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays, rebalanceMacros, macroCalories, sessionDateLabel, apiUrl } from './lib.js'
 import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { Awards } from './Awards.jsx'
@@ -676,7 +676,7 @@ function ResetClientPassword({ client }) {
     setBusy(true); setErr('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/.netlify/functions/coach-reset-password', {
+      const res = await fetch(apiUrl('/.netlify/functions/coach-reset-password'), {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${session?.access_token || ''}` },
         body: JSON.stringify({ clientId: client.id, password: pw.trim() }),
@@ -2028,7 +2028,7 @@ function CoachRecipes({ coachId }) {
   async function generate() {
     setGenBusy(true); setGenErr('')
     try {
-      const res = await fetch('/.netlify/functions/recipe-generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: genCat, count: genCount }) })
+      const res = await fetch(apiUrl('/.netlify/functions/recipe-generate'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: genCat, count: genCount }) })
       const j = await res.json()
       if (!j.recipes?.length) { setGenErr(j.error || 'Nothing came back — try again.') }
       else setGen({ recipes: j.recipes, sel: new Set(j.recipes.map((_, i) => i)) })
@@ -3485,7 +3485,7 @@ function CoachPrograms({ coachId, clientId = null, clientName, onProgramsChanged
     try {
       // The corrected kit list wins over the free-text box when there is one.
       const equipment = kit.length ? kit.join(', ') : g.equipment
-      const res = await fetch('/.netlify/functions/program-generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...g, equipment }) })
+      const res = await fetch(apiUrl('/.netlify/functions/program-generate'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...g, equipment }) })
       const j = await res.json()
       if (!j.sessions?.length) setGenErr(j.error || 'Nothing came back — try again.')
       else setGenDraft(j)
@@ -3528,7 +3528,7 @@ function CoachPrograms({ coachId, clientId = null, clientName, onProgramsChanged
     if (!cur.length || !aiInstr.trim()) { setAiErr('Add some sessions and an instruction first.'); return }
     setAiBusy(true); setAiErr('')
     try {
-      const res = await fetch('/.netlify/functions/program-edit', {
+      const res = await fetch(apiUrl('/.netlify/functions/program-edit'), {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ instruction: aiInstr.trim(), title: pr.title, level: pr.level, weeks: pr.weeks, sessions: cur }),
       })

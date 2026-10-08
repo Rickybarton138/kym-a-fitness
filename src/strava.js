@@ -2,7 +2,7 @@
 
 export async function getStravaConfig() {
   try {
-    const res = await fetch('/.netlify/functions/strava-config')
+    const res = await fetch(apiUrl('/.netlify/functions/strava-config'))
     return await res.json()
   } catch {
     return { configured: false, clientId: '' }
@@ -23,7 +23,7 @@ export function stravaAuthUrl(clientId, userId) {
 }
 
 export async function exchangeStrava(code) {
-  const res = await fetch('/.netlify/functions/strava-exchange', {
+  const res = await fetch(apiUrl('/.netlify/functions/strava-exchange'), {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }),
   })
   const j = await res.json()
@@ -32,7 +32,7 @@ export async function exchangeStrava(code) {
 }
 
 export async function syncStrava(refreshToken) {
-  const res = await fetch('/.netlify/functions/strava-activities', {
+  const res = await fetch(apiUrl('/.netlify/functions/strava-activities'), {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: refreshToken }),
   })
   const j = await res.json()

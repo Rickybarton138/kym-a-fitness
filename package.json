@@ -14,15 +14,20 @@
     "build:elev8": "node scripts/build-brand.mjs elev8",
     "build:ricky": "node scripts/build-brand.mjs ricky",
     "build:lennon": "node scripts/build-brand.mjs lennon",
-    "build:kelsey": "node scripts/build-brand.mjs kelsey"
+    "build:kelsey": "node scripts/build-brand.mjs kelsey",
+    "build:paul:native": "node scripts/build-brand.mjs paul --native",
+    "cap:sync": "npm run build:paul:native && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
     "@supabase/supabase-js": "^2.47.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.0.7"
   }

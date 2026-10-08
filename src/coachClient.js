@@ -21,6 +21,7 @@
 //   of machinery for a card that is only interesting when you open the app.
 
 import { supabase } from './supabaseClient.js'
+import { apiUrl } from './lib.js'
 import { THEME } from './themes.js'
 import { londonDay } from './coachTime.js'
 
@@ -63,7 +64,7 @@ export async function coachCall(action, payload = {}, { timeoutMs = 25000 } = {}
   const control = new AbortController()
   const timer = setTimeout(() => control.abort(), timeoutMs)
   try {
-    const res = await fetch('/.netlify/functions/coach', {
+    const res = await fetch(apiUrl('/.netlify/functions/coach'), {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       signal: control.signal,

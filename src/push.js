@@ -1,5 +1,6 @@
 // Web Push helpers: subscribe a device, store it, send a test, unsubscribe.
 import { supabase } from './supabaseClient.js'
+import { apiUrl } from './lib.js'
 
 const VAPID_PUBLIC = import.meta.env.VITE_VAPID_PUBLIC_KEY || ''
 
@@ -67,7 +68,7 @@ export async function sendTestPush() {
   const reg = await navigator.serviceWorker.ready
   const sub = await reg.pushManager.getSubscription()
   if (!sub) throw new Error('Turn reminders on first.')
-  const res = await fetch('/.netlify/functions/push-test', {
+  const res = await fetch(apiUrl('/.netlify/functions/push-test'), {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ subscription: sub.toJSON() }),
   })

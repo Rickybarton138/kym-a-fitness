@@ -50,7 +50,7 @@ export async function analyze(payload) {
   if (activeNutritionStyle && !body.nutritionStyle) body = { ...body, nutritionStyle: activeNutritionStyle }
   if (activeRecovery && !body.recovery) body = { ...body, recovery: activeRecovery }
   if (activeHealthContext && !body.healthContext) body = { ...body, healthContext: activeHealthContext }
-  const res = await fetch('/.netlify/functions/analyze', {
+  const res = await fetch(apiUrl('/.netlify/functions/analyze'), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -294,3 +294,13 @@ export function sessionDateLabel(plan, now = new Date()) {
   if (diff > 0) return `For ${date}`
   return date
 }
+
+// Where the Netlify functions live. Empty on the web, so every call stays
+// relative and nothing about the web app changes.
+//
+// A native shell has no origin to be relative TO — Capacitor serves the bundle
+// from capacitor://localhost, where "/.netlify/functions/..." is nowhere. The
+// native builds set VITE_API_BASE to the deployed site and every call goes there
+// instead. Phase 1 of the native app plan; harmless until then.
+const API_BASE = (import.meta.env?.VITE_API_BASE || '').replace(/\/$/, '')
+export const apiUrl = (path) => API_BASE + path

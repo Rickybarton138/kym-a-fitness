@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './supabaseClient.js'
-import { scaleImageToBase64 } from './lib.js'
+import { scaleImageToBase64, apiUrl } from './lib.js'
 import { THEME } from './themes.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { BarcodeScan } from './FoodCapture.jsx'
@@ -123,7 +123,7 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
   async function callAI(payload) {
     setBusy(true); setError('')
     try {
-      const res = await fetch('/.netlify/functions/recipe-ai', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const res = await fetch(apiUrl('/.netlify/functions/recipe-ai'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await res.json()
       if (j.error || !j.title) { setError(j.error || 'Could not read that recipe.'); return }
       setDraft({ ...j, servings: j.servings || 1 })

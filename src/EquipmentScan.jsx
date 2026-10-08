@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { scaleImageToBase64 } from './lib.js'
+import { scaleImageToBase64, apiUrl } from './lib.js'
 
 // Photos of a space in, a corrected list of kit out.
 //
@@ -43,7 +43,7 @@ export function EquipmentScan({ items, setItems, label = 'Photos of your kit', h
   async function scan() {
     setBusy(true); setErr('')
     try {
-      const res = await fetch('/.netlify/functions/equipment-scan', {
+      const res = await fetch(apiUrl('/.netlify/functions/equipment-scan'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ images: shots.map((s) => ({ data: s.data, mediaType: 'image/jpeg' })) }),

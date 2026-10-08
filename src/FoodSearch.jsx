@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient.js'
 import { searchFoods } from './foods.js'
-import { mealByHour, MEALS } from './lib.js'
+import { mealByHour, MEALS, apiUrl } from './lib.js'
 
 // Local YYYY-MM-DD for today, and a noon-of-day ISO so a chosen day lands cleanly
 // on that date regardless of timezone.
@@ -69,7 +69,7 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId, pick })
     clearTimeout(timer.current)
     timer.current = setTimeout(async () => {
       try {
-        const res = await fetch('/.netlify/functions/food-search?q=' + encodeURIComponent(q.trim()))
+        const res = await fetch(apiUrl('/.netlify/functions/food-search?q=') + encodeURIComponent(q.trim()))
         const j = await res.json()
         setApi(j.results || [])
       } catch { setApi([]) } finally { setSearching(false) }

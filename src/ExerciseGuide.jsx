@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { apiUrl } from './lib.js'
 import { supabase } from './supabaseClient.js'
 
 // Tap an exercise name -> how-to. Shows the coach's own video if they set one, else
@@ -28,7 +29,7 @@ export function ExerciseGuide({ ex, onClose }) {
       const { data } = await supabase.from('exercise_guides').select('how_to, cues, image_urls').eq('name_key', key).maybeSingle()
       if (data && data.how_to) { if (!cancelled) setGuide(data); return }
       try {
-        const res = await fetch('/.netlify/functions/exercise-guide', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: ex.name }) })
+        const res = await fetch(apiUrl('/.netlify/functions/exercise-guide'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: ex.name }) })
         const j = await res.json()
         if (!cancelled) setGuide(j)
       } catch { if (!cancelled) setGuide({ how_to: '', cues: [], image_urls: [] }) }

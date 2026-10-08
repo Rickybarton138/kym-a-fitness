@@ -7,7 +7,7 @@ import { WorkoutTimers, useWorkoutTimers } from './WorkoutTimers.jsx'
 // gated the same way the week meal plan is - a flag in themes.js, not a note
 // saying "do not deploy the others".
 const TIMERS_ON = THEME.features?.workoutTimers === true
-import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError, rebalanceMacros, macroCalories, sessionDateLabel } from './lib.js'
+import { fileToBase64, analyze, extractFrames, scaleImageToBase64, urlToBase64, startOfTodayISO, sumMacros, remainingMacros, setPersona, setNutritionStyle, setRecovery, setHealthContext, mealByHour, MEALS, sortDays , friendlyError, rebalanceMacros, macroCalories, sessionDateLabel, apiUrl } from './lib.js'
 import { LEVELS, FOOD_NUDGES, WORKOUT_NUDGES, pickNudge, daySeed } from './accountability.js'
 import { PERF_TESTS, TEST_BY_KEY, TEST_GROUPS, bestValue } from './perfTests.js'
 import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
@@ -2855,7 +2855,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
   async function findAlt(i) {
     setSwapBusy(true); setSwapErr('')
     try {
-      const res = await fetch('/.netlify/functions/exercise-swap', {
+      const res = await fetch(apiUrl('/.netlify/functions/exercise-swap'), {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: exs[i].name, reason: swapReason }),
       })
@@ -3121,7 +3121,7 @@ function SessionCard({ plan, onUpdate, clientId, trainerId, onWorkoutDone, histo
   async function findAlt(i) {
     setSwapBusy(true); setSwapSug(null); setSwapErr('')
     try {
-      const res = await fetch('/.netlify/functions/exercise-swap', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: exs[i].name, reason: swapReason, ...(swapImg ? { image: swapImg, mediaType: 'image/jpeg' } : {}) }) })
+      const res = await fetch(apiUrl('/.netlify/functions/exercise-swap'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: exs[i].name, reason: swapReason, ...(swapImg ? { image: swapImg, mediaType: 'image/jpeg' } : {}) }) })
       const j = await res.json()
       if (j.name) setSwapSug(j); else setSwapErr(j.error || 'No suggestion — try again.')
     } catch { setSwapErr('Could not get a suggestion.') }

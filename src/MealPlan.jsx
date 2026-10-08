@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getRecovery, getHealthContext } from './lib.js'
+import { getRecovery, getHealthContext, apiUrl } from './lib.js'
 import { THEME } from './themes.js'
 
 // Client meal-plan builder. Uses their saved macro targets as the budget, asks a
@@ -86,7 +86,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   })
 
   async function post(body) {
-    const res = await fetch('/.netlify/functions/meal-plan', {
+    const res = await fetch(apiUrl('/.netlify/functions/meal-plan'), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     })
     return res.json()

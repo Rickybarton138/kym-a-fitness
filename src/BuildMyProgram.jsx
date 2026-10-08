@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { EquipmentScan } from './EquipmentScan.jsx'
 import { buildProgramRows } from './programBuild.js'
-import { sortDays } from './lib.js'
+import { sortDays, apiUrl } from './lib.js'
 import { WEEKDAYS } from './booking.js'
 import { TRAIN_WHERE } from './programMeta.js'
 import { THEME } from './themes.js'
@@ -68,7 +68,7 @@ export function BuildMyProgram({ clientId, onDone }) {
     if (where === 'home_gym' && !kit.length) { setErr('Add the kit you have, or photograph it, so the plan actually fits your setup.'); return }
     setBusy(true); setErr(''); setDraft(null)
     try {
-      const res = await fetch('/.netlify/functions/program-generate', {
+      const res = await fetch(apiUrl('/.netlify/functions/program-generate'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(stylePicker && style === 'calisthenics' ? { style, adapt } : {}), ...(ramp ? { rampFrom, rampTo } : {}) }),
