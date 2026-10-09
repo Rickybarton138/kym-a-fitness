@@ -702,3 +702,28 @@ and nothing ever preflighted them.
   settled what an afternoon of reading would have left as a guess.
 - Generalises: anything that quietly assumed same-origin breaks only once it is
   running on a phone. Check it before each native phase, not after.
+
+## A function declaration silently eats a prop of the same name (2026-10-08)
+`FoodSearch({ onLog, pick })` also declared `function pick(f)`. Function
+declarations are bound when the scope is instantiated and overwrite the
+parameter, so `pick` was always the function, always truthy. Every client
+logging food got the ingredient-picker variant — no Meal, no Day, a button
+saying "Add to recipe" — and the prop could not be reached from outside.
+- It builds clean, lints clean and reads fine. Nothing points at it.
+- Shipped the same day as the feature that introduced the prop, so the obvious
+  suspect was the new feature's logic rather than its name.
+- The test is a guard on the CLASS, not the instance: scan every component for
+  a function declaration colliding with one of its own destructured props
+  (`tasks/e2e_round42.mjs`). Clean across 80 files once fixed.
+- Naming the handler after the prop is the trap. `choose()` for the action,
+  `pick` for the mode.
+
+## Verify the exit code you think you are reading (2026-10-08)
+Ran `npx vite build | tail -5 && echo "BUILD OK"` and reported a successful
+build. `&&` tests `tail`, which always exits 0, so "BUILD OK" printed over a
+build that had actually failed on a syntax error I had just introduced.
+- `${PIPESTATUS[0]}` is the one that matters in a pipeline.
+- The file had a raw newline inside a single-quoted JS string, which is a hard
+  syntax error — exactly the heredoc escaping trap already written down below.
+  Use the Edit tool for anything containing backslash escapes; the lesson was
+  on this page and I did it anyway.
