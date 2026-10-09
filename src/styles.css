@@ -318,6 +318,11 @@ input { font-family: inherit; }
 .gw-set-n { flex: 1; font-size: 13px; font-weight: 600; color: var(--muted); }
 .gw-set.done .gw-set-n { color: var(--accent); }
 .gw-in { width: 68px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; color: var(--text); font-size: 14px; text-align: center; }
+/* Rick, 9 Oct: weeks of weights typed into the reps box. The placeholder was the
+   only label and it vanished as soon as the box had a number in it, so the two
+   boxes looked identical. A permanent caption under each box fixes that. */
+.gw-field { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; flex: 0 0 auto; }
+.gw-unit { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); line-height: 1; }
 
 .level-picker { display: flex; flex-direction: column; gap: 8px; }
 .level-opt { display: flex; align-items: center; gap: 12px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }

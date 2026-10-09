@@ -3001,16 +3001,16 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
                   <label className={'gw-set' + (s.done ? ' done' : '')}>
                     <input type="checkbox" checked={s.done} onChange={() => toggleSet(ei, si)} />
                     <span className="gw-set-n">Set {si + 1}{s.drops ? <span className="settype-chip drops">+{s.drops} drop{s.drops === 1 ? '' : 's'}</span> : null}</span>
-                    <input className="gw-in" inputMode="numeric" placeholder="reps" value={s.reps} onChange={(e) => updateSet(ei, si, 'reps', e.target.value)} />
-                    <input className="gw-in" inputMode="decimal" placeholder="kg" value={s.weight} onChange={(e) => updateSet(ei, si, 'weight', e.target.value)} />
+                    <span className="gw-field"><input className="gw-in" inputMode="numeric" placeholder="reps" aria-label="Reps" value={s.reps} onChange={(e) => updateSet(ei, si, 'reps', e.target.value)} /><span className="gw-unit">reps</span></span>
+                    <span className="gw-field"><input className="gw-in" inputMode="decimal" placeholder="kg" aria-label="Weight in kg" value={s.weight} onChange={(e) => updateSet(ei, si, 'weight', e.target.value)} /><span className="gw-unit">kg</span></span>
                   </label>
                   {(s.drop_log || []).length > 0 && (
                     <div className="gw-drops">
                       {s.drop_log.map((d, di) => (
                         <div className="gw-drop" key={di}>
                           <span className="gw-drop-n">Drop {di + 1}</span>
-                          <input className="gw-in" inputMode="numeric" placeholder="reps" value={d.reps} onChange={(e) => updateDrop(ei, si, di, 'reps', e.target.value)} />
-                          <input className="gw-in" inputMode="decimal" placeholder="kg" value={d.weight} onChange={(e) => updateDrop(ei, si, di, 'weight', e.target.value)} />
+                          <span className="gw-field"><input className="gw-in" inputMode="numeric" placeholder="reps" aria-label="Drop reps" value={d.reps} onChange={(e) => updateDrop(ei, si, di, 'reps', e.target.value)} /><span className="gw-unit">reps</span></span>
+                          <span className="gw-field"><input className="gw-in" inputMode="decimal" placeholder="kg" aria-label="Drop weight in kg" value={d.weight} onChange={(e) => updateDrop(ei, si, di, 'weight', e.target.value)} /><span className="gw-unit">kg</span></span>
                         </div>
                       ))}
                     </div>
