@@ -107,7 +107,14 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId, pick })
     setTimeout(() => setLogged(null), ok ? 2200 : 6000)
   }
 
-  function pick(f) { setSelected(f); if (!f.fixed) setGrams(String(f.s || 100)) }
+  // NOT named `pick` — a function declaration of that name would shadow the
+  // `pick` PROP for the whole body, because declarations are bound during
+  // scope instantiation and overwrite the parameter. `pick` was then always
+  // truthy, so the diary permanently rendered the ingredient-picker variant:
+  // no Meal, no Day, and a button saying "Add to recipe". Paul, 8 Oct: "when
+  // people are manually searching out their food to log, it only gives the
+  // option to add to a recipe and not to add to the day/meal".
+  function choose(f) { setSelected(f); if (!f.fixed) setGrams(String(f.s || 100)) }
   async function logSelected() {
     const g = Number(grams) || 0
     if (!g || !selected) return
@@ -203,7 +210,7 @@ export function FoodSearch({ onLog, defaultMeal, contributorId, coachId, pick })
       {q.trim().length >= 1 && (
         <div className="card food-results">
           {results.map((f, i) => (
-            <button type="button" className="food-row" key={f.n + i} onClick={() => pick(f)}>
+            <button type="button" className="food-row" key={f.n + i} onClick={() => choose(f)}>
               <span className="food-name">{f.n}</span>
               <span className="food-kcal">{f.k} kcal{!f.fixed && <span className="muted-note"> /100g</span>}</span>
             </button>

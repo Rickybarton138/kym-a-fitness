@@ -16,7 +16,53 @@ const cleanIngredients = (list) => (list || []).map((i) => String(i).trim()).fil
 // recipe is a first draft — the AI mis-reads a quantity or drops a line, and
 // until now the only way to correct it was to start again.
 function Preview({ draft, setDraft, onSave, saving, saveLabel = 'Save recipe' }) {
+  const [recalcing, setRecalcing] = useState(false)
+  const [recalcMsg, setRecalcMsg] = useState('')
   const set = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }))
+
+  // Paul, 8 Oct: "one of my clients is editing one of her recipes she's added
+  // but it's not updated the macros etc when she's saves with the new
+  // quantities." It never did. The ingredients are free text and the macros are
+  // separate numbers, so changing "100g oats" to "150g oats" changed nothing
+  // but the text — and recipes built from the ingredient picker throw the
+  // per-item macros away at save, so there is nothing stored to recompute from.
+  //
+  // So ask the same model that estimates macros on import. That works for every
+  // recipe whatever its origin, which the stored-items approach would not:
+  // most of these come from a URL or a paste and would have no items to total.
+  //
+  // Explicit button, never on save: the screen invites hand-tuning ("tweak the
+  // numbers if you know better"), and silently overwriting that would be a
+  // worse bug than the one being fixed.
+  async function recalc() {
+    const list = (draft.ingredients || []).map((i) => String(i).trim()).filter(Boolean)
+    if (!list.length) { setRecalcMsg('Add some ingredients first.'); return }
+    const servings = Math.max(1, Number(draft.servings) || 1)
+    setRecalcing(true); setRecalcMsg('')
+    try {
+      const res = await fetch(apiUrl('/.netlify/functions/recipe-ai'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ingredients: list, servings }),
+      })
+      const j = await res.json()
+      if (j.error || j.calories == null) { setRecalcMsg('Could not work those out — enter them by hand.'); return }
+      // Macros only. The same endpoint's import mode would also hand back a
+      // title, a method and a tidied ingredient list; taking those would
+      // rewrite her recipe behind a button that says it updates the macros.
+      setDraft((d) => ({
+        ...d,
+        calories: j.calories, protein_g: j.protein_g,
+        carbs_g: j.carbs_g, fat_g: j.fat_g,
+        fibre_g: j.fibre_g == null ? d.fibre_g : j.fibre_g,
+      }))
+      setRecalcMsg(`Updated from the ingredients, per serving (serves ${servings}). Check them before you save.`)
+    } catch {
+      setRecalcMsg('Could not work those out — enter them by hand.')
+    } finally {
+      setRecalcing(false)
+    }
+  }
   // One ingredient per line. Blank lines are kept while typing and dropped on
   // save, so pressing Enter for the next line does not delete the one above.
   const setIngredients = (e) => setDraft((d) => ({ ...d, ingredients: e.target.value.split('\n') }))
@@ -35,7 +81,11 @@ function Preview({ draft, setDraft, onSave, saving, saveLabel = 'Save recipe' })
       <label className="field">Method
         <textarea className="food-input" style={{ minHeight: 110 }} value={draft.method || ''} onChange={set('method')} placeholder="How you make it — optional" />
       </label>
-      <p className="muted-note">Macros are an estimate — tweak the numbers if you know better.</p>
+      <p className="muted-note">Macros are per serving. Change the ingredients or the servings above and work them out again, or tweak the numbers yourself if you know better.</p>
+      <button type="button" className="btn ghost sm" disabled={recalcing} onClick={recalc}>
+        {recalcing ? 'Working them out…' : 'Update macros from ingredients'}
+      </button>
+      {recalcMsg && <p className="muted-note">{recalcMsg}</p>}
       <div className="grid-2">
         <label className="field">Calories<input type="number" value={draft.calories} onChange={set('calories')} /></label>
         <label className="field">Protein (g)<input type="number" value={draft.protein_g} onChange={set('protein_g')} /></label>
