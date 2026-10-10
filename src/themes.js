@@ -49,7 +49,7 @@ export const BRANDS = {
     instagram: 'paulandrewspt',
     tiktok: 'paulandrewspt',
     scheme: 'dark',
-    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, checkinAI: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true, nutritionSupport: true, groupedHome: true, groupedCoach: true, parq: true, foodDayComplete: true, water: true, awards: true, clientProgramAi: true, gettingStarted: true },
+    features: { testing: true, templates: true, programs: true, recipes: true, videos: true, barcode: true, tags: true, supplements: true, shop: true, podcasts: true, agenda: true, progressHub: true, checkinForms: true, checkinAI: true, files: true, nutritionStyle: true, activityFeed: true, exerciseGuides: true, mealPlans: true, nutritionSupport: true, groupedHome: true, groupedCoach: true, parq: true, foodDayComplete: true, water: true, awards: true, clientProgramAi: true, gettingStarted: true, glp1: true },
     // Grouped bottom nav (Paul's round-2 ask + his Harbiz layout; simplified to
     // 5 tabs 2026-08-18 per his feedback — Videos folded into the Coach hub,
     // Coach+Community merged into one tab). Ids map to screens/hubs in
@@ -183,7 +183,7 @@ export const BRANDS = {
       // and a new set of tables, and it proves itself on his own training before
       // it goes near a paying client's app.
       coach: true,
-      // Calisthenics: the six skill ladders, the sessions built off them and a
+      // Callisthenics: the six skill ladders, the sessions built off them and a
       // bodyweight style in the programme builder. Rick.Fit and Lennon only.
       calisthenics: true,
       // No PAR-Q: it is a screening form for taking on other people's risk,
@@ -244,7 +244,7 @@ export const BRANDS = {
     mark: 'LG',
     logo: '/brands/lennon/icon-512.png',
     features: {
-      // programs ON so his club block can live in the app and he can log against
+      // programmes ON so his club block can live in the app and he can log against
       // it; aiWorkoutGen OFF so the app never writes him a programme of its own.
       programs: true, aiWorkoutGen: false,
       videos: true, recipes: true, barcode: true, tags: true, agenda: true,
@@ -254,7 +254,7 @@ export const BRANDS = {
       nutritionSupport: true, groupedHome: true, water: true,
       foodDayComplete: true, monitoring: true, awards: true,
       gettingStarted: true, workoutTimers: true,
-      // Calisthenics is bodyweight work he can do anywhere, and the tracker is
+      // Callisthenics is bodyweight work he can do anywhere, and the tracker is
       // his own to chase. It does NOT reopen app-written programming: the style
       // only appears in the builder, and aiWorkoutGen stays false above, so the
       // club keeps owning his gym work.

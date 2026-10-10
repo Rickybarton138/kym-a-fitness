@@ -59,7 +59,7 @@ import { exchangeStrava } from './strava.js'
 import {
   Ring, MacroBar, MacroRow, Loader, TrendChart, ProgramDayPicker,
   IconHome, IconTrain, IconFridge, IconMeal, IconBody, IconAsk, IconForm, IconContent, IconCommunity, IconTest, ExSets,
-  MEASURE_SITES, BodyTrends,
+  MEASURE_SITES, BodyTrends, Glp1Field,
 } from './ui.jsx'
 
 // The week planner is behind `weekMealPlans` (Rick.Fit only). The tile copy has
@@ -4308,6 +4308,8 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
   const [nutritionSensitive, setNutritionSensitive] = useState(!!profile.nutrition_sensitive)
   const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState(profile.nutrition_sensitive_note || '')
   const [healthConditions, setHealthConditions] = useState(profile.health_conditions || '')
+  const [glp1, setGlp1] = useState(!!profile.glp1)
+  const [glp1Med, setGlp1Med] = useState(profile.glp1_med || '')
   const [hasKids, setHasKids] = useState(!!profile.has_kids)
   const [singleParent, setSingleParent] = useState(!!profile.single_parent)
   const [shiftWorker, setShiftWorker] = useState(!!profile.shift_worker)
@@ -4315,18 +4317,25 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
   const [parqEditing, setParqEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
   async function save() {
-    setSaving(true)
+    setSaving(true); setError('')
     const patch = {
       nutrition_sensitive: nutritionSensitive, nutrition_sensitive_note: nutritionSensitive ? (nutritionSensitiveNote.trim() || null) : null,
       health_conditions: healthConditions.trim() || null,
+      glp1, glp1_med: glp1 ? (glp1Med.trim() || null) : null,
       has_kids: hasKids, single_parent: singleParent, shift_worker: shiftWorker,
       life_context_note: lifeContextNote.trim() || null,
     }
-    const { error } = await supabase.from('profiles').update(patch).eq('id', profile.id)
+    const { error: err } = await supabase.from('profiles').update(patch).eq('id', profile.id)
     setSaving(false)
-    if (!error) { onSaved(patch); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+    // Say so when it does not save. profiles has a column-level UPDATE
+    // allow-list, so a field added without its grant fails here rather than
+    // anywhere visible — this screen used to swallow that and just not light
+    // up "Saved", which is how a save bug hides for a fortnight.
+    if (err) { setError(err.message); return }
+    onSaved(patch); setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
 
   return (
@@ -4361,6 +4370,7 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
         <label className="field">Any health conditions we should know about?
           <input value={healthConditions} onChange={(e) => setHealthConditions(e.target.value)} placeholder="e.g. PCOS, menopause, thyroid, PoTS" />
         </label>
+        <Glp1Field on={glp1} setOn={setGlp1} med={glp1Med} setMed={setGlp1Med} />
       </div>
       <div className="card">
         <p className="eyebrow">Life circumstances</p>
@@ -4382,6 +4392,7 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
       </div>
       <button className="btn primary big" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
       {saved && <p className="logged-ok">Saved ✓</p>}
+      {error && <p className="error">Couldn’t save that — {error}</p>}
       <ChangePassword />
         </>
       )}

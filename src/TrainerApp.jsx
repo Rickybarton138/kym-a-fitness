@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
 import { startOfTodayISO, startOfWeekISO, sumMacros, analyze, setPersona, scaleImageToBlob, byDow, sortDays, rebalanceMacros, macroCalories, sessionDateLabel, apiUrl } from './lib.js'
-import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends } from './ui.jsx'
+import { TrendChart, ExSets, Metric, CoachSection, ProgramDayPicker, BodyTrends, Glp1Field } from './ui.jsx'
 import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, useWorkoutDraft, planToRows, WorkoutEditForm, rememberExercises } from './WorkoutRows.jsx'
 import { Awards } from './Awards.jsx'
 import { EquipmentScan } from './EquipmentScan.jsx'
@@ -44,7 +44,7 @@ export default function TrainerApp({ profile, onSignOut }) {
 
   async function loadClients() {
     const { data } = await supabase
-      .from('profiles').select('id, full_name, created_at, membership_tier, status, status_note, is_test, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note')
+      .from('profiles').select('id, full_name, created_at, membership_tier, status, status_note, is_test, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note, glp1, glp1_med')
       .eq('trainer_id', profile.id).order('created_at', { ascending: true })
     setClients(data || [])
     setLoading(false)
@@ -440,12 +440,15 @@ function ClientHealthContext({ client }) {
   const [singleParent, setSingleParent] = useState(!!client.single_parent)
   const [shiftWorker, setShiftWorker] = useState(!!client.shift_worker)
   const [note, setNote] = useState(client.life_context_note || '')
+  const [glp1, setGlp1] = useState(!!client.glp1)
+  const [glp1Med, setGlp1Med] = useState(client.glp1_med || '')
   const [saved, setSaved] = useState(false)
   const first = (client.full_name || 'this client').split(' ')[0]
   async function save() {
     const { error } = await supabase.rpc('set_client_health_context', {
       p_client: client.id, p_conditions: conditions.trim() || null, p_has_kids: hasKids,
       p_single_parent: singleParent, p_shift_worker: shiftWorker, p_life_note: note.trim() || null,
+      p_glp1: glp1, p_glp1_med: glp1 ? (glp1Med.trim() || null) : null,
     })
     if (!error) { setSaved(true); setTimeout(() => setSaved(false), 1500) }
   }
@@ -456,6 +459,7 @@ function ClientHealthContext({ client }) {
       <label className="field" style={{ marginTop: 8 }}>Health conditions
         <input value={conditions} onChange={(e) => setConditions(e.target.value)} placeholder="e.g. PCOS, menopause, thyroid, PoTS" />
       </label>
+      <Glp1Field on={glp1} setOn={setGlp1} med={glp1Med} setMed={setGlp1Med} />
       <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
         <input type="checkbox" checked={hasKids} onChange={(e) => setHasKids(e.target.checked)} style={{ width: 'auto' }} />
         Has kids

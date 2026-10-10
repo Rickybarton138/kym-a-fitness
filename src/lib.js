@@ -161,6 +161,28 @@ export async function urlToBase64(url, max = 800) {
 
 // The meals a food entry can belong to, and a sensible default from the clock.
 export const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks']
+
+// Paul, 10 Oct: "can we have the ability for people to tick if they're taking
+// GLP-1 meds and if so which one?"
+//
+// Mounjaro and Wegovy are what UK weight-management clients are actually
+// prescribed; the rest turn up because they are diabetes drugs someone is
+// already on. "Other / not sure" is not padding — people often know they are
+// "on the jab" without knowing the brand, and a list that cannot record that
+// pushes them into picking something wrong.
+//
+// Tirzepatide is strictly a dual GIP/GLP-1 agonist rather than a pure GLP-1,
+// but everyone including Paul means it when they say GLP-1, so it leads.
+export const GLP1_MEDS = [
+  'Mounjaro (tirzepatide)',
+  'Wegovy (semaglutide)',
+  'Ozempic (semaglutide)',
+  'Saxenda (liraglutide)',
+  'Rybelsus (oral semaglutide)',
+  'Victoza (liraglutide)',
+  'Trulicity (dulaglutide)',
+  'Other / not sure',
+]
 export function mealByHour(d = new Date()) {
   const h = d.getHours()
   if (h < 11) return 'Breakfast'

@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
 import { ParqQuestions, ParqAdvice, ParqDeclaration } from './Parq.jsx'
 import { saveParq, parqComplete, anyYes } from './parq.js'
+import { Glp1Field } from './ui.jsx'
 
 // First-run onboarding for a client: quick stats -> goal -> calorie calculator
 // writes their starting nutrition targets, then drops them into the app.
@@ -59,6 +60,8 @@ export default function Onboarding({ profile, onDone }) {
   const [nutritionSensitive, setNutritionSensitive] = useState(false)
   const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState('')
   const [healthConditions, setHealthConditions] = useState('')
+  const [glp1, setGlp1] = useState(false)
+  const [glp1Med, setGlp1Med] = useState('')
   const [hasKids, setHasKids] = useState(false)
   const [singleParent, setSingleParent] = useState(false)
   const [shiftWorker, setShiftWorker] = useState(false)
@@ -132,6 +135,7 @@ export default function Onboarding({ profile, onDone }) {
         goal, onboarded_at: now,
         nutrition_sensitive: nutritionSensitive, nutrition_sensitive_note: nutritionSensitive ? (nutritionSensitiveNote.trim() || null) : null,
         health_conditions: healthConditions.trim() || null,
+        glp1, glp1_med: glp1 ? (glp1Med.trim() || null) : null,
         has_kids: hasKids, single_parent: singleParent, shift_worker: shiftWorker,
         life_context_note: lifeContextNote.trim() || null,
       }).eq('id', profile.id)
@@ -233,6 +237,7 @@ export default function Onboarding({ profile, onDone }) {
             <label className="field" style={{ marginTop: 12 }}>Any health conditions we should know about? (optional)
               <input value={healthConditions} onChange={(e) => setHealthConditions(e.target.value)} placeholder="e.g. PCOS, menopause, thyroid, PoTS" />
             </label>
+            <Glp1Field on={glp1} setOn={setGlp1} med={glp1Med} setMed={setGlp1Med} />
             <p className="muted-note" style={{ marginTop: 12 }}>Life circumstances (optional — helps keep suggestions realistic)</p>
             <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <input type="checkbox" checked={hasKids} onChange={(e) => setHasKids(e.target.checked)} style={{ width: 'auto' }} />

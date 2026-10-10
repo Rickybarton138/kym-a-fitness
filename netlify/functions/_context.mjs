@@ -50,7 +50,7 @@ export async function loadContext({ user, brand, scope = 'today', windowDays = 1
 
   run('profile', async () => {
     const rows = await q.select('profiles',
-      `id=eq.${id}&select=full_name,goal,activity_level,nutrition_style,health_conditions,nutrition_sensitive_note,life_context_note,step_target,water_target_ml,trainer_id`)
+      `id=eq.${id}&select=full_name,goal,activity_level,nutrition_style,health_conditions,nutrition_sensitive_note,life_context_note,glp1,glp1_med,step_target,water_target_ml,trainer_id`)
     return list(rows)[0] || null
   })
 

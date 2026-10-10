@@ -1,8 +1,40 @@
 import React, { useEffect, useState } from 'react'
 import { THEME } from './themes.js'
 import { WEEKDAYS } from './booking.js'
-import { WEEK_ORDER, sortDays } from './lib.js'
+import { WEEK_ORDER, sortDays, GLP1_MEDS } from './lib.js'
 import { setTypeLabel, setTypeNote } from './WorkoutRows.jsx'
+
+// Paul, 10 Oct: "In the sign up process and the health info section can we
+// have the ability for people to tick if they're taking GLP-1 meds and if so
+// which one?" Both of those, so it lives here rather than being written twice
+// and drifting — the signup copy and the profile copy ARE the same question.
+//
+// Flag-gated like the PAR-Q: Kim's and Jordan's clients should not start being
+// asked about weight-loss injections because Paul's clients are on them.
+// Renders nothing at all for brands without features.glp1.
+//
+// The value is a boolean plus free text, mirroring nutrition_sensitive. "Yes
+// but I don't know which" is a real answer and it has to be recordable; a
+// single nullable column could not tell that from "not taking one".
+export function Glp1Field({ on, setOn, med, setMed }) {
+  if (!THEME.features?.glp1) return null
+  return (
+    <>
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+        <input type="checkbox" checked={!!on} onChange={(e) => { setOn(e.target.checked); if (!e.target.checked) setMed('') }} style={{ width: 'auto' }} />
+        I’m taking a GLP-1 medication (e.g. Mounjaro, Wegovy)
+      </label>
+      {on && (
+        <label className="field" style={{ marginTop: 4 }}>Which one?
+          <select value={med || ''} onChange={(e) => setMed(e.target.value)}>
+            <option value="">Select…</option>
+            {GLP1_MEDS.map((m) => <option key={m}>{m}</option>)}
+          </select>
+        </label>
+      )}
+    </>
+  )
+}
 
 // Collapsible section wrapper for the coach dashboard/ClientDetail (Paul's
 // "tidy the layout up like the client side" ask) — reuses the exact

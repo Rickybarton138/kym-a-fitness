@@ -337,6 +337,13 @@ export function buildContext(raw, opts = {}) {
           level: raw.profile.activity_level || null,
           nutritionStyle: raw.profile.nutrition_style || null,
           healthConditions: raw.profile.health_conditions || null,
+          // Informational, like every other health field here: it shapes what
+          // the coach says (protein floor, eating enough on a suppressed
+          // appetite, holding on to muscle while losing fast), and it must
+          // NOT feed the calorie or macro arithmetic. Changing someone's
+          // targets because a checkbox says Mounjaro is a clinical call and
+          // it is Paul's to make, not the app's.
+          glp1: raw.profile.glp1 ? (raw.profile.glp1_med || 'unspecified') : null,
           sensitiveNote: raw.profile.nutrition_sensitive_note || null,
           lifeContext: raw.profile.life_context_note || null,
           stepTarget: num(raw.profile.step_target),

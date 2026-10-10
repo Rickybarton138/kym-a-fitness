@@ -1,57 +1,45 @@
-# Message for Paul — 8 Oct 2026
+# Message for Paul — to send with the invoice PDF
 
-Covers the invoice he asked about, what shipped this week, the Direct Debit ask,
-and the steps question that has been outstanding since August and now gates the
-app work.
+Updated 10 Oct. The 8 Oct version asked him what his clients track steps on;
+he answered that same day, so that section is gone. He also said yes to Direct
+Debit and is picking a collection date, so the ask is now just the date.
+
+Send `~/rick-ai/invoices/RICK-2026-002_redefine.pdf` alongside this.
 
 Copy from here:
 
 ---
 
-Morning mate — not taking the piss at all, October's invoice is ready. £125 for
-the month, same Starter plan. I'll send it over now.
+Morning mate — sorry, this should have come over on Wednesday. October's
+invoice is attached: £125 for the month, same Starter plan, reference
+RICK-2026-002. Bank details are on it.
 
-You're on 14 active clients, up from 9 in September. Good month.
+You're on 14 active clients now, up from 9 in September. Good month.
 
-Everything you've sent through this week is live:
+Whenever you've settled on a date for the Direct Debit, send it over and I'll
+set it up on that day each month — then neither of us is chasing it again. It
+stays at £125 while you're under 25 clients, and I'd tell you before anything
+changed.
 
-- Recipes — you can now search the food database or scan a barcode for each
-  ingredient instead of typing the macros in by hand
-- Measurements — the coach view shows when each one was taken, and the graph has
-  proper axes now so you can see the numbers and the dates
-- Sessions — past ones are dated, and "last time" pulls the last session they
-  actually did rather than just last week
-- Programmes — clients can change or come off a plan from the plan screen itself
-- That tricep pushdown: the pictures were wrong. Found the cause and fixed it,
-  and also checked every other exercise in the app — a few others were showing
-  the wrong variant, including a bench press that was showing a version I
-  wouldn't want anyone copying. All sorted.
+Two you flagged on Wednesday night, both sorted:
 
-Two things from me:
+- Searching for a food to log was only offering "add to a recipe" instead of
+  adding it to the day and meal. That was my fault — it got broken by the
+  recipe ingredient search I put in last week.
+- Editing a recipe now has an "update macros from ingredients" button, so
+  changing the quantities actually recalculates. It never did before, it just
+  kept whatever numbers were there.
 
-**1.** Can we get the monthly payment on a Direct Debit rather than you having to
-remember a transfer? Saves you chasing me for an invoice and me chasing you for a
-payment. It stays at £125 while you're under 25 clients — if you go past that
-you'd move to the next plan, and I'd tell you before anything changed. You can
-cancel it whenever. Say the word and I'll send the link.
-
-**2.** Question I asked back in August and we never closed off: what do your
-clients actually track their steps on? Phone, or a watch — and if it's a watch,
-which ones? Reason I'm asking is I'm building the proper app version, and pulling
-steps and workouts in automatically from Apple Health and Android Health is the
-main thing it unlocks. What they're wearing decides how I build it.
+Both are going live shortly — I'll tell you when they land.
 
 ---
 
 ## Notes for Ricky, not for Paul
 
-- The invoice itself is `RICK-2026-002_redefine.pdf` in `~/rick-ai/invoices/`.
-  There is a Gmail draft with it attached, but it drafted into the
-  **astraremovals@gmail.com** account — fix the sender before sending, or just
-  send the PDF over WhatsApp with this message.
-- Deliberately does NOT promise an app date. Phase 1 is scaffolded, nothing is
-  compiled, and the Apple review is the unknown. Saying "building the app
-  version" is true; saying "it'll be in the App Store in November" is not.
-- The exercise-picture line is worth leaving in. He forwarded a client complaint
-  and it turned out to be a real class of bug affecting other exercises too —
-  telling him that is worth more than quietly fixing it.
+- The Gmail draft from 8 Oct is unusable: it sits in the **astraremovals@gmail.com**
+  mailbox and says "October's is attached" with no attachment. Send the PDF on
+  WhatsApp with this instead, and bin that draft.
+- Says "going live shortly" rather than "it's live", because the deploy carrying
+  those fixes has not been promoted yet. Don't send the last line until it is.
+- Deliberately opens by owning the two-day delay. He chased politely on
+  Wednesday and then heard nothing.
