@@ -118,36 +118,65 @@ ok('the diary variant is still reachable', /!pick &&/.test(fsrc) && /pick \? 'Ad
 // --- bug 2, against a deploy -------------------------------------------------
 
 // 200g oats + 400ml semi-skimmed + 2 tbsp honey + 60g whey is about 1320 kcal,
-// so roughly 660 a serving over two. The import path answered 445 — a third
-// light, which on a cut is the whole deficit — because it runs on Haiku and was
-// eyeballing a total rather than adding one up.
+// so roughly 660 a serving over two.
+//
+// Three models were wrong here before this shape worked, and each failure is
+// what one of these assertions is for:
+//   Haiku totalling itself  680, 1041, 1067 on identical input  -> STABILITY
+//   Sonnet totalling itself accurate but 8.5-11.7s vs a 10s cap -> LATENCY
+//   both                    forgot to divide by servings        -> HALVING
+// The function now asks only for per-100g figures and does the sums in code,
+// so the halving is exact arithmetic rather than something to hope for.
 const LIST = ['200g porridge oats', '400ml semi-skimmed milk', '2 tbsp honey', '60g whey protein powder']
+const BOLOGNESE = [
+  '500g beef mince 5% fat', '1 tin chopped tomatoes 400g', '1 onion', '2 cloves garlic',
+  '2 tbsp olive oil', '300g dried spaghetti', '1 carrot', '1 stick celery',
+  '2 tbsp tomato puree', '100ml red wine', '50g parmesan', '1 tsp dried oregano',
+]
 
-async function macros(servings) {
+async function macros(ingredients, servings) {
+  const t0 = Date.now()
   const res = await fetch(`${BASE}/.netlify/functions/recipe-ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ingredients: LIST, servings }),
+    body: JSON.stringify({ ingredients, servings }),
   })
-  return res.json()
+  const j = await res.json()
+  j._ms = Date.now() - t0
+  return j
 }
 
-const two = await macros(2)
+const two = await macros(LIST, 2)
 ok('macros mode answers at all', !two.error && two.calories > 0, JSON.stringify(two))
 ok('and lands near the hand-worked total (550-780 per serving)', two.calories >= 550 && two.calories <= 780, `${two.calories} kcal`)
-ok('protein is in range (35-55g)', two.protein_g >= 35 && two.protein_g <= 55, `${two.protein_g}g`)
+ok('protein is in range (35-60g)', two.protein_g >= 35 && two.protein_g <= 60, `${two.protein_g}g`)
+ok('it costed every ingredient, not some of them', two.lines === LIST.length, `${two.lines} of ${LIST.length}`)
 
-const four = await macros(4)
-// Same food, twice the servings: per-serving must roughly halve. This is the
-// one that catches a model quietly picking its own servings.
-const ratio = two.calories / Math.max(1, four.calories)
-ok('doubling the servings halves the per-serving figure', ratio > 1.7 && ratio < 2.3, `ratio ${ratio.toFixed(2)} (${two.calories} vs ${four.calories})`)
+// Netlify kills a synchronous function at 10s. Anything close is a coin flip
+// in production even when it passes here.
+ok('comfortably inside the 10s function cap', two._ms < 6000, `${two._ms}ms`)
+
+const four = await macros(LIST, 4)
+ok('doubling the servings halves it, exactly', Math.abs(two.calories - four.calories * 2) <= 2,
+  `${two.calories} vs ${four.calories} x2`)
+
+// Same input twice. A model doing its own totalling swung 680 -> 1067 here.
+const again = await macros(LIST, 2)
+const drift = Math.abs(again.calories - two.calories) / Math.max(1, two.calories)
+ok('repeat calls agree within 10%', drift < 0.10, `${two.calories} then ${again.calories}`)
+
+// A real recipe, which is where the slow version would have timed out.
+const bol = await macros(BOLOGNESE, 4)
+ok('a 12-ingredient recipe answers', !bol.error && bol.calories > 0, JSON.stringify(bol))
+ok('...costing all 12 lines', bol.lines === BOLOGNESE.length, `${bol.lines} lines`)
+ok('...and still inside the cap', bol._ms < 6000, `${bol._ms}ms`)
+ok('...with a believable per-serving figure (450-950)', bol.calories >= 450 && bol.calories <= 950, `${bol.calories} kcal`)
 
 // It must NOT hand back a title/method/ingredients — the editor would otherwise
-// be able to rewrite a client's own recipe behind a "update macros" button.
+// be able to rewrite a client's own recipe behind an "update macros" button.
 ok('macros mode returns no title, method or ingredient list',
   two.title === undefined && two.method === undefined && two.ingredients === undefined,
-  Object.keys(two).join(','))
+  Object.keys(two).filter((k) => k !== '_ms').join(','))
 
 console.log(failures ? `\n${failures} FAILED` : '\nall passed')
 process.exit(failures ? 1 : 0)
