@@ -65,3 +65,9 @@ const CALISTHENICS_GROUP = {
 export const EXERCISE_GROUPS = THEME.features?.calisthenics
   ? [...BASE_GROUPS, CALISTHENICS_GROUP]
   : BASE_GROUPS
+
+if (THEME.slug === 'ricky') {
+  EXERCISE_GROUPS.push({ label: 'Rick.Fit demonstrations', options: [
+    'Dumbbell Reverse Lunge', 'Standing Dumbbell Calf Raise', 'Rope Triceps Pushdown',
+  ] })
+}
