@@ -1,6 +1,8 @@
 import React from 'react'
 import { nextAction, feedbackFor, adjustmentFor } from './coachRules.js'
 import { buildContext, evidenceLines } from './coachContext.js'
+import { RickFitExerciseVideo } from './RickFitExerciseVideo.jsx'
+import { getRickFitVideos } from './rickFitVideos.js'
 
 // A development-only harness for looking at the coaching UI at phone width.
 //
@@ -88,6 +90,18 @@ export default function CoachPreview() {
           Development harness. Fixture data, no network, no account. Everything below is the same
           markup the real screens render.
         </p>
+
+        {/* The exercise demo player. Every other route to it needs a saved
+            session, and making one would mean writing test data to the live
+            database, so the harness is how it gets looked at. */}
+        <Block title="Exercise demo — paired views, poster first, contain sizing">
+          {(() => {
+            const clips = getRickFitVideos({ name: 'Back Squat (barbell)' }, 'ricky')
+            return clips.length
+              ? <RickFitExerciseVideo clips={clips} name="Back Squat (barbell)" />
+              : <p className="muted-note">No clips resolved — the mapping is broken.</p>
+          })()}
+        </Block>
 
         <Block title="Today card — ready">
           <div className="card coach-card">

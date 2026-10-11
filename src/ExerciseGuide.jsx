@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { apiUrl } from './lib.js'
 import { supabase } from './supabaseClient.js'
+import { THEME } from './themes.js'
+import { getRickFitVideos } from './rickFitVideos.js'
+import { RickFitExerciseVideo } from './RickFitExerciseVideo.jsx'
 
 // Tap an exercise name -> how-to. Shows the coach's own video if they set one, else
 // a correct-form demo (start/end images) matched from the free exercise library,
@@ -39,6 +42,7 @@ export function ExerciseGuide({ ex, onClose }) {
 
   const embed = ex.video ? videoEmbed(ex.video) : null
   const images = guide?.image_urls || []
+  const rickClips = ex.video ? [] : getRickFitVideos(ex, THEME.slug)
 
   return (
     <div className="sheet-overlay" onClick={onClose}>
@@ -49,6 +53,8 @@ export function ExerciseGuide({ ex, onClose }) {
           <div className="video-embed"><iframe src={embed} title={ex.name} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>
         ) : ex.video ? (
           <a className="btn ghost sm" href={ex.video} target="_blank" rel="noopener noreferrer">Watch the how-to video</a>
+        ) : rickClips.length > 0 ? (
+          <RickFitExerciseVideo key={ex.name} clips={rickClips} name={ex.name} />
         ) : images.length > 0 ? (
           <div className="eg-images">{images.map((u, i) => <img key={i} src={u} alt={`${ex.name} demo ${i + 1}`} loading="lazy" />)}</div>
         ) : null}
@@ -59,7 +65,7 @@ export function ExerciseGuide({ ex, onClose }) {
           <ul className="eg-cues">{guide.cues.map((c, i) => <li key={i}>{c}</li>)}</ul>
         )}
         {ex.cue && <p className="muted-note" style={{ marginTop: 8 }}><b>Coach note:</b> {ex.cue}</p>}
-        {guide && !guide.how_to && images.length === 0 && !ex.video && <p className="muted-note" style={{ marginTop: 10 }}>No how-to available for this one yet.</p>}
+        {guide && !guide.how_to && images.length === 0 && !ex.video && rickClips.length === 0 && <p className="muted-note" style={{ marginTop: 10 }}>No how-to available for this one yet.</p>}
       </div>
     </div>
   )
