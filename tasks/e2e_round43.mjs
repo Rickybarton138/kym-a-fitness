@@ -152,11 +152,27 @@ ok('...and from the recipe library', /recipe_id: r\.id, portions: 1/.test(client
 ok('...and carried by logFood', /recipe_id \? \{ recipe_id, portions: portions \|\| 1 \}/.test(client))
 ok('...and by the diary\u2019s own insert, so the offline queue keeps it too',
   /m\.recipe_id \? \{ recipe_id: m\.recipe_id, portions: m\.portions \|\| 1 \}/.test(diary))
-ok('editing a recipe-linked entry re-costs it from the recipe as it stands now',
-  /if \(eRecipe\) \{[\s\S]{0,400}eRecipe\.calories/.test(diary))
+ok('editing a recipe-linked entry can re-cost it from the recipe as it stands now',
+  /function recostPlan\(\)/.test(diary) && /eRecipe\.calories/.test(diary))
+// Moving an entry Lunch -> Dinner must not rewrite its macros. The 66 rows
+// backfilled with portions=1 are exactly the ones that would have been reset.
+ok('...but ONLY when the servings changed or the button was tapped',
+  /if \(!refresh && asked === loggedServings\) return null/.test(diary))
+ok('...and the preview reads the same rule the save does',
+  /const recostPreview = recostPlan\(\)\?\.calories/.test(diary) && /const plan = recostPlan\(\)/.test(diary))
 // The same recipe may sit in a dozen other days that were eaten as written.
 ok('...and only that one entry', /\.eq\('id', editing\.id\)/.test(diary) && !/\.eq\('recipe_id'/.test(diary))
-ok('a deleted recipe leaves the diary entry alone', /only be scaled/.test(diary))
+// "I haven't fetched it" and "it isn't there" are different things: a coach
+// opens this same diary and CANNOT read a client's own recipe (27 of them have
+// coach_id null and no policy covers it), so the message must not say deleted.
+ok('the recipe fetch has three states, not two',
+  /none \| loading \| unavailable \| loaded/.test(diary) &&
+  /eRecipeState === 'loading'/.test(diary) && /eRecipeState === 'unavailable'/.test(diary))
+ok('...and never calls an unreadable recipe deleted', !/has since been deleted/.test(diary))
+ok('...and will not save down the scale path mid-fetch',
+  /eRecipeState === 'loading'\}/.test(diary))
+ok('a saved reply is not attributed to the coach (AI writes the same column)',
+  /<b>Reply sent<\/b>/.test(trainer) && !/<b>Your reply<\/b>/.test(trainer))
 
 // --- the AI outage that none of the above would have survived ----------------
 

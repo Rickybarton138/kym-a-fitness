@@ -161,7 +161,9 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const [savingEdit, setSavingEdit] = useState(false)
   const [editErr, setEditErr] = useState('')
   const [eRecipe, setERecipe] = useState(null)   // the recipe this entry came from, if any
+  const [eRecipeState, setERecipeState] = useState('none') // none | loading | unavailable | loaded
   const [eServings, setEServings] = useState('1')
+  const [refresh, setRefresh] = useState(false)  // "update from the recipe" was tapped
   const [targets, setTargets] = useState(null)
   const [week, setWeek] = useState(null)
   const [weekOffset, setWeekOffset] = useState(0) // 0 = this week, -1 = last week
@@ -254,25 +256,50 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     // only this entry - the same recipe may sit in a dozen other days that were
     // eaten as they were written, and rewriting those would be a lie.
     setERecipe(null)
+    setRefresh(false)
     setEServings(String(l.portions || 1))
-    if (l.recipe_id) {
-      supabase.from('recipes').select('id, title, servings, calories, protein_g, carbs_g, fat_g, fibre_g')
-        .eq('id', l.recipe_id).maybeSingle()
-        .then(({ data }) => setERecipe(data || null))
-    }
+    // Three states, not two. "I haven't fetched it yet" and "it isn't there"
+    // are different things: the coach opens this same diary, and a client's own
+    // recipe is not readable by anyone else, so Paul seeing a client's entry
+    // would otherwise be told a recipe that exists has been deleted.
+    if (!l.recipe_id) { setERecipeState('none'); return }
+    setERecipeState('loading')
+    supabase.from('recipes').select('id, title, servings, calories, protein_g, carbs_g, fat_g, fibre_g')
+      .eq('id', l.recipe_id).maybeSingle()
+      .then(({ data }) => { setERecipe(data || null); setERecipeState(data ? 'loaded' : 'unavailable') })
   }
+  // The one rule that decides whether a save re-costs from the recipe. The
+  // sheet's preview and saveEdit both read it, so the preview cannot promise
+  // something the save then doesn't do.
+  function recostPlan() {
+    if (!editing) return null
+    if (eRecipeState !== 'loaded' || !eRecipe) return null
+    const loggedServings = Math.max(0.05, Number(editing.portions) || 1)
+    const asked = Math.max(0.05, Number(String(eServings).replace(/[,\s]/g, '')) || 1)
+    if (!refresh && asked === loggedServings) return null
+    return { n: asked, calories: Math.round((eRecipe.calories || 0) * asked) }
+  }
+  const recostPreview = recostPlan()?.calories ?? null
+
   async function saveEdit() {
     const when = new Date(editing.logged_at)
     const [y, m, d] = eDate.split('-').map(Number)
     when.setFullYear(y, m - 1, d) // keep the time of day, move the date
 
-    // Two different sums. A recipe-linked entry is rebuilt from the recipe's
-    // CURRENT per-serving macros times the servings eaten, which is what makes
-    // an edited recipe show up in a day that was pre-tracked. Anything else
-    // keeps the old behaviour: scale whatever is stored by a multiplier.
+    // Two different sums, and WHICH one runs is deliberately narrow.
+    //
+    // Re-costing from the recipe only happens when the client actually asked
+    // for it: they changed the servings, or they tapped "Update from the
+    // recipe". Moving an entry from Lunch to Dinner must not quietly rewrite
+    // its macros - an entry logged at 1 serving and later corrected by hand
+    // would otherwise be reset to whatever the recipe says today, and the 66
+    // entries backfilled with portions=1 are exactly the ones that would get
+    // it. Anything else keeps the old behaviour: scale what is stored.
+    const plan = recostPlan()
+
     let patch
-    if (eRecipe) {
-      const n = Math.max(0.05, Number(String(eServings).replace(/[,\s]/g, '')) || 1)
+    if (plan) {
+      const n = plan.n
       const per = (v) => Math.round((v || 0) * n)
       patch = {
         name: n === 1 ? eRecipe.title : `${eRecipe.title} (${n} servings)`,
@@ -508,28 +535,42 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
             <div className="session-title" style={{ marginTop: 2 }}>{editing.name || 'Food'}</div>
             <p className="muted-note">Currently {editing.calories} kcal · {editing.protein_g}P {editing.carbs_g}C {editing.fat_g}F</p>
 
-            {eRecipe ? (
+            {eRecipeState === 'loading' && <p className="muted-note" style={{ marginTop: 10 }}>Checking the recipe this came from…</p>}
+
+            {eRecipeState === 'loaded' ? (
               <>
                 <p className="muted-note" style={{ marginTop: 10 }}>
-                  From your recipe <b>{eRecipe.title}</b> — {eRecipe.calories} kcal a serving as it stands now.
-                  Saving re-works this entry from the recipe, so a recipe you have changed since brings this day up to date.
+                  From your recipe <b>{eRecipe.title}</b> — {eRecipe.calories} kcal a serving as the recipe stands now.
+                  This entry is logged at {editing.calories} kcal.
                 </p>
                 <label className="field" style={{ marginTop: 10 }}>Servings eaten
-                  <input type="text" inputMode="decimal" value={eServings} onChange={(e) => setEServings(e.target.value)} />
+                  <input type="text" inputMode="decimal" value={eServings} onChange={(e) => { setEServings(e.target.value); setRefresh(false) }} />
                 </label>
                 <div className="seg" style={{ marginTop: 6, flexWrap: 'wrap' }}>
                   {['0.5', '1', '1.5', '2'].map((v) => (
-                    <button type="button" key={v} className={eServings === v ? 'on' : ''} onClick={() => setEServings(v)}>{v}</button>
+                    <button type="button" key={v} className={eServings === v ? 'on' : ''} onClick={() => { setEServings(v); setRefresh(false) }}>{v}</button>
                   ))}
                 </div>
+                {/* Paul's Thursday case in one tap: the recipe changed after the
+                    day was pre-tracked. Without this, saving a meal or day
+                    correction would re-cost the entry whether you wanted it or
+                    not, which would quietly undo any hand-tuned figures. */}
+                <button type="button" className={'btn sm ' + (refresh ? 'primary' : 'ghost')} style={{ marginTop: 8 }} onClick={() => setRefresh(true)}>
+                  {refresh ? 'Will update from the recipe ✓' : 'Update from the recipe'}
+                </button>
                 <p className="muted-note" style={{ marginTop: 6 }}>
-                  Saves as {Math.round((eRecipe.calories || 0) * (Math.max(0.05, Number(String(eServings).replace(/[,\s]/g, '')) || 1)))} kcal.
-                  Only this entry changes — other days you logged it stay as they were.
+                  {recostPreview === null
+                    ? 'The amounts stay as they are unless you change the servings or tap the button above.'
+                    : `Saves as ${recostPreview} kcal. Only this entry changes — other days you logged it stay as they were.`}
                 </p>
               </>
             ) : (
               <>
-                {editing.recipe_id && <p className="muted-note" style={{ marginTop: 10 }}>This came from a recipe that has since been deleted, so it can only be scaled.</p>}
+                {eRecipeState === 'unavailable' && (
+                  <p className="muted-note" style={{ marginTop: 10 }}>
+                    This came from a recipe that can’t be opened from here — it may have been deleted, or it belongs to the client. It can still be scaled.
+                  </p>
+                )}
                 <label className="field" style={{ marginTop: 10 }}>Portion
                   <input type="text" inputMode="decimal" value={mult} onChange={(e) => setMult(e.target.value)} />
                 </label>
@@ -555,7 +596,7 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
 
             {editErr && <p className="error">{editErr}</p>}
             <div className="nudge-actions" style={{ marginTop: 12 }}>
-              <button type="button" className="btn primary sm" disabled={savingEdit || !eDate} onClick={saveEdit}>{savingEdit ? 'Saving…' : 'Save changes'}</button>
+              <button type="button" className="btn primary sm" disabled={savingEdit || !eDate || eRecipeState === 'loading'} onClick={saveEdit}>{savingEdit ? 'Saving…' : 'Save changes'}</button>
               <button type="button" className="btn ghost sm" onClick={() => setEditing(null)}>Cancel</button>
             </div>
           </div>

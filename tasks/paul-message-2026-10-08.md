@@ -41,5 +41,10 @@ Both are going live shortly — I'll tell you when they land.
   WhatsApp with this instead, and bin that draft.
 - Says "going live shortly" rather than "it's live", because the deploy carrying
   those fixes has not been promoted yet. Don't send the last line until it is.
+- **12 Oct: still not promoted.** Paul reported the food-search bug again at
+  12:03 today. Superseded by `paul-message-2026-10-12.md`, which covers both
+  bugs plus his four new ones; send that instead. Note that the recipe-macros
+  claim in this file is NOT true today - the Anthropic account is out of credit
+  and every AI feature is down.
 - Deliberately opens by owning the two-day delay. He chased politely on
   Wednesday and then heard nothing.

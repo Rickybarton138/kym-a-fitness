@@ -1767,7 +1767,10 @@ function ReplyBox({ table, id, saved, onReplied }) {
   if (!editing) {
     return (
       <>
-        <div className="fc-block coach"><b>Your reply</b><p>{saved}</p></div>
+        {/* Not "Your reply": standard-tier clients get an AI reply written into
+            the same coach_reply column, so a label claiming authorship would
+            sometimes be claiming it for the wrong author. */}
+        <div className="fc-block coach"><b>Reply sent</b><p>{saved}</p></div>
         <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setEditing(true)}>Edit reply</button>
       </>
     )
