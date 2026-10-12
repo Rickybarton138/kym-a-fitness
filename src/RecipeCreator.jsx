@@ -104,7 +104,7 @@ function Preview({ draft, setDraft, onSave, saving, saveLabel = 'Save recipe' })
 // coach's recipe matches no row and silently changes nothing. The Edit button
 // is therefore shown only on the client's own recipes, which is also what Paul
 // asked for.
-export function RecipeEditor({ recipe, onSaved, onClose }) {
+export function RecipeEditor({ recipe, onSaved, onClose, onDeleted }) {
   const [draft, setDraft] = useState({
     ...recipe,
     servings: recipe.servings || 1,
@@ -113,6 +113,20 @@ export function RecipeEditor({ recipe, onSaved, onClose }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [confirming, setConfirming] = useState(false)
+
+  // Paul, 12 Oct: "Could we also add in a delete recipe button too?"
+  // Two taps, because there is no undo. Diary entries logged from this recipe
+  // survive it - nutrition_logs.recipe_id is ON DELETE SET NULL, so a month of
+  // history does not vanish with the recipe; those entries simply stop offering
+  // to refresh themselves from it.
+  async function remove() {
+    setSaving(true); setError('')
+    const { error: err } = await supabase.from('recipes').delete().eq('id', recipe.id)
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    onDeleted && onDeleted(recipe.id); onClose()
+  }
 
   async function save() {
     setSaving(true); setError('')
@@ -134,6 +148,14 @@ export function RecipeEditor({ recipe, onSaved, onClose }) {
         <div className="sheet-head"><b>Edit recipe</b><button className="link-btn" onClick={onClose}>Close</button></div>
         <Preview draft={draft} setDraft={setDraft} onSave={save} saving={saving} saveLabel="Save changes" />
         {error && <p className="error">{error}</p>}
+        {onDeleted && (confirming ? (
+          <div className="nudge-actions" style={{ marginTop: 12 }}>
+            <button className="btn danger sm" disabled={saving} onClick={remove}>{saving ? 'Deleting…' : 'Yes, delete it'}</button>
+            <button className="btn ghost sm" onClick={() => setConfirming(false)}>Keep it</button>
+          </div>
+        ) : (
+          <button className="btn ghost sm" style={{ marginTop: 12 }} onClick={() => setConfirming(true)}>Delete this recipe</button>
+        ))}
       </div>
     </div>
   )

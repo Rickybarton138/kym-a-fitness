@@ -3,7 +3,7 @@
 
 import { kbForPrompt } from '../../src/nutritionExpert.js'
 import { LEVELS } from '../../src/accountability.js'
-import { CORS } from './_auth.mjs'
+import { CORS, upstreamMessage } from './_auth.mjs'
 
 // Model routing by job (cost lever). Vision stays on Opus for macro/photo
 // accuracy; client-facing coaching text runs on Sonnet; mechanical/internal
@@ -399,7 +399,7 @@ export const handler = async (event) => {
         }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { answer: tb ? tb.text : 'Sorry, I couldn’t answer that one.' })
     } catch {
@@ -422,7 +422,7 @@ export const handler = async (event) => {
         }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { answer: tb ? tb.text : 'Sorry, I couldn’t answer that — try messaging Kim.' })
     } catch {
@@ -445,7 +445,7 @@ export const handler = async (event) => {
         }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { reply: tb ? tb.text : '' })
     } catch {
@@ -469,7 +469,7 @@ export const handler = async (event) => {
         }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { briefing: tb ? tb.text : 'No briefing available right now.' })
     } catch {
@@ -519,7 +519,7 @@ ${sample}`,
         }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       let out
       try {
@@ -550,7 +550,7 @@ ${sample}`,
         body: JSON.stringify({ model: FORM_MODEL, max_tokens: 500, messages: [{ role: 'user', content: formContent }] }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { feedback: tb ? tb.text : 'Couldn’t read the clip — Kim will take a look.' })
     } catch {
@@ -572,7 +572,7 @@ ${sample}`,
         body: JSON.stringify({ model: MODEL, max_tokens: 700, messages: [{ role: 'user', content: scanContent }] }),
       })
       const data = await res.json()
-      if (!res.ok) return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data) })
       const tb = (data.content || []).find((b) => b.type === 'text')
       return json(200, { summary: tb ? tb.text : 'Couldn’t read that photo — try a clearer, well-lit full-body shot.' })
     } catch {
@@ -628,7 +628,7 @@ ${sample}`,
 
     const data = await res.json()
     if (!res.ok) {
-      return json(res.status, { error: data?.error?.message || 'Claude API error.' })
+      return json(res.status, { error: upstreamMessage(res.status, data) })
     }
 
     const textBlock = (data.content || []).find((b) => b.type === 'text')

@@ -13,6 +13,8 @@
 // Haiku vision, like the barcode reader — naming gym kit is easy recognition,
 // nothing like the macro estimation that justifies Opus.
 
+import { upstreamMessage } from './_auth.mjs'
+
 const VISION_MODEL = 'claude-haiku-4-5-20251001'
 const API_URL = 'https://api.anthropic.com/v1/messages'
 const MAX_IMAGES = 4
@@ -75,7 +77,7 @@ Return STRICT JSON only, no markdown:
       }),
     })
     const data = await res.json()
-    if (!res.ok) return json(res.status, { error: data?.error?.message || 'Could not read the photos.' })
+    if (!res.ok) return json(res.status, { error: upstreamMessage(res.status, data, 'Could not read the photos — try again shortly.') })
     const tb = (data.content || []).find((b) => b.type === 'text')
     let out
     try {

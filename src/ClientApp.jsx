@@ -235,11 +235,14 @@ export default function ClientApp({ profile, onSignOut }) {
   // Returns true when the row is on the server, false when it is only parked on
   // this device. Callers must not say "logged" until they have the answer — see
   // foodQueue.js for the day of food this silently lost.
-  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type, logged_at }, source) {
+  async function logFood({ name, protein_g, carbs_g, fat_g, fibre_g, calories, meal_type, logged_at, recipe_id, portions }, source) {
     const row = {
       client_id: profile.id, source, name: name || null, meal_type: meal_type || mealByHour(),
       protein_g: protein_g || 0, carbs_g: carbs_g || 0, fat_g: fat_g || 0, fibre_g: fibre_g || 0, calories: calories || 0,
       ...(logged_at ? { logged_at } : {}),
+      // Set only for food logged from a recipe, so the diary entry can be
+      // re-costed later if the recipe changes.
+      ...(recipe_id ? { recipe_id, portions: portions || 1 } : {}),
     }
     const { data, error } = await supabase.from('nutrition_logs').insert(row).select().single()
     if (error || !data) {
@@ -1102,6 +1105,7 @@ function WeeklyCheckin({ clientId, coachName, onBack }) {
   const [question, setQuestion] = useState('')
   const [state, setState] = useState('idle') // idle | saving | done
   const [past, setPast] = useState([])
+  const [err, setErr] = useState('')
 
   async function load() {
     const { data } = await supabase.from('weekly_checkins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(6)
@@ -1112,9 +1116,16 @@ function WeeklyCheckin({ clientId, coachName, onBack }) {
   async function submit(e) {
     e.preventDefault()
     setState('saving')
-    const row = { client_id: clientId, energy, sleep, nutrition, training, weight_kg: weight ? Number(weight) : null, wins: wins.trim() || null, struggles: struggles.trim() || null, question: question.trim() || null }
-    const { data } = await supabase.from('weekly_checkins').insert(row).select().single()
-    if (data) setPast((p) => [data, ...p])
+    const w = Number(String(weight).replace(/[,\s]/g, ''))
+    const row = { client_id: clientId, energy, sleep, nutrition, training, weight_kg: String(weight).trim() && Number.isFinite(w) ? w : null, wins: wins.trim() || null, struggles: struggles.trim() || null, question: question.trim() || null }
+    const { data, error } = await supabase.from('weekly_checkins').insert(row).select().single()
+    // Same defect as the dynamic form had: a failed save showed "Sent ✓".
+    if (error || !data) {
+      setState('idle')
+      setErr((error?.message || 'That didn’t send.') + ' Your answers are still here — try Send again.')
+      return
+    }
+    setPast((p) => [data, ...p])
     setWins(''); setStruggles(''); setQuestion(''); setWeight('')
     setState('done')
   }
@@ -1131,7 +1142,7 @@ function WeeklyCheckin({ clientId, coachName, onBack }) {
     )
   }
   return (
-    <form className="stack" onSubmit={submit}>
+    <form className="stack" onSubmit={submit} noValidate>
       <button type="button" className="link-btn" onClick={onBack}>‹ Back</button>
       <p className="eyebrow">Weekly check-in</p>
       <h1 className="h1">How was your week?</h1>
@@ -1141,11 +1152,14 @@ function WeeklyCheckin({ clientId, coachName, onBack }) {
         <ScaleRow label="Sleep" value={sleep} onChange={setSleep} />
         <ScaleRow label="Nutrition" value={nutrition} onChange={setNutrition} />
         <ScaleRow label="Training" value={training} onChange={setTraining} />
-        <label className="field">Weight this week (kg, optional)<input type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} /></label>
+        {/* Free text, not type="number": step="0.1" made "75.25" a step mismatch,
+            which blocks the whole form submit with a bubble that is easy to miss. */}
+        <label className="field">Weight this week (kg, optional)<input type="text" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} /></label>
       </div>
       <label className="field">Wins this week<textarea value={wins} onChange={(e) => setWins(e.target.value)} placeholder="What went well?" /></label>
       <label className="field">Struggles<textarea value={struggles} onChange={(e) => setStruggles(e.target.value)} placeholder="What was hard?" /></label>
       <label className="field">Anything to ask {coach}?<textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Questions, worries, wins to celebrate…" /></label>
+      {err && <p className="error">{err}</p>}
       <button className="btn primary big" disabled={state === 'saving'} type="submit">{state === 'saving' ? 'Sending…' : `Send to ${coach}`}</button>
       {past.length > 0 && <p className="eyebrow section-gap">Past check-ins</p>}
       {past.map((c) => <CheckinCard key={c.id} c={c} coach={coach} />)}
@@ -1188,8 +1202,16 @@ function FieldInput({ field, value, onChange }) {
       </div>
     </div>
   )
+  // Deliberately NOT <input type="number">. Alanna McCann's check-in never
+  // reached the server on 12 Oct and the edge logs show no POST at all: the
+  // browser refused to submit the form and said so in a bubble she never saw.
+  // A number input with no `step` defaults to step=1, so "7.5" is a step
+  // mismatch, and anything the browser cannot parse as a number ("8,500" from a
+  // keyboard that offers a comma) is badInput — both make the field :invalid,
+  // which blocks <form onSubmit> silently. Free text parsed by us cannot do
+  // that, and the keyboard is still numeric.
   if (field.type === 'number') return (
-    <label className="field">{field.label}<input type="number" inputMode="numeric" value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))} /></label>
+    <label className="field">{field.label}<input type="text" inputMode="decimal" value={value ?? ''} onChange={(e) => onChange(e.target.value)} /></label>
   )
   return <label className="field">{field.label}<textarea value={value ?? ''} onChange={(e) => onChange(e.target.value)} /></label>
 }
@@ -1217,6 +1239,7 @@ function CheckinFormRun({ clientId, trainerId, coachName, membershipTier, onBack
   const [answers, setAnswers] = useState({})
   const [past, setPast] = useState([])
   const [state, setState] = useState('idle')
+  const [err, setErr] = useState('')
 
   async function load() {
     const [{ data: forms }, { data: resps }] = await Promise.all([
@@ -1230,13 +1253,40 @@ function CheckinFormRun({ clientId, trainerId, coachName, membershipTier, onBack
 
   const setAnswer = (id, v) => setAnswers((a) => ({ ...a, [id]: v }))
 
+  // Number answers are typed as free text (see FieldInput), so they are cleaned
+  // here rather than by the browser: strip thousands separators and spaces, and
+  // keep a number if it is one. Anything that still isn't a number is stored as
+  // the client typed it — a check-in that reads "about 8k" is worth more to the
+  // coach than a check-in that refused to send.
+  function cleaned() {
+    const out = { ...answers }
+    for (const f of form.fields || []) {
+      if (f.type !== 'number') continue
+      const raw = out[f.id]
+      if (typeof raw !== 'string') continue
+      const n = Number(raw.replace(/[,\s]/g, ''))
+      if (raw.trim() !== '' && Number.isFinite(n)) out[f.id] = n
+    }
+    return out
+  }
+
   async function submit(e) {
     e.preventDefault()
     setState('saving')
-    const { data } = await supabase.from('checkin_responses').insert({
-      form_id: form.id, coach_id: trainerId, client_id: clientId, answers, fields: form.fields || [],
+    setErr('')
+    const { data, error } = await supabase.from('checkin_responses').insert({
+      form_id: form.id, coach_id: trainerId, client_id: clientId, answers: cleaned(), fields: form.fields || [],
     }).select().single()
-    if (data) setPast((p) => [data, ...p])
+    // This used to destructure only `data` and show "Sent to Paul ✓" regardless.
+    // A check-in that never saved looked exactly like one that did, to the
+    // client AND to the coach — which is why nobody could say what was wrong
+    // with Alanna's. Keep her answers on screen so a retry costs nothing.
+    if (error || !data) {
+      setState('idle')
+      setErr((error?.message || 'That didn’t send.') + ' Your answers are still here — try Send again.')
+      return
+    }
+    setPast((p) => [data, ...p])
     setAnswers({})
     setState('done')
     // Instant AI feedback for standard-tier clients (Paul's ask) — Inner Circle
@@ -1283,7 +1333,7 @@ function CheckinFormRun({ clientId, trainerId, coachName, membershipTier, onBack
     )
   }
   return (
-    <form className="stack" onSubmit={submit}>
+    <form className="stack" onSubmit={submit} noValidate>
       <button type="button" className="link-btn" onClick={onBack}>‹ Back</button>
       <p className="eyebrow">Weekly check-in</p>
       <h1 className="h1">{form.title || 'How was your week?'}</h1>
@@ -1291,6 +1341,7 @@ function CheckinFormRun({ clientId, trainerId, coachName, membershipTier, onBack
       <div className="card">
         {(form.fields || []).map((f) => <FieldInput key={f.id} field={f} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} />)}
       </div>
+      {err && <p className="error">{err}</p>}
       <button className="btn primary big" disabled={state === 'saving'} type="submit">{state === 'saving' ? 'Sending…' : `Send to ${coach}`}</button>
       {past.length > 0 && <p className="eyebrow section-gap">Past check-ins</p>}
       {past.map((r) => <ResponseCard key={r.id} resp={r} coach={coach} />)}
@@ -2140,7 +2191,7 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
   })
 
   function log(r) {
-    onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, fibre_g: r.fibre_g || 0, calories: r.calories || 0 })
+    onLog({ name: r.title, protein_g: r.protein_g || 0, carbs_g: r.carbs_g || 0, fat_g: r.fat_g || 0, fibre_g: r.fibre_g || 0, calories: r.calories || 0, recipe_id: r.id, portions: 1 })
     setLoggedId(r.id); setTimeout(() => setLoggedId(null), 2500)
   }
   async function copyShopping(r) {
@@ -2190,7 +2241,7 @@ function RecipeLibrary({ profile, coachName, onLog, onBack }) {
         ))}
       </div>
       {creating && <RecipeCreator clientId={clientId} onSaved={(rec) => setRecipes((rs) => [rec, ...(rs || [])])} onClose={() => setCreating(false)} />}
-      {editing && <RecipeEditor recipe={editing} onSaved={(rec) => setRecipes((rs) => (rs || []).map((x) => (x.id === rec.id ? rec : x)))} onClose={() => setEditing(null)} />}
+      {editing && <RecipeEditor recipe={editing} onSaved={(rec) => setRecipes((rs) => (rs || []).map((x) => (x.id === rec.id ? rec : x)))} onDeleted={(id) => setRecipes((rs) => (rs || []).filter((x) => x.id !== id))} onClose={() => setEditing(null)} />}
     </div>
   )
 }

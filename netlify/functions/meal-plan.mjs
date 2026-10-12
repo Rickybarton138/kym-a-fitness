@@ -2,6 +2,8 @@
 // qualifying answers (meals/day, options per meal, snacks, preferences, dietary
 // needs, allergies), returns a one-day plan where picking one option per meal
 // lands roughly on their targets. Haiku — structured text, no vision.
+import { upstreamMessage } from './_auth.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -248,7 +250,7 @@ export const handler = async (event) => {
         body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content: dayPrompt }] }),
       })
       const dj = await dr.json()
-      if (!dr.ok) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: dj?.error?.message || 'AI error' }) }
+      if (!dr.ok) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: upstreamMessage(dr.status, dj) }) }
       const dm = textOf(dj).match(/\{[\s\S]*\}/)
       let dp
       try { dp = JSON.parse(dm ? dm[0] : '{}') } catch { return { statusCode: 200, headers: cors, body: '{"error":"Could not read that day — try again."}' } }
@@ -288,7 +290,7 @@ export const handler = async (event) => {
         body: JSON.stringify({ model: MODEL, max_tokens: 3000, messages: [{ role: 'user', content: shopPrompt }] }),
       })
       const sj = await sr.json()
-      if (!sr.ok) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: sj?.error?.message || 'AI error' }) }
+      if (!sr.ok) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: upstreamMessage(sr.status, sj) }) }
       const sText = textOf(sj)
       const sm = sText.match(/\{[\s\S]*\}/)
       let sp

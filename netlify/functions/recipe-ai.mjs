@@ -74,6 +74,11 @@ async function claude(content) {
     body: JSON.stringify({ model: MODEL, max_tokens: 900, messages: [{ role: 'user', content }] }),
   })
   const j = await res.json()
+  // Same again for the import path: an outage read as "that isn't a recipe".
+  if (!res.ok || j?.error) {
+    console.error('recipe-ai import upstream', res.status, j?.error?.type, j?.error?.message)
+    return { _upstream: `${res.status} ${j?.error?.type || 'error'}` }
+  }
   const text = j?.content?.[0]?.text || '{}'
   const m = text.match(/\{[\s\S]*\}/)
   return JSON.parse(m ? m[0] : '{}')
@@ -89,12 +94,22 @@ async function claudeMacros(ingredients, servings) {
     }),
   })
   const j = await res.json()
+  // An upstream failure (a retired model, a bad key, a rate limit) used to be
+  // indistinguishable from "the model couldn't read that": the error object has
+  // no `content`, so the parse yielded {} and the client was told to try again
+  // by hand. It is reported now - the full message to the function log, and the
+  // error TYPE back to the caller, which names the fault without saying
+  // anything about the key.
+  if (!res.ok || j?.error) {
+    console.error('recipe-ai macros upstream', res.status, j?.error?.type, j?.error?.message)
+    return { _upstream: `${res.status} ${j?.error?.type || 'error'}` }
+  }
   // Take every text block, not content[0] — a model that reasons first puts
   // something else there and content[0].text is then undefined, which parses
   // to {} and looks exactly like "could not work it out".
   const t = (j?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('') || '{}'
   const m = t.match(/\{[\s\S]*\}/)
-  try { return JSON.parse(m ? m[0] : '{}') } catch { return { _raw: t.slice(0, 200), _err: j?.error?.message } }
+  try { return JSON.parse(m ? m[0] : '{}') } catch { return { _raw: t.slice(0, 200) } }
 }
 
 export const handler = async (event) => {
@@ -111,6 +126,9 @@ export const handler = async (event) => {
       const n = Math.min(99, Math.max(1, Math.round(Number(servings) || 1)))
       if (!list.length) return { statusCode: 200, headers: cors, body: '{"error":"No ingredients to work from."}' }
       const r = await claudeMacros(list, n)
+      if (r._upstream) {
+        return { statusCode: 200, headers: cors, body: JSON.stringify({ error: 'The macro service is not answering right now — your ingredients are safe, try again shortly.', upstream: r._upstream }) }
+      }
       const rows = Array.isArray(r.l) ? r.l.filter((x) => Array.isArray(x) && x.length >= 5) : []
       // One row per ingredient or the alignment is gone and the total would be
       // wrong in a way nobody could see. Better to say so than to answer.
@@ -170,6 +188,9 @@ export const handler = async (event) => {
     }
 
     const r = await claude(content)
+    if (r._upstream) {
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ error: 'The recipe reader is not answering right now — try again shortly, or add it manually.', upstream: r._upstream }) }
+    }
     const int = (v) => Math.max(0, Math.round(Number(v) || 0))
     // Couldn't read it (blocked page / not a recipe) — steer to paste/photo.
     if ((!Array.isArray(r.ingredients) || r.ingredients.length === 0) && int(r.calories) === 0) {

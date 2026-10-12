@@ -727,3 +727,42 @@ build that had actually failed on a syntax error I had just introduced.
   syntax error — exactly the heredoc escaping trap already written down below.
   Use the Edit tool for anything containing backslash escapes; the lesson was
   on this page and I did it anyway.
+
+## `<input type="number">` inside a form is a silent submit blocker (2026-10-12)
+Alanna McCann told Paul her check-in "doesn't actually submit". It didn't: the
+Supabase edge logs show her opening the form at 10:55:12 and no POST to
+`checkin_responses` at all. Run server-side as her, RLS and the grants allowed
+the insert — so the form never asked.
+- A browser will not submit a form containing an `:invalid` field. Paul's
+  template has two `number` fields; `<input type="number">` with no `step`
+  defaults to `step=1`, so **8.5** is a step mismatch and **"10,000 steps"**,
+  **"12-15"** and **"-"** are `badInput`. Each blocks the submit behind a
+  validation bubble that is easy to miss on a phone.
+- Worse, `"3 or 4"` is silently kept as `34`. Valid, submitted, wrong.
+- The fix is free text with `inputMode="decimal"`, parsed by us, plus
+  `noValidate` on the form. Then nothing the client types can stop the send.
+- **Proving it needs real key presses.** `input.value = '10,000 steps'` is
+  sanitised to `''` and the field stays VALID — a programmatic test reports no
+  bug at all. `tasks/e2e_round43.mjs` drives Chromium with
+  `pressSequentially`, and the positive control is that the OLD markup must
+  still fail.
+- The second half of the same bug: `const { data } = await ...insert()` threw
+  the error away and printed "Sent ✓" regardless, so a check-in that never
+  saved was indistinguishable from one that did — to her AND to Paul. Same
+  shape as the food-queue bug of 15 Sept. Check `error`, keep the answers.
+
+## An upstream API error is for the log, never for the customer (2026-10-12)
+The Anthropic account ran out of credit. Six call sites did
+`data?.error?.message || 'Claude API error.'`, so every AI screen on Paul's
+site showed his paying clients *"Your credit balance is too low to access the
+Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."*
+Our billing problem, verbatim, inside their coaching app.
+- `upstreamMessage()` in `_auth.mjs` now logs the real message and returns
+  something safe. `e2e_round43.mjs` asserts no response body ever matches
+  /credit balance|Plans & Billing|api.key|anthropic/i.
+- It also hid the diagnosis for an hour: `recipe-ai` swallowed the same error
+  into "Couldn't read that recipe", which reads as a bad URL rather than an
+  outage. An endpoint that calls a paid API should say WHICH kind of failure it
+  had — the error `type` is enough, and gives nothing away.
+- A green LLM test on Tuesday says nothing about Thursday. Round 42 passed 18/18
+  on 10 Oct and 9/18 today without a line of its code changing.

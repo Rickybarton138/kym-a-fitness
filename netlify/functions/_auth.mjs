@@ -230,3 +230,22 @@ export function handler(fn) {
     }
   }
 }
+
+/**
+ * What to say when the Anthropic call fails.
+ *
+ * 12 Oct 2026: the account ran out of credit, and every AI screen on Paul's
+ * site showed his paying clients "Your credit balance is too low to access the
+ * Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."
+ * — our billing problem, word for word, inside their coaching app. Six call
+ * sites piped `data.error.message` straight through.
+ *
+ * The upstream message belongs in the function log, where it is the first thing
+ * anyone debugging wants. It does not belong on a client's phone.
+ */
+export function upstreamMessage(status, data, fallback = 'The AI isn’t answering right now — give it a minute and try again.') {
+  console.error('anthropic upstream', status, data?.error?.type, data?.error?.message)
+  if (status === 429) return 'The AI is busy right now — give it a minute and try again.'
+  if (status >= 500) return 'The AI service is having a moment — try again shortly.'
+  return fallback
+}

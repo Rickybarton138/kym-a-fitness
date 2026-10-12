@@ -5,7 +5,7 @@ import { FoodSearch } from './FoodSearch.jsx'
 import { Metric, Loader } from './ui.jsx'
 import { THEME } from './themes.js'
 import { BarcodeScan, MealScan } from './FoodCapture.jsx'
-import { RecipeCreator } from './RecipeCreator.jsx'
+import { RecipeCreator, RecipeEditor } from './RecipeCreator.jsx'
 import { queueFood } from './foodQueue.js'
 
 // Per-day food diary — itemised entries grouped by meal, with delete + daily totals
@@ -58,6 +58,7 @@ const shortDate = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 
 function MyRecipes({ clientId, onLog, defaultMeal }) {
   const [rows, setRows] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState(null)
   const [portions, setPortions] = useState({})
   const [meal, setMeal] = useState(defaultMeal)
   const [logged, setLogged] = useState(null)
@@ -86,6 +87,11 @@ function MyRecipes({ clientId, onLog, defaultMeal }) {
       fat_g: Math.round((r.fat_g || 0) * n),
       fibre_g: Math.round((r.fibre_g || 0) * n),
       meal_type: meal,
+      // The link back to the recipe, so the diary entry can be re-costed later
+      // if the recipe changes. Paul, 12 Oct: someone pre-tracks Thursday, then
+      // adjusts the recipe when Thursday comes round.
+      recipe_id: r.id,
+      portions: n,
     })
     setLogged(r.id)
     setTimeout(() => setLogged(null), 2000)
@@ -112,10 +118,11 @@ function MyRecipes({ clientId, onLog, defaultMeal }) {
           </p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
             <label className="field" style={{ flex: '0 0 96px' }}>Portions
-              <input type="number" inputMode="decimal" step="0.5" min="0.5"
+              <input type="text" inputMode="decimal"
                 value={portions[r.id] ?? '1'}
                 onChange={(e) => setPortions((p) => ({ ...p, [r.id]: e.target.value }))} />
             </label>
+            <button type="button" className="btn ghost sm" style={{ marginBottom: 2 }} onClick={() => setEditing(r)}>Edit</button>
             <button type="button" className="btn primary sm" style={{ marginBottom: 2 }} onClick={() => log(r)}>
               {logged === r.id ? 'Added ✓' : 'Log this'}
             </button>
@@ -124,6 +131,15 @@ function MyRecipes({ clientId, onLog, defaultMeal }) {
       ))}
 
       <button type="button" className="btn ghost" onClick={() => setCreating(true)}>Create a recipe</button>
+
+      {editing && (
+        <RecipeEditor
+          recipe={editing}
+          onSaved={() => load()}
+          onDeleted={(id) => setRows((rs) => (rs || []).filter((x) => x.id !== id))}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }
@@ -144,6 +160,8 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
   const [yesterday, setYesterday] = useState(null) // what was eaten this meal, the day before
   const [savingEdit, setSavingEdit] = useState(false)
   const [editErr, setEditErr] = useState('')
+  const [eRecipe, setERecipe] = useState(null)   // the recipe this entry came from, if any
+  const [eServings, setEServings] = useState('1')
   const [targets, setTargets] = useState(null)
   const [week, setWeek] = useState(null)
   const [weekOffset, setWeekOffset] = useState(0) // 0 = this week, -1 = last week
@@ -228,18 +246,52 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
     setMult('1')
     setEMeal(l.meal_type || mealOf(l.logged_at))
     setEDate(dayKey(new Date(l.logged_at)))
+    setEditErr('')
+    // Paul, 12 Oct: "If someone has pretracked a recipe in advance ... but when
+    // that day rolls around they make some adjustments to the recipe". An entry
+    // logged from a recipe carries recipe_id, so the current recipe is fetched
+    // here and the sheet offers to re-cost THIS entry from it. Deliberately
+    // only this entry - the same recipe may sit in a dozen other days that were
+    // eaten as they were written, and rewriting those would be a lie.
+    setERecipe(null)
+    setEServings(String(l.portions || 1))
+    if (l.recipe_id) {
+      supabase.from('recipes').select('id, title, servings, calories, protein_g, carbs_g, fat_g, fibre_g')
+        .eq('id', l.recipe_id).maybeSingle()
+        .then(({ data }) => setERecipe(data || null))
+    }
   }
   async function saveEdit() {
-    const f = Math.max(0.05, Number(mult) || 1)
-    const scale = (n) => Math.round((n || 0) * f)
     const when = new Date(editing.logged_at)
     const [y, m, d] = eDate.split('-').map(Number)
     when.setFullYear(y, m - 1, d) // keep the time of day, move the date
+
+    // Two different sums. A recipe-linked entry is rebuilt from the recipe's
+    // CURRENT per-serving macros times the servings eaten, which is what makes
+    // an edited recipe show up in a day that was pre-tracked. Anything else
+    // keeps the old behaviour: scale whatever is stored by a multiplier.
+    let patch
+    if (eRecipe) {
+      const n = Math.max(0.05, Number(String(eServings).replace(/[,\s]/g, '')) || 1)
+      const per = (v) => Math.round((v || 0) * n)
+      patch = {
+        name: n === 1 ? eRecipe.title : `${eRecipe.title} (${n} servings)`,
+        calories: per(eRecipe.calories), protein_g: per(eRecipe.protein_g),
+        carbs_g: per(eRecipe.carbs_g), fat_g: per(eRecipe.fat_g), fibre_g: per(eRecipe.fibre_g),
+        portions: n,
+      }
+    } else {
+      const f = Math.max(0.05, Number(String(mult).replace(/[,\s]/g, '')) || 1)
+      const scale = (v) => Math.round((v || 0) * f)
+      patch = {
+        calories: scale(editing.calories), protein_g: scale(editing.protein_g),
+        carbs_g: scale(editing.carbs_g), fat_g: scale(editing.fat_g), fibre_g: scale(editing.fibre_g),
+      }
+    }
+
     setSavingEdit(true)
     const { error } = await supabase.from('nutrition_logs').update({
-      calories: scale(editing.calories), protein_g: scale(editing.protein_g),
-      carbs_g: scale(editing.carbs_g), fat_g: scale(editing.fat_g), fibre_g: scale(editing.fibre_g),
-      meal_type: eMeal, logged_at: when.toISOString(),
+      ...patch, meal_type: eMeal, logged_at: when.toISOString(),
     }).eq('id', editing.id)
     setSavingEdit(false)
     if (error) { setEditErr(error.message); return }
@@ -259,6 +311,9 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
       client_id: clientId, source: 'manual', name: m.name || 'Food',
       calories: m.calories || 0, protein_g: m.protein_g || 0, carbs_g: m.carbs_g || 0, fat_g: m.fat_g || 0, fibre_g: m.fibre_g || 0,
       meal_type: m.meal_type || mealByHour(day), logged_at: when.toISOString(),
+      // Only set when the food came from a recipe. queueFood replays the row
+      // object verbatim, so an offline log keeps the link too.
+      ...(m.recipe_id ? { recipe_id: m.recipe_id, portions: m.portions || 1 } : {}),
     }
     const { error } = await supabase.from('nutrition_logs').insert(row)
     if (error) { queueFood(row); return false }
@@ -437,6 +492,9 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
               <button type="button" className="diary-name diary-edit" onClick={() => openEdit(l)} aria-label={`Edit ${l.name || 'entry'}`}>
                 {l.name || 'Food'}<span className="diary-macros">{l.calories} kcal · {l.protein_g}P {l.carbs_g}C {l.fat_g}F</span>
               </button>
+              {/* The whole name has always opened the editor, but nothing said so
+                  - Paul asked for an edit button because there wasn't one to see. */}
+              <button type="button" className="diary-act" onClick={() => openEdit(l)} aria-label={`Edit ${l.name || 'entry'}`}>Edit</button>
               <button type="button" className="diary-del" onClick={() => del(l.id)} aria-label={`Delete ${l.name || 'entry'}`}>×</button>
             </div>
           ))}
@@ -450,17 +508,41 @@ export function FoodDiary({ clientId, coachId, contributorId, title = 'Food diar
             <div className="session-title" style={{ marginTop: 2 }}>{editing.name || 'Food'}</div>
             <p className="muted-note">Currently {editing.calories} kcal · {editing.protein_g}P {editing.carbs_g}C {editing.fat_g}F</p>
 
-            <label className="field" style={{ marginTop: 10 }}>Portion
-              <input type="number" step="0.25" min="0.05" inputMode="decimal" value={mult} onChange={(e) => setMult(e.target.value)} />
-            </label>
-            <div className="seg" style={{ marginTop: 6, flexWrap: 'wrap' }}>
-              {['0.5', '1', '1.5', '2'].map((v) => (
-                <button type="button" key={v} className={mult === v ? 'on' : ''} onClick={() => setMult(v)}>{v}×</button>
-              ))}
-            </div>
-            <p className="muted-note" style={{ marginTop: 6 }}>
-              {Number(mult) === 1 ? 'Leave at 1× to keep the amounts as they are.' : `Saves as ${Math.round((editing.calories || 0) * (Number(mult) || 1))} kcal.`}
-            </p>
+            {eRecipe ? (
+              <>
+                <p className="muted-note" style={{ marginTop: 10 }}>
+                  From your recipe <b>{eRecipe.title}</b> — {eRecipe.calories} kcal a serving as it stands now.
+                  Saving re-works this entry from the recipe, so a recipe you have changed since brings this day up to date.
+                </p>
+                <label className="field" style={{ marginTop: 10 }}>Servings eaten
+                  <input type="text" inputMode="decimal" value={eServings} onChange={(e) => setEServings(e.target.value)} />
+                </label>
+                <div className="seg" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+                  {['0.5', '1', '1.5', '2'].map((v) => (
+                    <button type="button" key={v} className={eServings === v ? 'on' : ''} onClick={() => setEServings(v)}>{v}</button>
+                  ))}
+                </div>
+                <p className="muted-note" style={{ marginTop: 6 }}>
+                  Saves as {Math.round((eRecipe.calories || 0) * (Math.max(0.05, Number(String(eServings).replace(/[,\s]/g, '')) || 1)))} kcal.
+                  Only this entry changes — other days you logged it stay as they were.
+                </p>
+              </>
+            ) : (
+              <>
+                {editing.recipe_id && <p className="muted-note" style={{ marginTop: 10 }}>This came from a recipe that has since been deleted, so it can only be scaled.</p>}
+                <label className="field" style={{ marginTop: 10 }}>Portion
+                  <input type="text" inputMode="decimal" value={mult} onChange={(e) => setMult(e.target.value)} />
+                </label>
+                <div className="seg" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+                  {['0.5', '1', '1.5', '2'].map((v) => (
+                    <button type="button" key={v} className={mult === v ? 'on' : ''} onClick={() => setMult(v)}>{v}×</button>
+                  ))}
+                </div>
+                <p className="muted-note" style={{ marginTop: 6 }}>
+                  {Number(mult) === 1 ? 'Leave at 1× to keep the amounts as they are.' : `Saves as ${Math.round((editing.calories || 0) * (Number(mult) || 1))} kcal.`}
+                </p>
+              </>
+            )}
 
             <div className="grid-2" style={{ marginTop: 10 }}>
               <label className="field">Meal

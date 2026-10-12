@@ -1734,17 +1734,59 @@ function CoachCheckins({ clientId }) {
   )
 }
 
-function CoachCheckinRow({ c, onReplied }) {
-  const [reply, setReply] = useState(c.coach_reply || '')
+// Paul, 12 Oct: "if I write a reply to the check in form, can we have it that
+// it displays the reply in the same way as it does if the AI replies to a
+// client? Currently the messages stays in the text box and the button still
+// shows to send the reply."
+//
+// So a sent reply becomes the same .fc-block.coach the client reads on their
+// side, and the button turns into Edit reply. Shared by both check-in shapes -
+// the legacy weekly_checkins row and the form-builder response row - because
+// the only thing that differs between them is which table to PATCH.
+function ReplyBox({ table, id, saved, onReplied }) {
+  const [editing, setEditing] = useState(!saved)
+  const [reply, setReply] = useState(saved || '')
   const [saving, setSaving] = useState(false)
-  const [done, setDone] = useState(false)
+  const [err, setErr] = useState('')
+
+  // useState only seeds on first render, so without this the box would still be
+  // showing the old text after the row is replied to or reloaded.
+  useEffect(() => { setReply(saved || ''); setEditing(!saved) }, [saved])
+
   async function send() {
-    if (!reply.trim()) return
-    setSaving(true)
-    const { error } = await supabase.from('weekly_checkins').update({ coach_reply: reply.trim() }).eq('id', c.id)
+    const text = reply.trim()
+    if (!text) return
+    setSaving(true); setErr('')
+    const { error } = await supabase.from(table).update({ coach_reply: text }).eq('id', id)
     setSaving(false)
-    if (!error) { setDone(true); onReplied(reply.trim()); setTimeout(() => setDone(false), 1200) }
+    if (error) { setErr(error.message); return }
+    onReplied(text)
+    setEditing(false)
   }
+
+  if (!editing) {
+    return (
+      <>
+        <div className="fc-block coach"><b>Your reply</b><p>{saved}</p></div>
+        <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setEditing(true)}>Edit reply</button>
+      </>
+    )
+  }
+  return (
+    <>
+      <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply to this check-in…" />
+      {err && <p className="error">{err}</p>}
+      <div className="nudge-actions" style={{ marginTop: 8 }}>
+        <button className="btn primary sm" disabled={saving || !reply.trim()} onClick={send}>
+          {saving ? 'Sending…' : saved ? 'Update reply' : 'Send reply'}
+        </button>
+        {saved && <button className="btn ghost sm" onClick={() => { setReply(saved); setEditing(false) }}>Cancel</button>}
+      </div>
+    </>
+  )
+}
+
+function CoachCheckinRow({ c, onReplied }) {
   return (
     <div className="fc-block">
       <b>Check-in · {(c.created_at || '').slice(0, 10)}</b>
@@ -1755,8 +1797,7 @@ function CoachCheckinRow({ c, onReplied }) {
       {c.wins && <p className="checkin-line"><b>Wins:</b> {c.wins}</p>}
       {c.struggles && <p className="checkin-line"><b>Struggles:</b> {c.struggles}</p>}
       {c.question && <p className="checkin-line"><b>Asked:</b> {c.question}</p>}
-      <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply to this check-in…" />
-      <button className="btn primary sm" disabled={saving} onClick={send}>{done ? 'Sent ✓' : saving ? 'Sending…' : 'Send reply'}</button>
+      <ReplyBox table="weekly_checkins" id={c.id} saved={c.coach_reply || ''} onReplied={onReplied} />
     </div>
   )
 }
@@ -1779,22 +1820,11 @@ function CoachCheckinResponses({ clientId }) {
 }
 
 function CoachResponseRow({ c, onReplied }) {
-  const [reply, setReply] = useState(c.coach_reply || '')
-  const [saving, setSaving] = useState(false)
-  const [done, setDone] = useState(false)
-  async function send() {
-    if (!reply.trim()) return
-    setSaving(true)
-    const { error } = await supabase.from('checkin_responses').update({ coach_reply: reply.trim() }).eq('id', c.id)
-    setSaving(false)
-    if (!error) { setDone(true); onReplied(reply.trim()); setTimeout(() => setDone(false), 1200) }
-  }
   return (
     <div className="fc-block">
       <b>Check-in · {(c.created_at || '').slice(0, 10)}</b>
       {(c.fields || []).map((f) => <p className="checkin-line" key={f.id}><b>{f.label}:</b> {formatAnswer(f, c.answers?.[f.id])}</p>)}
-      <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply to this check-in…" />
-      <button className="btn primary sm" disabled={saving} onClick={send}>{done ? 'Sent ✓' : saving ? 'Sending…' : 'Send reply'}</button>
+      <ReplyBox table="checkin_responses" id={c.id} saved={c.coach_reply || ''} onReplied={onReplied} />
     </div>
   )
 }

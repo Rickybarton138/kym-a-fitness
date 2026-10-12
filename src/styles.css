@@ -106,6 +106,9 @@ input { font-family: inherit; }
 .btn.big { width: 100%; padding: 16px; }
 .btn.primary { background: var(--accent); color: var(--on-accent); }
 .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+/* Destructive confirm (delete a recipe). Outlined, not filled: it should read
+   as a deliberate second tap rather than compete with the primary action. */
+.btn.danger { background: transparent; border: 1px solid #c0553c; color: #c0553c; }
 
 /* Photo preview */
 .shot { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); aspect-ratio: 4 / 3; background: var(--surface-2); }
@@ -560,6 +563,8 @@ input { font-family: inherit; }
 .diary-del:hover, .diary-del:focus-visible { background: var(--surface-2); color: var(--text); }
 .diary-item:first-of-type { border-top: 0; }
 .diary-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+.diary-act { flex: 0 0 auto; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 12px; font-weight: 700; padding: 6px 10px; border-radius: 999px; }
+.diary-act:hover, .diary-act:focus-visible { background: var(--surface-2); color: var(--text); }
 .diary-macros { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
 /* Taller since the bars carry their own number above them (Paul, 12 Sept:
    "be able to show each day what the actual total calories was for that day").
