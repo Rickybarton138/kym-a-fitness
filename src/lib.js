@@ -326,3 +326,50 @@ export function sessionDateLabel(plan, now = new Date()) {
 // instead. Phase 1 of the native app plan; harmless until then.
 const API_BASE = (import.meta.env?.VITE_API_BASE || '').replace(/\/$/, '')
 export const apiUrl = (path) => API_BASE + path
+
+// Paul, 13 Oct: "if I put a youtube link in the message box will they be able
+// to click that link?" He could not. A hold-screen note is rendered as a plain
+// text node and no browser auto-links a bare URL in page text — checked in
+// Chromium against the exact markup App.jsx produced: 0 anchors. The client
+// saw the address written out and tapping it did nothing.
+//
+// This splits a note into text and link runs so the caller can build real
+// anchors out of React children. It never produces HTML, so nothing a coach
+// types into the note can inject markup.
+//
+// Only http(s) is linked. A bare "youtube.com/watch?v=..." stays as text
+// rather than guessing a scheme for someone, and javascript: or data: can
+// never become a link because the pattern does not match them at all.
+export function linkParts(text) {
+  const s = String(text ?? '')
+  if (!s) return []
+  const out = []
+  const push = (type, value, href) => {
+    if (!value) return
+    out.push(href ? { type, value, href } : { type, value })
+  }
+  // Walked with matchAll rather than split: a run of text can itself begin
+  // "https://" without being an address ("https:// is a prefix"), and deciding
+  // from the text rather than from the match turned that whole sentence into
+  // one link. Quotes and angle brackets are excluded from an address because
+  // they cannot appear in one unencoded, which also keeps a pasted <a href>
+  // from swallowing its own markup into the link.
+  const re = /https?:\/\/[^\s<>"'`]+/gi
+  let last = 0
+  for (const m of s.matchAll(re)) {
+    push('text', s.slice(last, m.index))
+    const run = m[0]
+    // A full stop or bracket at the end of a sentence belongs to the sentence,
+    // not to the address. Costs us an address that genuinely ends in one,
+    // which is much the rarer case.
+    const tail = (run.match(/[).,!?;:'"\]}>]+$/) || [''])[0]
+    const href = tail ? run.slice(0, -tail.length) : run
+    // Needs something after the slashes to be an address at all.
+    if (/^https?:\/\/[^/]/i.test(href)) push('link', href, href)
+    else push('text', href)
+    push('text', tail)
+    last = m.index + run.length
+  }
+  push('text', s.slice(last))
+  return out
+}

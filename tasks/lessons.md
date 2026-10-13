@@ -823,3 +823,32 @@ were not mine — a finished tappable-links feature from a parallel session. My
 unreviewed work to rick-fit as well.
 - Check `git status` BEFORE building for a deploy, not just before committing.
   Commit only your own paths, and say what else rode along.
+
+## When you split on a pattern, decide from the match, not from the text
+
+`linkParts` split a note on a URL pattern and then decided which runs were
+links by re-testing each run with `/^https?:\/\//`. A run of ordinary text can
+itself begin "https://" without being an address, so "https:// is a prefix"
+came back as one link covering the whole sentence. The split told me where the
+matches were and I threw that information away, then guessed it back.
+
+Walk the matches (`matchAll`) and slice the text between them. The type of each
+run is then a fact, not an inference.
+
+Found by my own test on 13 Oct, not in review — the case was in the list
+because it looked silly, which is the best reason to put a case in a list.
+
+## A test that demands exactness from two AI calls will cry wolf
+
+`e2e_round42` asserted that asking for 2 servings and 4 servings agreed to
+within 2 kcal. It failed on 13 Oct at 660 vs 322x2 and sent me looking for a
+regression in a change that had touched three files, none of them on that path.
+
+The division by servings is exact and is done in code. But the two numbers came
+from two separate calls, each recalling its own per-100g figures, so the TOTALS
+differed before anything was divided. The assertion was testing model
+determinism while its label claimed arithmetic.
+
+Before loosening a flaky assertion, work out which half of it is wrong. Here
+the code was right and the claim was wrong. Had it been the other way round,
+loosening it would have buried the bug.

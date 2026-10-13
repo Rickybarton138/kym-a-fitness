@@ -157,8 +157,16 @@ ok('it costed every ingredient, not some of them', two.lines === LIST.length, `$
 ok('comfortably inside the 10s function cap', two._ms < 6000, `${two._ms}ms`)
 
 const four = await macros(LIST, 4)
-ok('doubling the servings halves it, exactly', Math.abs(two.calories - four.calories * 2) <= 2,
-  `${two.calories} vs ${four.calories} x2`)
+// This used to demand the two agree to within 2 kcal, and it cried wolf on 13
+// Oct at 660 vs 322x2. The claim was wrong, not the code: the division by
+// servings IS exact and IS done in code (`per = round(total / n)` in
+// recipe-ai.mjs), but these are two SEPARATE calls, each recalling its own
+// per-100g figures, so the TOTALS differ before anything is divided. Exactness
+// of the division cannot be tested across two calls. Hold it to the same drift
+// the repeat-call check below allows, and the halving is still what is tested.
+const halfDrift = Math.abs(two.calories - four.calories * 2) / Math.max(1, two.calories)
+ok('doubling the servings halves it, within recall drift', halfDrift <= 0.1,
+  `${two.calories} vs ${four.calories} x2 (${Math.round(halfDrift * 100)}%)`)
 
 // Same input twice. A model doing its own totalling swung 680 -> 1067 here.
 const again = await macros(LIST, 2)

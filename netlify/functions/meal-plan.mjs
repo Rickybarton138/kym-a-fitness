@@ -138,9 +138,16 @@ export const handler = async (event) => {
         // A swapped meal without ingredients is a card whose recipe cannot be
         // opened and a line the shopping list cannot account for, so the
         // replacement has to arrive in the same shape as the meal it replaces.
-        `Each option also needs an "ingredients" list: one line per ingredient with a METRIC quantity, for ONE person eating it once, written shopping-list style ("180g chicken thigh fillets", "1 red pepper"). The quantities must produce the calories and protein you report. Leave out salt, pepper and cooking oil.\n` +
+        //
+        // Gated on the same flag as everywhere else. Without the gate a swap on
+        // Kim's or Paul's site would change prompt and output size for their
+        // clients with no flag protecting it, which is the exact thing the flag
+        // exists to prevent.
+        (b.wantIngredients
+          ? `Each option also needs an "ingredients" list: one line per ingredient with a METRIC quantity, for ONE person eating it once, written shopping-list style ("180g chicken thigh fillets", "1 red pepper"). The quantities must produce the calories and protein you report. Leave out salt, pepper and cooking oil.\n`
+          : '') +
         `Return STRICT JSON only, no markdown:\n` +
-        `{"options":[{"title":"","description":"1 short line, key ingredients","ingredients":["qty + item"],"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}`
+        `{"options":[{"title":"","description":"1 short line, key ingredients",${b.wantIngredients ? '"ingredients":["qty + item"],' : ''}"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}`
 
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',

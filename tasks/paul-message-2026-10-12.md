@@ -1,14 +1,22 @@
-# Message for Paul — 12 Oct
+# Message for Paul — written 12 Oct, still to send
 
-Covers his four messages this morning, plus two things he hasn't noticed yet
-and should hear from us first.
+Covers his four messages of 12 Oct, plus two things he hasn't noticed yet and
+should hear from us first.
 
-**Do not send until the promote has run.** Nothing below is live otherwise, and
+**Do not send until the promote has run.** Re-checked 13 Oct: the live site is
+still deploy `6ac74d8369c7ca281c89fe3d` from 8 Oct. The draft to promote is now
+`6acea44428a31a05289667c7`, which supersedes `6acccbc959e1f0058ac7fc46`. Nothing below is live, and
 the food-search bug he reported again at 12:03 is the one that has been sitting
 in an unpromoted draft since 9 Oct.
 
-**The AI line is only true once the Anthropic account is topped up.** If Ricky
-hasn't done that when this goes, cut that paragraph and send the rest.
+```
+npx netlify api restoreSiteDeploy --data '{"site_id":"bda91296-2224-4923-b91c-d6482971eab1","deploy_id":"6acea44428a31a05289667c7"}'
+```
+
+**The AI paragraph is now true.** The Anthropic account has been topped up —
+verified 13 Oct against production and the draft: check-in replies answer, and
+recipe macros are back (655 kcal on the hand-worked test, all four ingredients
+costed). `e2e_round42` is 18 of 18 and `e2e_round43` all green.
 
 Copy from here:
 
@@ -24,8 +32,8 @@ live today along with everything below.
 slow, not lost, never sent. The two number questions ("Average daily steps",
 "How many sessions") would only accept a plain whole number, so typing
 "10,000 steps", or "8.5", or "3-4", made the phone refuse to send the whole
-form and show a little warning that's very easy to miss. It then told her
-"Sent ✓" anyway, which is why neither of you could get to the bottom of it.
+form and show a little warning that's very easy to miss. It then told her it had sent
+anyway, which is why neither of you could get to the bottom of it.
 Both questions now take whatever she types, and if a check-in ever does fail
 to send it says so and keeps her answers on screen instead of pretending.
 
@@ -49,30 +57,36 @@ up the entries already logged, so days pre-tracked before today work too.
 
 **Two you haven't seen yet.**
 
-The AI itself has been down — the account it runs on ran out of credit, so
+The AI itself had been down — the account it runs on ran out of credit, so
 anything that thinks (Ask coach, meal and fridge scans, the recipe reader, the
-instant check-in replies) has been failing. That's sorted now. Worse, it was
+instant check-in replies) was failing. That's sorted and tested. Worse, it was
 showing your clients the billing message itself rather than something sensible.
 Also fixed, everywhere.
+
+*The link in a pause message.* Yes, now — a YouTube link you put in that box is
+tappable for them, and opens in a new tab so they don't lose the app. One catch:
+the note only saves when you tap an access button, so for someone already
+paused, add the link and then tap "Paused" again.
 
 And a small one: a client's own recipes aren't visible to you — only the ones
 you've added. If you want to see what they've built, say so and I'll open that
 up.
 
+One thing: close the app down fully and reopen it, rather than just switching
+back to it, or you'll still be looking at the old version. Same for anyone who
+says a fix hasn't landed.
+
 ---
 
 ## Notes for Ricky, not for Paul
 
-- **The Anthropic credit is the blocker, not the deploy.** Everything in the
-  app that calls the AI is dead on all five brands — Paul's, Kim's, PPH and
-  Elev8 all share the key and all four are showing clients
-  "Your credit balance is too low to access the Anthropic API." Top up first,
-  then promote; and look at the usage breakdown in the console before you do,
-  or it'll drain the same way again.
-- Only Paul's site has the fix built. Kim's, PPH's and Elev8's still leak the
-  billing text until they're rebuilt and deployed — say the word.
-- Don't claim the macros button works until `tasks/e2e_round42.mjs` passes
-  again. It's 9 of 18 right now, entirely because of the credit.
+- **The promote is now the only blocker.** Credit is sorted; the deploy isn't.
+  Run the command above, load the app once, then send.
+- Kim's, PPH's and Elev8's sites still carry the old code that would leak the
+  billing text next time the account runs dry. The fix is in the repo and not
+  built for them — say the word.
+- Test against `app.redefineacademy.com` after the promote, not the draft URL.
+  Everything green today was green on the draft.
 - Alanna: "most likely cause", not proven. The logs show the form opened and
   nothing sent; the repro was Chromium on the same markup and she's on Firefox
   for Android. Her answer to the steps question would settle it.

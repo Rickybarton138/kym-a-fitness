@@ -5,6 +5,7 @@ import AuthScreen from './auth.jsx'
 import ClientApp from './ClientApp.jsx'
 import TrainerApp from './TrainerApp.jsx'
 import Onboarding from './Onboarding.jsx'
+import { linkParts } from './lib.js'
 
 // Development-only preview of the coaching UI, at /?coachpreview=1.
 // The real screens are behind authentication and this task must not use a
@@ -163,7 +164,18 @@ function MembershipHold({ status, note, onSignOut }) {
             ? 'Your membership is paused at the moment. Everything you have logged is saved and will be exactly as you left it when you come back.'
             : 'Your membership has ended. Thanks for training with us — get in touch with your coach any time you would like to pick it back up.'}
         </p>
-        {note && <p className="muted-note" style={{ marginTop: 10 }}>{note}</p>}
+        {/* Paul, 13 Oct: a YouTube link he types into the note is now
+            tappable. Built from React children, so the note can never inject
+            markup, and only http(s) is ever turned into a link. */}
+        {note && (
+          <p className="muted-note" style={{ marginTop: 10 }}>
+            {linkParts(note).map((part, i) => (
+              part.type === 'link'
+                ? <a key={i} href={part.href} target="_blank" rel="noopener noreferrer">{part.value}</a>
+                : <React.Fragment key={i}>{part.value}</React.Fragment>
+            ))}
+          </p>
+        )}
         <button className="btn ghost" style={{ marginTop: 18 }} onClick={onSignOut}>Sign out</button>
       </div>
     </div>
