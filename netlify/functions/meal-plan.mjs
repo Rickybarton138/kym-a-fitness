@@ -2,7 +2,8 @@
 // qualifying answers (meals/day, options per meal, snacks, preferences, dietary
 // needs, allergies), returns a one-day plan where picking one option per meal
 // lands roughly on their targets. Haiku — structured text, no vision.
-import { upstreamMessage } from './_auth.mjs'
+import { upstreamMessage, requireUser, HttpError } from './_auth.mjs'
+import { PRICE_KEYS, costOf } from '../../src/mealPrices.js'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
@@ -15,10 +16,79 @@ const textOf = (j) => (Array.isArray(j?.content) ? j.content : [])
   .filter((c) => c?.type === 'text' && typeof c.text === 'string')
   .map((c) => c.text).join('\n') || '{}'
 
+const int = (v) => { const n = Math.round(Number(v)); return n > 0 ? n : 0 }
+
+// Ingredient lines, for the recipe card and for the shopping list that is
+// summed from them. Capped at 24 because a meal needing more than that is not
+// the weeknight cooking this plan is for, and an uncapped list is what sends
+// the shopping call over max_tokens.
+const ingredientsOf = (v) => (Array.isArray(v) ? v : [])
+  .map((x) => String(typeof x === 'string' ? x : [x?.quantity || x?.qty, x?.item || x?.name].filter(Boolean).join(' ')).slice(0, 90).trim())
+  .filter(Boolean)
+  .slice(0, 24)
+
 export const handler = async (event) => {
   const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
   try {
     const b = JSON.parse(event.body || '{}')
+
+    // ---- How to cook ONE meal ----------------------------------------------
+    // Fetched when a meal card is tapped, not when the plan is built. A week
+    // is up to 28 meals and nobody reads 28 recipes, so writing them all up
+    // front would throw away most of a week's model spend.
+    //
+    // The ingredients are NOT generated here. They come in fixed from the plan,
+    // and this only writes the method for a list that already exists — which is
+    // what keeps the recipe and the shopping list agreeing with each other.
+    //
+    // Authenticated, unlike the older actions in this file. It is new, it
+    // spends model budget on every tap, and identity for a coaching AI endpoint
+    // comes from the verified session.
+    if (b.method) {
+      await requireUser(event)
+      const title = String(b.title || '').slice(0, 90).trim()
+      const ingredients = ingredientsOf(b.ingredients)
+      if (!title) return { statusCode: 400, headers: cors, body: '{"error":"No meal given."}' }
+      if (!ingredients.length) return { statusCode: 400, headers: cors, body: '{"error":"That meal was planned before recipes were added — swap it and the recipe will come with it."}' }
+
+      const mAllergies = String(b.allergies || '').slice(0, 200).trim()
+      const mDietary = String(b.dietary || '').slice(0, 200).trim()
+      const mRecovery = !!(b.recovery && b.recovery.on)
+      const methodPrompt =
+        `Write the cooking method for this one meal, for a client who cooks on a weeknight.\n` +
+        `Meal: ${title}\n` +
+        (b.description ? `In short: ${String(b.description).slice(0, 200)}\n` : '') +
+        `Ingredients, which are FIXED — use all of them, add nothing but salt, pepper and a little cooking oil, and do not change a quantity:\n${ingredients.map((i) => `- ${i}`).join('\n')}\n` +
+        `This is one serving for one person.\n` +
+        (mAllergies ? `They cannot eat: ${mAllergies}. Nothing in the method may introduce it.\n` : '') +
+        (mDietary ? `Dietary requirements: ${mDietary}.\n` : '') +
+        (mRecovery ? `Warm, non-judgmental wording. Never "light", "skinny", "low-cal" or "guilt-free", and never suggest eating less of it than the ingredients say.\n` : '') +
+        `Numbered steps, each one short enough to follow with your hands busy. Say the pan, the heat and the time. No waffle, no introduction, no nutrition talk.\n` +
+        `Return STRICT JSON only, no markdown:\n` +
+        `{"prep_min":<int>,"cook_min":<int>,"steps":["Heat a wide pan over a medium heat."],"tip":"1 short line, or empty"}`
+
+      const mr = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 1200, messages: [{ role: 'user', content: methodPrompt }] }),
+      })
+      const mj = await mr.json()
+      if (!mr.ok) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: upstreamMessage(mr.status, mj) }) }
+      const mm = textOf(mj).match(/\{[\s\S]*\}/)
+      let mp
+      try { mp = JSON.parse(mm ? mm[0] : '{}') } catch { return { statusCode: 200, headers: cors, body: '{"error":"Could not read the method — try again."}' } }
+      const steps = (Array.isArray(mp.steps) ? mp.steps : [])
+        .map((s) => String(s || '').slice(0, 300).trim())
+        .filter(Boolean)
+        .slice(0, 14)
+      if (!steps.length) return { statusCode: 200, headers: cors, body: '{"error":"Could not write the method — try again."}' }
+      return {
+        statusCode: 200,
+        headers: cors,
+        body: JSON.stringify({ recipe: { steps, prep_min: int(mp.prep_min), cook_min: int(mp.cook_min), tip: String(mp.tip || '').slice(0, 160) } }),
+      }
+    }
+
     const calories = Math.max(0, Math.round(Number(b.calories) || 0))
     const protein_g = Math.max(0, Math.round(Number(b.protein_g) || 0))
     const carbs_g = Math.max(0, Math.round(Number(b.carbs_g) || 0))
@@ -65,8 +135,12 @@ export const handler = async (event) => {
         (allergies ? `NEVER include these allergens/intolerances: ${allergies}. ` : '') +
         (preferences ? `Preferences: ${preferences}. ` : '') +
         `Shopping-friendly and quick to make.\n` +
+        // A swapped meal without ingredients is a card whose recipe cannot be
+        // opened and a line the shopping list cannot account for, so the
+        // replacement has to arrive in the same shape as the meal it replaces.
+        `Each option also needs an "ingredients" list: one line per ingredient with a METRIC quantity, for ONE person eating it once, written shopping-list style ("180g chicken thigh fillets", "1 red pepper"). The quantities must produce the calories and protein you report. Leave out salt, pepper and cooking oil.\n` +
         `Return STRICT JSON only, no markdown:\n` +
-        `{"options":[{"title":"","description":"1 short line, key ingredients","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}`
+        `{"options":[{"title":"","description":"1 short line, key ingredients","ingredients":["qty + item"],"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}`
 
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -77,16 +151,14 @@ export const handler = async (event) => {
       const rt = textOf(rj)
       const rm = rt.match(/\{[\s\S]*\}/)
       const rp = JSON.parse(rm ? rm[0] : '{}')
-      const rint = (v) => { const n = Math.round(Number(v)); return n > 0 ? n : 0 }
       const opts = (Array.isArray(rp.options) ? rp.options : []).slice(0, options).map((o) => ({
         title: String(o.title || '').slice(0, 90),
         description: String(o.description || '').slice(0, 200),
-        calories: rint(o.calories), protein_g: rint(o.protein_g), carbs_g: rint(o.carbs_g), fat_g: rint(o.fat_g),
+        ingredients: ingredientsOf(o.ingredients),
+        calories: int(o.calories), protein_g: int(o.protein_g), carbs_g: int(o.carbs_g), fat_g: int(o.fat_g),
       })).filter((o) => o.title)
       return { statusCode: 200, headers: cors, body: JSON.stringify({ options: opts }) }
     }
-
-    const int = (v) => { const n = Math.round(Number(v)); return n > 0 ? n : 0 }
 
     // ---- The week's skeleton, decided before any of it is cooked ------------
     // Variety and a small shopping list pull against each other, and no amount
@@ -241,13 +313,23 @@ export const handler = async (event) => {
         (allergies ? `NEVER include these allergens/intolerances: ${allergies}. ` : '') +
         (preferences ? `Preferences: ${preferences}. ` : '') +
         `They cook. Keep it shopping-friendly and quick on a weeknight.\n` +
+        // The ingredient lines are asked for HERE, with the meal, rather than
+        // when the card is tapped. Two reasons, and the second is the important
+        // one:
+        //   The shopping list is aggregated from these lines instead of from a
+        //   one-line description, so it is a sum of real quantities.
+        //   The recipe and the shopping list cannot contradict each other. Work
+        //   the ingredients out later and a tap could say 900g of chicken
+        //   against a list that bought 600g, and there is no way to tell which
+        //   one is wrong.
+        `Every meal also needs an "ingredients" list: one line per ingredient, each with a METRIC quantity, for ONE person eating that meal once — not a family-sized batch. The quantities must actually produce the calories and protein you reported for that meal. Write them shopping-list style ("180g chicken thigh fillets", "1 red pepper", "200g tinned chopped tomatoes"). Leave out salt, pepper and cooking oil.\n` +
         `Return STRICT JSON only, no markdown:\n` +
-        `{"meals":[{"name":"Breakfast","title":"","description":"1 short line, key ingredients","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}`
+        `{"meals":[{"name":"Breakfast","title":"","description":"1 short line, key ingredients","ingredients":["qty + item"],"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}`
 
       const dr = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content: dayPrompt }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 3000, messages: [{ role: 'user', content: dayPrompt }] }),
       })
       const dj = await dr.json()
       if (!dr.ok) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: upstreamMessage(dr.status, dj) }) }
@@ -258,6 +340,7 @@ export const handler = async (event) => {
         name: String(m.name || 'Meal').slice(0, 30),
         title: String(m.title || '').slice(0, 90),
         description: String(m.description || '').slice(0, 200),
+        ingredients: ingredientsOf(m.ingredients),
         calories: int(m.calories), protein_g: int(m.protein_g), carbs_g: int(m.carbs_g), fat_g: int(m.fat_g),
       })).filter((m) => m.title)
       if (!dayMeals.length) return { statusCode: 200, headers: cors, body: '{"error":"Could not build that day — try again."}' }
@@ -271,11 +354,30 @@ export const handler = async (event) => {
     // and straight into an edge timeout. Whether the quantities actually add up
     // is asserted in tasks/e2e_round31.mjs rather than assumed.
     if (Array.isArray(b.shoppingFor) && b.shoppingFor.length) {
-      const lines = b.shoppingFor.slice(0, 40)
-        .map((m) => `- ${String(m.title || '').slice(0, 90)}: ${String(m.description || '').slice(0, 200)}`)
+      // Built from the meals' own ingredient lines where they have them, and
+      // only from the one-line description where they don't. That is the whole
+      // point of asking for ingredients up front: summing stated quantities is
+      // arithmetic, whereas inferring them from "chicken thigh with rice and
+      // greens" is a second guess that the recipe card would then contradict.
+      //
+      // Old weeks saved in localStorage have no ingredients, so both shapes
+      // have to keep working.
+      const forMeals = b.shoppingFor.slice(0, 40)
+      const withIngredients = forMeals.filter((m) => ingredientsOf(m.ingredients).length).length
+      const lines = forMeals
+        .map((m) => {
+          const t = String(m.title || '').slice(0, 90)
+          const ing = ingredientsOf(m.ingredients)
+          return ing.length
+            ? `- ${t}\n${ing.map((i) => `    ${i}`).join('\n')}`
+            : `- ${t}: ${String(m.description || '').slice(0, 200)}`
+        })
         .join('\n')
       const shopPrompt =
-        `Write the shopping list for these ${b.shoppingFor.length} meals, which are a client's plan for the next few days:\n${lines}\n\n` +
+        `Write the shopping list for these ${forMeals.length} meals, which are a client's plan for the next few days:\n${lines}\n\n` +
+        (withIngredients
+          ? `The indented lines under each meal are its exact ingredients, already sized for one person eating that meal once. Your ONLY job is to add them up. Do not re-estimate a quantity, do not invent an ingredient, and do not drop one.\n`
+          : '') +
         `Cover EVERY meal above and nothing else. Add the quantities up across all of them — if four meals use chicken thigh, that is ONE line with the total weight, not four lines.\n` +
         `Group by supermarket aisle. Metric weights. Skip storecupboard basics like salt, pepper and cooking oil.\n` +
         `Every line is ONE ingredient and its total quantity. Never write a line that names a meal — "400g chicken for the tagine" is wrong, that chicken belongs in the single chicken line. Check before you finish that no ingredient appears twice.\n` +
@@ -317,7 +419,54 @@ export const handler = async (event) => {
         const cut = sj?.stop_reason === 'max_tokens'
         return { statusCode: 200, headers: cors, body: JSON.stringify({ error: cut ? 'The list was too long to finish — try fewer days.' : 'Could not build the shopping list — try again.' }) }
       }
-      return { statusCode: 200, headers: cors, body: JSON.stringify({ shopping }) }
+
+      // ---- What the shop costs ---------------------------------------------
+      // Folded into THIS response rather than offered as a separate request, so
+      // a cost can never be on screen next to a list it was not worked out
+      // from.
+      //
+      // The model's only job is to say WHICH FOOD each line is. Every price and
+      // every sum comes from src/mealPrices.js, which is dated and editable.
+      // Asked for a total directly a model writes a confident "£46.20" that
+      // changes on the next call and cannot be corrected or sourced — the same
+      // reason recipe-ai.mjs stopped asking a model to total macros.
+      let cost = null
+      try {
+        const flat = shopping.flatMap((g) => g.items).slice(0, 120)
+        const tagPrompt =
+          `Match each shopping line to exactly ONE key from this list, or null if nothing on the list fits.\n` +
+          `Keys: ${PRICE_KEYS.join(' ')}\n\n` +
+          `Lines, in order:\n${flat.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n` +
+          `Pick the closest key by FOOD, ignoring brand and preparation — "diced chicken breast" is chicken-breast, "baby spinach" is spinach. Use null rather than a key that is a different food.\n` +
+          `Return STRICT JSON only, no markdown, one entry per line IN THE ORDER GIVEN and the same number of entries as lines:\n` +
+          `{"l":[["key",<grams or 0>]]}\n` +
+          `The number is ONLY for a line that states no quantity at all, like "a bunch of coriander" — put your best grams estimate there. If the line already states a weight or a count, put 0.`
+        const tr = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content: tagPrompt }] }),
+        })
+        const tj = await tr.json()
+        const tm = textOf(tj).match(/\{[\s\S]*\}/)
+        const tp = tm ? JSON.parse(tm[0]) : {}
+        const rows = Array.isArray(tp.l) ? tp.l : []
+        // One entry per line or nothing. The tuples carry no copy of the line
+        // they belong to, so a short or long array means the mapping has
+        // shifted and every price after the shift is for the wrong food. There
+        // is no way to detect that downstream, so refuse the whole total —
+        // absent beats wrong, the same call the shopping list itself makes.
+        if (rows.length === flat.length) {
+          cost = costOf(flat.map((text, i) => {
+            const row = Array.isArray(rows[i]) ? rows[i] : []
+            const g = Number(row[1])
+            return { text, key: String(row[0] || ''), grams: Number.isFinite(g) && g > 0 ? g : null }
+          }))
+        }
+      } catch {
+        cost = null // No cost line. The list is still useful without one.
+      }
+
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ shopping, cost }) }
     }
 
     const prompt =
@@ -333,8 +482,15 @@ export const handler = async (event) => {
       (allergies ? `NEVER include these allergens/intolerances: ${allergies}. ` : '') +
       (preferences ? `Preferences: ${preferences}. ` : '') +
       `Keep meals shopping-friendly and quick to make.\n` +
+      // Asked for only when the client says it can show them. A single day
+      // offers 2-3 options per meal, so ingredients for all of them is three
+      // times the output of the week path — worth it on a brand that renders
+      // recipe cards, wasted tokens and extra timeout risk on one that doesn't.
+      (b.wantIngredients
+        ? `Every option also needs an "ingredients" list: one line per ingredient with a METRIC quantity, for ONE person eating it once, written shopping-list style ("180g chicken thigh fillets", "1 red pepper"). The quantities must produce the calories and protein you report. Leave out salt, pepper and cooking oil.\n`
+        : '') +
       `Return STRICT JSON only, no markdown:\n` +
-      `{"meals":[{"name":"Breakfast","options":[{"title":"","description":"1 short line, key ingredients","calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}],"note":"1 short line on how to use it"}`
+      `{"meals":[{"name":"Breakfast","options":[{"title":"","description":"1 short line, key ingredients",${b.wantIngredients ? '"ingredients":["qty + item"],' : ''}"calories":<int>,"protein_g":<int>,"carbs_g":<int>,"fat_g":<int>}]}],"note":"1 short line on how to use it"}`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -350,12 +506,19 @@ export const handler = async (event) => {
       options: (Array.isArray(ml.options) ? ml.options : []).slice(0, options).map((o) => ({
         title: String(o.title || 'Option').slice(0, 100),
         description: String(o.description || '').slice(0, 200),
+        ingredients: ingredientsOf(o.ingredients),
         calories: int(o.calories), protein_g: int(o.protein_g), carbs_g: int(o.carbs_g), fat_g: int(o.fat_g),
       })),
     })).filter((ml) => ml.options.length)
     if (!cleanMeals.length) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: 'Could not build a plan — try again.' }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ meals: cleanMeals, note: String(parsed.note || '').slice(0, 160) }) }
   } catch (e) {
+    // An auth failure has to arrive as a 401, not as a 200 carrying a sentence
+    // about signing in — the client needs to tell "your session went stale"
+    // apart from "the model could not do it", and only the status says which.
+    if (e instanceof HttpError) {
+      return { statusCode: e.status, headers: cors, body: JSON.stringify({ error: e.message }) }
+    }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ error: String(e.message || e) }) }
   }
 }

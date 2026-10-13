@@ -641,12 +641,12 @@ reasons, and each would have shipped as "verified".
 
 ## The britfix hook edits files after you write them (2026-09-21)
 A global hook rewrites American spellings to British in any file written through
-the Write/Edit tools. Writing `src/calisthenics.js` came back with its first
+the Write/Edit tools. Writing `src/callisthenics.js` came back with its first
 comment reading "Callisthenics", and a `\n` inside a JS string literal in
-`program-generate.mjs` came back as a REAL newline, which is a syntax error the
+`programme-generate.mjs` came back as a REAL newline, which is a syntax error the
 build reports miles from the cause.
 - It only touched comments here. It does not know the difference between prose
-  and an identifier, so a rewrite of `features.calisthenics` or a session key
+  and an identifier, so a rewrite of `features.callisthenics` or a session key
   would silently switch the feature off with everything still compiling.
 - After writing a file through the tools, `node --input-type=module -e "import(...)"`
   it, or grep for the identifier you care about. The build alone did not catch
@@ -766,3 +766,60 @@ Our billing problem, verbatim, inside their coaching app.
   had — the error `type` is enough, and gives nothing away.
 - A green LLM test on Tuesday says nothing about Thursday. Round 42 passed 18/18
   on 10 Oct and 9/18 today without a line of its code changing.
+
+## A positional lookup table has no safe "just add a row" (2026-10-13)
+`src/rickFitVideos.js` maps exercise name -> clip by POSITION: entry *i* is
+`rick_fit_(i+1)`. To make `Calf Raise` resolve I appended a new row that
+repeated a name already on an earlier row. Nothing warned me, and
+`new Map(...)` keeps the LAST value for a duplicate key — so the *working*
+`Standing Dumbbell Calf Raise` demo would have started pointing at an id with
+no clips. The feature I was adding would have broken the one next to it.
+- `tests/rick-fit-videos.test.mjs` caught it, because it asserts every exercise
+  resolves to its OWN clips rather than just counting views.
+- An extra name for an existing thing goes INSIDE its existing row. The comment
+  above the table now says so.
+
+## A test asserting something resolves to NOTHING is a decision, not a gap (2026-10-13)
+I "fixed" two missing aliases — `Calf Raise` and `Triceps Pushdown (cable)` —
+and the video handoff's own test failed, because it explicitly asserts both
+resolve to zero clips. That exclusion was deliberate: the generic names are just
+as likely to mean the seated calf machine and a straight-bar pushdown, and
+showing the dumbbell or rope version would be the wrong equipment.
+- Reverted both and put them to Ricky as his call, in
+  `tasks/rick-fit-video-gaps.md`. A passing test going red on a change I was
+  confident about is evidence about the change, not about the test.
+- Generic-to-specific aliasing is only safe where the movement has effectively
+  one common form (`Plank`, `Leg extension`), not where the equipment varies.
+
+## Persisted data with un-persisted inputs goes stale silently (2026-10-13)
+`MealPlan.jsx` saved the week to `localStorage` but kept the answers it was
+built from — allergies, dietary requirements, meals per day — in plain
+component state. After a reload the week came back on screen with the form
+blank behind it, so the next swap or recipe request went off with
+`allergies: ''`. A vegetarian week could come back with chicken in it, and an
+allergy could be reintroduced by the app that had just been told about it.
+- If you persist a result, persist the inputs that produced it, and restore
+  both. Anything that regenerates part of that result later depends on them.
+- Data saved before the fix has neither, so it now says so on screen rather than
+  acting on blanks.
+
+## Verify AI paths on a draft deploy, not by fetching the key (2026-10-13)
+The local env file holds a placeholder `ANTHROPIC_API_KEY`, so every model call
+in `netlify dev` 401s. Pulling the real key out of Netlify was refused as
+credential materialisation — correctly.
+- `netlify deploy` without `--prod` gives a draft URL that runs the functions
+  with the key server-side. Test there, then promote that exact deploy by id
+  (`netlify api restoreSiteDeploy`) so production gets the bytes that were
+  tested rather than a fresh build.
+- Also: `netlify dev` cannot start while vite's port is held (strictPort), which
+  happens whenever an older session left one running. `--target-port 5220` plus
+  a `--command` that merely blocks reuses the running server instead of killing
+  someone else's process.
+
+## The working tree may hold another session's work (2026-10-13)
+`git status` showed uncommitted changes to `src/App.jsx` and `src/lib.js` that
+were not mine — a finished tappable-links feature from a parallel session. My
+`npm run build:ricky` picked them up, so promoting my deploy shipped their
+unreviewed work to rick-fit as well.
+- Check `git status` BEFORE building for a deploy, not just before committing.
+  Commit only your own paths, and say what else rode along.

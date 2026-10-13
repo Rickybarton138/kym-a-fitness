@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { getRecovery, getHealthContext, apiUrl } from './lib.js'
 import { THEME } from './themes.js'
+import { supabase } from './supabaseClient.js'
+import { PRICE_NOTE } from './mealPrices.js'
 
 // Client meal-plan builder. Uses their saved macro targets as the budget, asks a
 // few qualifying questions, then the AI returns either:
@@ -32,6 +34,12 @@ function dayLabel(i) { return i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : WD[dayD
 // on mount, and the submit handler would still take the week branch.
 const WEEK_ON = THEME.features?.weekMealPlans === true
 
+// Tappable meal cards, with the ingredient quantities and the method behind
+// them. Flagged separately from the week, because recipes apply to a single
+// day too and a day plan is live on Kim's and Paul's clients — without a flag
+// the next deploy of either would ship this to them untested.
+const RECIPES_ON = THEME.features?.mealRecipes === true
+
 const WEEK_KEY = 'mp_week_v1'
 const loadWeek = () => { try { return JSON.parse(localStorage.getItem(WEEK_KEY) || 'null') } catch { return null } }
 const saveWeek = (v) => { try { v ? localStorage.setItem(WEEK_KEY, JSON.stringify(v)) : localStorage.removeItem(WEEK_KEY) } catch { /* private mode */ } }
@@ -56,12 +64,34 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   const [ticked, setTicked] = useState([])
   const [err, setErr] = useState('')
   const [logged, setLogged] = useState('')
+  const [openMeal, setOpenMeal] = useState('')
+  const [recipeBusy, setRecipeBusy] = useState('')
+  const [recipeErr, setRecipeErr] = useState('')
 
   // A shopping list is no use if it dies the moment they leave the screen — the
   // whole point is to have it in the shop. Restore the last week they built.
   useEffect(() => {
     const saved = loadWeek()
-    if (WEEK_ON && saved?.plan?.days?.length) { setWeek(saved.plan); setTicked(saved.ticked || []); setMode('week') }
+    if (WEEK_ON && saved?.plan?.days?.length) {
+      const p = saved.plan
+      // Restore the ANSWERS the week was built from, not just the week.
+      //
+      // They live in plain component state, so a reload used to bring the week
+      // back with the form blank behind it — and the next swap went off with no
+      // allergies, no dietary requirements and meals reset to 3. A vegetarian
+      // week could come back with chicken in it, and an allergy could be
+      // reintroduced by the app that had just been told about it.
+      const i = p.inputs
+      if (i) {
+        if (Number(i.meals)) setMeals(Number(i.meals))
+        if (Number(i.options)) setOptions(Number(i.options))
+        setSnacks(!!i.snacks)
+        setDiet(Array.isArray(i.diet) ? i.diet : [])
+        setAllergies(String(i.allergies || ''))
+        setPrefs(String(i.prefs || ''))
+      }
+      setWeek(p); setTicked(saved.ticked || []); setMode('week')
+    }
   }, [])
 
   const toggleDiet = (d) => setDiet((s) => (s.includes(d) ? s.filter((x) => x !== d) : [...s, d]))
@@ -83,11 +113,25 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
     calories: targets.calories, protein_g: targets.protein_g, carbs_g: targets.carbs_g, fat_g: targets.fat_g,
     meals, options, snacks, dietary: diet.join(', '), allergies, preferences: prefs,
     recovery: getRecovery(), healthContext: getHealthContext(),
+    wantIngredients: RECIPES_ON,
   })
 
+  // Saved alongside the week so a reload can put the form back, and so a swap
+  // or a recipe asked for tomorrow still honours today's allergies.
+  const inputsOf = () => ({ meals, options, snacks, diet, allergies, prefs })
+
   async function post(body) {
+    const headers = { 'content-type': 'application/json' }
+    // The recipe action resolves identity from the verified session, so every
+    // request carries the token. getSession refreshes an expired one on the way
+    // past; if there genuinely is no session the app is already at the login
+    // screen, so a missing token here is not worth a special case.
+    try {
+      const t = (await supabase.auth.getSession())?.data?.session?.access_token
+      if (t) headers.authorization = `Bearer ${t}`
+    } catch { /* the older actions do not need it */ }
     const res = await fetch(apiUrl('/.netlify/functions/meal-plan'), {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST', headers, body: JSON.stringify(body),
     })
     return res.json()
   }
@@ -114,7 +158,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   // rather than starting the week again.
   async function buildWeek(from, seed) {
     setBusy(true); setErr(''); setStalled(0)
-    let acc = from === 0 ? { days: [], shopping: [], note: '' } : seed
+    let acc = from === 0 ? { days: [], shopping: [], note: '', inputs: inputsOf() } : seed
     if (from === 0) { setTicked([]); setWeek(acc); saveWeek(null) }
     try {
       // Decide the shape of the week before cooking any of it — which proteins
@@ -150,7 +194,9 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
       setProgress(-1)
       const meals = acc.days.flatMap((d) => d.meals)
       const s = await post({ ...baseBody(), shoppingFor: meals })
-      acc = { ...acc, shopping: s.shopping || [], stale: false }
+      // The cost comes back with the list it was worked out from, in the same
+      // response, so the two cannot drift apart.
+      acc = { ...acc, shopping: s.shopping || [], cost: s.cost || null, stale: false }
       setWeek(acc); saveWeek({ plan: acc, ticked: [] })
       if (!s.shopping?.length) setErr('The plan is done, but the shopping list didn’t come back — tap “Shopping list” to try that bit again.')
     } catch {
@@ -169,7 +215,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
     try {
       const s = await post({ ...baseBody(), shoppingFor: week.days.flatMap((d) => d.meals) })
       if (s.shopping?.length) {
-        const next = { ...week, shopping: s.shopping, stale: false }
+        const next = { ...week, shopping: s.shopping, cost: s.cost || null, stale: false }
         setWeek(next); saveWeek({ plan: next, ticked })
       } else setErr(s.error || 'The shopping list didn’t come back — try again.')
     } catch {
@@ -231,6 +277,92 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
     })
   }
 
+  // Tap a meal to see what goes in it and how to cook it.
+  //
+  // The ingredients are NOT fetched — they arrived with the plan, which is
+  // exactly what makes them agree with the shopping list. Only the method is
+  // fetched, once, and then it is kept on the meal and saved with the week: a
+  // recipe you have opened is readable again in the kitchen with no signal, the
+  // same reason the shopping list is persisted for the shop.
+  async function toggleRecipe(key, meal, apply) {
+    if (openMeal === key) { setOpenMeal(''); return }
+    setOpenMeal(key); setRecipeErr('')
+    if (meal.recipe?.steps?.length || !meal.ingredients?.length) return
+    setRecipeBusy(key)
+    try {
+      const j = await post({
+        method: true,
+        title: meal.title,
+        description: meal.description,
+        ingredients: meal.ingredients,
+        // Sent every time rather than relied on server-side, because the method
+        // is written fresh and must not reintroduce something they cannot eat.
+        allergies, dietary: diet.join(', '), recovery: getRecovery(),
+      })
+      if (j.recipe?.steps?.length) apply(j.recipe)
+      else setRecipeErr(j.error || 'Couldn’t work out the method — try again.')
+    } catch {
+      setRecipeErr('Something went wrong — try again.')
+    } finally {
+      setRecipeBusy('')
+    }
+  }
+
+  function applyWeekRecipe(di, mi, recipe) {
+    setWeek((w) => {
+      const next = { ...w, days: w.days.map((d, i) => (i === di ? { ...d, meals: d.meals.map((m, k) => (k === mi ? { ...m, recipe } : m)) } : d)) }
+      saveWeek({ plan: next, ticked })
+      return next
+    })
+  }
+
+  function applyDayRecipe(mi, oi, recipe) {
+    setPlan((p) => ({ ...p, meals: p.meals.map((m, i) => (i === mi ? { ...m, options: m.options.map((o, k) => (k === oi ? { ...o, recipe } : o)) } : m)) }))
+  }
+
+  // A plain function, not a component, so React does not unmount and remount
+  // the panel — and the fetch spinner inside it — on every parent render.
+  function recipePanel(key, meal) {
+    const r = meal.recipe
+    const timing = [r?.prep_min ? `${r.prep_min} min prep` : null, r?.cook_min ? `${r.cook_min} min cooking` : null].filter(Boolean).join(' · ')
+    return (
+      <div className="recipe-panel">
+        {meal.ingredients?.length ? (
+          <>
+            <p className="eyebrow">What you need · one serving</p>
+            <ul className="recipe-list">{meal.ingredients.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          </>
+        ) : (
+          <p className="muted-note">This meal was planned before recipes existed, so there are no quantities saved for it. Swap it and the new one comes with its recipe.</p>
+        )}
+        {recipeBusy === key && <p className="muted-note" style={{ marginTop: 8 }}>Working out how to cook it…</p>}
+        {recipeErr && openMeal === key && <p className="error" style={{ marginTop: 8 }}>{recipeErr}</p>}
+        {r?.steps?.length > 0 && (
+          <>
+            <p className="eyebrow" style={{ marginTop: 12 }}>How to cook it{timing ? ` · ${timing}` : ''}</p>
+            <ol className="recipe-steps">{r.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
+            {r.tip && <p className="muted-note" style={{ marginTop: 8 }}>{r.tip}</p>}
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // The title doubles as the button that opens the recipe. A card-wide button
+  // would have to contain "Log this" and "Swap this", and a button inside a
+  // button is invalid and stops working on some browsers.
+  function mealTitle(key, meal, apply) {
+    if (!RECIPES_ON) return <div className="session-title" style={{ marginTop: 2 }}>{meal.title}</div>
+    const open = openMeal === key
+    return (
+      <button type="button" className="meal-open" aria-expanded={open} onClick={() => toggleRecipe(key, meal, apply)}>
+        <span className="session-title">{meal.title}</span>
+        <span className="meal-open-mark" aria-hidden="true">{open ? '–' : '+'}</span>
+        <span className="sr-only">{open ? 'Hide the recipe' : 'Show the recipe'}</span>
+      </button>
+    )
+  }
+
   function logOption(mealName, o, when) {
     onLog({
       name: o.title, calories: o.calories, protein_g: o.protein_g, carbs_g: o.carbs_g, fat_g: o.fat_g,
@@ -261,6 +393,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
       <p className="eyebrow accent">Meal plan</p>
       <h1 className="h1">Build your meal plan.</h1>
       <p className="muted-note">Tell us how you like to eat and we’ll build it around your targets{hasTargets ? ` — ${targets.calories} kcal, ${targets.protein_g}g protein` : ''}. A day gives you options to pick from; a week gives you the plan and the shopping list.</p>
+      {RECIPES_ON && <p className="muted-note" style={{ marginTop: 6 }}>Tap any meal to open it up — what goes in it with quantities, and how to cook it.</p>}
       {recovery && (
         <div className="card" style={{ marginTop: 10, borderColor: 'var(--accent)' }}>
           <p className="muted-note">This is about nourishing yourself, not restriction — real, satisfying meals, at your own pace. There’s no such thing as a “bad” choice here. If food feels hard right now, please lean on {coachName?.split(' ')[0] || 'your coach'}, and support is always there: the Beat helpline (0808 801 0677) and your GP.</p>
@@ -326,6 +459,15 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
         <div className="stack" style={{ marginTop: 14 }}>
           {week.note && <p className="muted-note">{week.note}</p>}
 
+          {/* A week saved before this change carries neither its ingredients nor
+              the answers it was built from. Say so, rather than letting a swap
+              go off without his allergies attached. */}
+          {!week.inputs && (
+            <div className="card" style={{ borderColor: 'var(--accent)' }}>
+              <p className="muted-note">This week was built before recipes and costs existed, so its meals have no quantities saved and your dietary answers above are blank. Check them before swapping a meal, or build a fresh week to get the recipes and the shop total.</p>
+            </div>
+          )}
+
           {!week.shopping?.length && week.days.length > 0 && !busy && (
             <div className="card">
               <p className="eyebrow accent">Shopping list</p>
@@ -338,9 +480,25 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
             <div className="card">
               <p className="eyebrow accent">Shopping list</p>
               <p className="muted-note" style={{ marginTop: 4 }}>Everything the {week.days.length} days need, added up. Tick as you go — it’ll still be here next time you open it.</p>
+              {week.cost && week.cost.priced > 0 && (
+                <div className="shop-cost">
+                  <div className="shop-cost-total">About £{week.cost.gbp.toFixed(2)}</div>
+                  <p className="muted-note" style={{ marginTop: 2 }}>
+                    {week.cost.priced} of {week.cost.total} lines priced
+                    {week.cost.unpriced.length > 0 && ` — ${week.cost.unpriced.length} couldn’t be matched to a price, so ${week.cost.unpriced.length === 1 ? 'it is' : 'they are'} not in that figure`}.
+                  </p>
+                  <p className="muted-note" style={{ marginTop: 6 }}>{PRICE_NOTE}</p>
+                </div>
+              )}
+              {!week.cost && week.shopping?.length > 0 && !week.stale && (
+                <div style={{ marginTop: 8 }}>
+                  <p className="muted-note">No cost worked out for this list. It is the one part that is allowed to come back empty — a total that doesn’t match the list would be worse than none.</p>
+                  <button className="btn ghost sm" style={{ marginTop: 6 }} disabled={busy} onClick={buildShopping}>Try the cost again</button>
+                </div>
+              )}
               {week.stale && (
                 <div style={{ marginTop: 6 }}>
-                  <p className="muted-note" style={{ color: 'var(--accent)' }}>You’ve swapped a meal since this was worked out, so one or two lines will be off.</p>
+                  <p className="muted-note" style={{ color: 'var(--accent)' }}>You’ve swapped a meal since this was worked out, so one or two lines — and the total — will be off.</p>
                   <button className="btn ghost sm" style={{ marginTop: 6 }} disabled={busy} onClick={buildShopping}>Redo the list</button>
                 </div>
               )}
@@ -370,9 +528,10 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
                 {d.meals.map((m, mi) => (
                   <div className="card" key={mi} style={{ background: 'var(--surface-2)' }}>
                     <p className="eyebrow">{m.name}</p>
-                    <div className="session-title" style={{ marginTop: 2 }}>{m.title}</div>
+                    {mealTitle(`w${di}-${mi}`, m, (r) => applyWeekRecipe(di, mi, r))}
                     {m.description && <p className="muted-note" style={{ marginTop: 4 }}>{m.description}</p>}
                     <div className="session-sub">{macroLine(m)}</div>
+                    {openMeal === `w${di}-${mi}` && recipePanel(`w${di}-${mi}`, m)}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => logOption(m.name, m, dayDate(di))}>Log this</button>
                       {swapBtn(`w${di}-${mi}`, () => swapWeekMeal(di, mi))}
@@ -397,9 +556,10 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
               <div className="stack" style={{ marginTop: 6 }}>
                 {ml.options.map((o, oi) => (
                   <div className="card" key={oi} style={{ background: 'var(--surface-2)' }}>
-                    <div className="session-title">{o.title}</div>
+                    {mealTitle(`d${mi}-${oi}`, o, (r) => applyDayRecipe(mi, oi, r))}
                     {o.description && <p className="muted-note" style={{ marginTop: 4 }}>{o.description}</p>}
                     <div className="session-sub">{macroLine(o)}</div>
+                    {openMeal === `d${mi}-${oi}` && recipePanel(`d${mi}-${oi}`, o)}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => logOption(ml.name, o)}>Log this</button>
                       {swapBtn(`d${mi}-${oi}`, () => swapDayMeal(mi, oi))}
