@@ -6,7 +6,7 @@
 // here, and testable without a network call.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseQty, penceFor, costOf, PRICES, PRICE_KEYS } from '../src/mealPrices.js'
+import { parseQty, penceFor, costOf, aggregate, formatGrams, PRICES, PRICE_KEYS, AISLE_ORDER } from '../src/mealPrices.js'
 
 // No globals stubbed, on purpose: mealPrices.js imports nothing, because a
 // Netlify function reads it too. If this file ever needs a window, that rule
@@ -129,6 +129,90 @@ test('keys are clean and unique', () => {
   const malformed = PRICE_KEYS.filter((k) => !/^[a-z0-9-]+$/.test(k))
   assert.deepEqual(malformed, [])
   assert.equal(new Set(PRICE_KEYS).size, PRICE_KEYS.length)
+})
+
+test('every entry has an aisle, and the aisle is one we order', () => {
+  const bad = PRICE_KEYS.filter((k) => !AISLE_ORDER.includes(PRICES[k].aisle))
+  assert.deepEqual(bad, [], `entries with no aisle or an unknown one: ${bad.join(', ')}`)
+})
+
+test('weights read the way a shopping list writes them', () => {
+  assert.equal(formatGrams(600), '600g')
+  assert.equal(formatGrams(1000), '1kg')
+  assert.equal(formatGrams(1200), '1.2kg')
+  assert.equal(formatGrams(1250), '1.3kg')
+})
+
+// The heart of it. Measured against a real week, a model given 197 exact
+// ingredient lines and told to add them up returned 108 lines — ginger three
+// times, black beans twice. These assert the arithmetic that replaced it.
+test('the same food from several meals becomes ONE line', () => {
+  const { shopping, cost } = aggregate([
+    { text: '180g chicken thigh fillets', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+    { text: '200g chicken thigh fillets', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+    { text: '220g diced chicken thigh', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+  ])
+  const items = shopping.flatMap((g) => g.items)
+  assert.equal(items.length, 1)
+  assert.equal(items[0], '600g chicken thigh fillets')
+  assert.equal(cost.gbp, 3.9)
+})
+
+test('the three gingers add up instead of repeating', () => {
+  const { shopping } = aggregate([
+    { text: '15g fresh ginger (additional)', key: 'ginger', name: 'fresh ginger' },
+    { text: '12g fresh ginger', key: 'ginger', name: 'ginger' },
+    { text: '10g fresh ginger (additional)', key: 'ginger', name: 'ginger' },
+  ])
+  const items = shopping.flatMap((g) => g.items)
+  assert.equal(items.length, 1)
+  // The shortest name wins, so a bracketed note on one line cannot name the
+  // merged row.
+  assert.equal(items[0], '37g ginger')
+})
+
+test('things bought whole round UP to whole things', () => {
+  // You cannot put 1.7 peppers in the trolley. 60g + 80g + 160g = 300g, which
+  // is 1.875 peppers, so he buys two.
+  const { shopping, cost } = aggregate([
+    { text: '60g red pepper', key: 'pepper', name: 'red pepper' },
+    { text: '80g red pepper', key: 'pepper', name: 'red pepper' },
+    { text: '1 red pepper', key: 'pepper', name: 'red pepper' },
+  ])
+  assert.deepEqual(shopping.flatMap((g) => g.items), ['2 red pepper'])
+  assert.equal(cost.gbp, 1.3)
+})
+
+test('a food with no price still reaches the list', () => {
+  // He still has to buy it. It goes in Other, is named in `unpriced`, and is
+  // not counted as free.
+  const { shopping, cost } = aggregate([
+    { text: '2 star anise', key: '', name: 'star anise' },
+    { text: '1 star anise', key: '', name: 'star anise' },
+    { text: '180g chicken thigh fillets', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+  ])
+  const other = shopping.find((g) => g.aisle === 'Other')
+  assert.deepEqual(other.items, ['3 star anise'])
+  assert.equal(cost.priced, 1)
+  assert.deepEqual(cost.unpriced, ['3 star anise'])
+  assert.equal(cost.total, 2)
+  assert.equal(cost.gbp, 1.17)
+})
+
+test('lines are grouped into aisles, in shopping order', () => {
+  const { shopping } = aggregate([
+    { text: '180g chicken thigh fillets', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+    { text: '2 red pepper', key: 'pepper', name: 'red pepper' },
+    { text: '6 eggs', key: 'egg', name: 'eggs' },
+  ])
+  assert.deepEqual(shopping.map((g) => g.aisle), ['Fruit & veg', 'Meat & fish', 'Dairy & eggs'])
+})
+
+test('aggregating nothing does not throw', () => {
+  const { shopping, cost } = aggregate([])
+  assert.deepEqual(shopping, [])
+  assert.equal(cost.gbp, 0)
+  assert.equal(aggregate(null).shopping.length, 0)
 })
 
 test('the key list stays small enough to put in a prompt', () => {

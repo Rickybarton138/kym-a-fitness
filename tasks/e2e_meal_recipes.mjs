@@ -86,7 +86,7 @@ const meals = day.day?.meals || []
 ok('the day comes back', meals.length >= 3, day.error || `${meals.length} meals in ${day.secs}s`)
 // The 10s synchronous cap is why the week is built a day at a time. Adding
 // ingredients to this call makes its output bigger, so the margin matters.
-ok('the day is well inside the edge timeout', Number(day.secs) < 20, `${day.secs}s`)
+ok('the day is well inside the edge timeout', Number(day.secs) < 15, `${day.secs}s`)
 ok('every meal has ingredients', meals.length > 0 && meals.every((m) => m.ingredients?.length >= 2),
   meals.map((m) => `${m.name}:${m.ingredients?.length || 0}`).join(' '))
 ok('every ingredient line states a quantity', meals.every((m) => (m.ingredients || []).every((i) => /\d/.test(i))),
@@ -134,7 +134,7 @@ if (cost) {
   ok('the figure carries the date its prices came from', !!cost.asOf, cost.asOf)
   // A week's shop for one person at these targets. Wide bounds on purpose —
   // this is here to catch a unit slip of 10x or 100x, not to police groceries.
-  ok('the total is in a sane range for 3 days of food', cost.gbp > 5 && cost.gbp < 200, `£${cost.gbp.toFixed(2)}`)
+  ok('the total is in a sane range for ONE day of food', cost.gbp > 3 && cost.gbp < 40, `£${cost.gbp.toFixed(2)} — this shops a single day's meals, not the 3-day skeleton`)
 }
 
 // --- 5. A swapped meal arrives in the same shape ----------------------------

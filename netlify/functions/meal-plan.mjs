@@ -3,7 +3,7 @@
 // needs, allergies), returns a one-day plan where picking one option per meal
 // lands roughly on their targets. Haiku — structured text, no vision.
 import { upstreamMessage, requireUser, HttpError } from './_auth.mjs'
-import { PRICE_KEYS, costOf } from '../../src/mealPrices.js'
+import { PRICE_KEYS, costOf, aggregate } from '../../src/mealPrices.js'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
@@ -31,6 +31,8 @@ export const handler = async (event) => {
   const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
   try {
     const b = JSON.parse(event.body || '{}')
+    // Used to time-box the shopping action's second model call. See there.
+    const startedAt = Date.now()
 
     // ---- How to cook ONE meal ----------------------------------------------
     // Fetched when a meal card is tapped, not when the plan is built. A week
@@ -361,6 +363,75 @@ export const handler = async (event) => {
     // and straight into an edge timeout. Whether the quantities actually add up
     // is asserted in tasks/e2e_round31.mjs rather than assumed.
     if (Array.isArray(b.shoppingFor) && b.shoppingFor.length) {
+      // ---- Built by adding the ingredient lines up, in code -----------------
+      // The model is asked only which food each line is and what to call it.
+      // The grouping, the arithmetic, the aisles and the price all happen in
+      // src/mealPrices.js.
+      //
+      // The obvious version — hand the model the ingredient lines and tell it
+      // to add them up — was built first and measured on a real week: 197
+      // lines in, 108 lines out, against the 62 the same model produced from
+      // loose descriptions. It passed most of them straight through. Ginger
+      // came back as three lines, black beans as two. It also cost a second
+      // model call for the price, which on a full week left no time inside the
+      // request to make it, so the cost never appeared at all.
+      //
+      // Tagging instead gives one pass that produces BOTH the list and the
+      // cost, correctly summed, and the chunks run in parallel.
+      const allLines = []
+      for (const m of b.shoppingFor.slice(0, 40)) {
+        for (const i of ingredientsOf(m.ingredients)) allLines.push(i)
+      }
+
+      if (allLines.length >= 4) {
+        try {
+          // Chunked because a week is around 200 lines and one response that
+          // long risks stopping on max_tokens — which would silently drop the
+          // tail of the shop. In parallel, so it costs one call's latency.
+          const CHUNK = 60
+          const chunks = []
+          for (let i = 0; i < allLines.length; i += CHUNK) chunks.push(allLines.slice(i, i + CHUNK))
+
+          const tagged = await Promise.all(chunks.map(async (chunk) => {
+            const prompt =
+              `For each ingredient line below, identify the food.\n` +
+              `Keys: ${PRICE_KEYS.join(' ')}\n\n` +
+              `Lines, in order:\n${chunk.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n` +
+              `For each line return [key, name]:\n` +
+              `  key  — the closest key above by FOOD, ignoring brand and preparation ("diced chicken breast" is chicken-breast, "baby spinach" is spinach, "cooked black beans" is black-beans-tin). Use "" if nothing on the list is the same food.\n` +
+              `  name — a short shopping name for it, lower case, no quantity, no brand, no preparation words and no notes in brackets. "red pepper", not "60g red bell pepper (additional)". Use the SAME name every time the same food appears.\n` +
+              `Return STRICT JSON only, no markdown, one entry per line IN THE ORDER GIVEN and the same number of entries as lines:\n` +
+              `{"l":[["chicken-thigh-fillet","chicken thigh fillets"]]}`
+            const r = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+              body: JSON.stringify({ model: MODEL, max_tokens: 3000, messages: [{ role: 'user', content: prompt }] }),
+            })
+            const j = await r.json()
+            if (!r.ok) throw new Error(`tagging ${r.status}`)
+            const mm = textOf(j).match(/\{[\s\S]*\}/)
+            const rows = mm ? (JSON.parse(mm[0]).l || []) : []
+            // One entry per line or the chunk is unusable: the tuples carry no
+            // copy of the line they belong to, so a short array means every
+            // row after the gap describes the wrong food.
+            if (rows.length !== chunk.length) throw new Error(`tagging returned ${rows.length} for ${chunk.length} lines`)
+            return chunk.map((text, i) => {
+              const row = Array.isArray(rows[i]) ? rows[i] : []
+              return { text, key: String(row[0] || ''), name: String(row[1] || '').slice(0, 60) }
+            })
+          }))
+
+          const { shopping: agg, cost } = aggregate(tagged.flat())
+          if (agg.length) {
+            return { statusCode: 200, headers: cors, body: JSON.stringify({ shopping: agg, cost }) }
+          }
+        } catch (e) {
+          // Fall through to the model-written list below. A worse list beats no
+          // list, and this is the part he takes to the shop.
+          console.error('shopping aggregate failed, falling back', String(e.message || e))
+        }
+      }
+
       // Built from the meals' own ingredient lines where they have them, and
       // only from the one-line description where they don't. That is the whole
       // point of asking for ingredients up front: summing stated quantities is
@@ -437,8 +508,18 @@ export const handler = async (event) => {
       // Asked for a total directly a model writes a confident "£46.20" that
       // changes on the next call and cannot be corrected or sourced — the same
       // reason recipe-ai.mjs stopped asking a model to total macros.
+      // Time-boxed, because it is the SECOND model call in this one request and
+      // the list is what he actually needs. A full week is around 35 meals and
+      // 200 ingredient lines; if the pair of calls runs past the edge's
+      // synchronous cap the whole response dies and he loses the shopping list,
+      // not just the total. So once the list is in hand, the cost only gets
+      // whatever time is left — and is abandoned rather than allowed to take
+      // the list down with it.
       let cost = null
+      const BUDGET_MS = 11000
+      const elapsed = () => Date.now() - startedAt
       try {
+        if (elapsed() > BUDGET_MS) throw new Error('no time left for the cost')
         const flat = shopping.flatMap((g) => g.items).slice(0, 120)
         const tagPrompt =
           `Match each shopping line to exactly ONE key from this list, or null if nothing on the list fits.\n` +
@@ -448,12 +529,22 @@ export const handler = async (event) => {
           `Return STRICT JSON only, no markdown, one entry per line IN THE ORDER GIVEN and the same number of entries as lines:\n` +
           `{"l":[["key",<grams or 0>]]}\n` +
           `The number is ONLY for a line that states no quantity at all, like "a bunch of coriander" — put your best grams estimate there. If the line already states a weight or a count, put 0.`
-        const tr = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content: tagPrompt }] }),
-        })
-        const tj = await tr.json()
+        // Hard stop on whatever is left of the budget, so a slow tagging call
+        // cannot run the whole request into the edge timeout.
+        const ac = new AbortController()
+        const timer = setTimeout(() => ac.abort(), Math.max(1500, BUDGET_MS - elapsed()))
+        let tj
+        try {
+          const tr = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role: 'user', content: tagPrompt }] }),
+            signal: ac.signal,
+          })
+          tj = await tr.json()
+        } finally {
+          clearTimeout(timer)
+        }
         const tm = textOf(tj).match(/\{[\s\S]*\}/)
         const tp = tm ? JSON.parse(tm[0]) : {}
         const rows = Array.isArray(tp.l) ? tp.l : []
