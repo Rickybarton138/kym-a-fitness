@@ -185,3 +185,40 @@ what a deploying session actually reads, not only here.
 - **The full-week shopping list has no running guard** until somebody supplies
   `E2E_TOKEN`. `tasks/e2e_meal_week_stress.mjs` now skips rather than passing
   vacuously, which is honest but is not cover.
+
+## Deploy state as of 14 Oct 2026, 22:40 — read this before starting Phase 1
+
+All four client brands were rebuilt and deployed from one commit, **`dd54cac`**,
+which is the last commit BEFORE `9765f90`. This was deliberate: Paul had chased
+his fixes twice and they had been stuck in an unpromoted draft since 9 Oct, and
+deploying HEAD would have switched enforcement on for clients whose installed
+PWA had not reloaded.
+
+So `AI_AUTH` was NOT set on any site, and did not need to be. The code in all
+four deploys predates enforcement entirely — the endpoints accept anonymous
+calls and the client half does not send a token yet. Verified per site by an
+unauthenticated POST to `analyze` returning HTTP 200.
+
+| Brand | Site id | Deploy | State |
+|---|---|---|---|
+| paul | `bda91296-2224-4923-b91c-d6482971eab1` | `6acff9eb4c7a993adc4d6cf7` | PROMOTED 22:00 |
+| elev8 | `a7852fc7-7d64-429c-a9d5-041084399b9d` | `6acffe0e3593ef37bdd36e92` | draft |
+| pph | `5e998585-cfd2-4e16-a272-b5ceac659c95` | `6acffe487c2ac991ced7d9bb` | draft |
+| kim | `08a2f0ba-f0a8-4ee9-80f5-cd314abacce3` | `6acffe87c05acdcdc3775d99` | draft |
+
+**What this means for Phase 1.** The observe window has not started on any of
+these four. When Phase 1 ships, it has to ship the client half and the
+tolerant server half together, exactly as this document already says — none of
+these deploys has either. rick-fit is unaffected and still enforcing.
+
+**`coach-notify` is new to kim, pph and elev8** (it arrived 4 Oct, their last
+deploy was 15 Sept). It carries `export const config = { schedule: '7 * * * *' }`
+so it will start running hourly on each. It is inert: `COACH_NOTIFY_ENABLED` is
+unset on all three AND on Paul's, so `dryRun` is true and it decides without
+sending. Only rick-fit has it `true`. Do not set it on a client brand without
+reading a dry run first.
+
+The old cross-brand nudge functions (`push-reminders`, `push-daily-reminder`,
+`push-coach-alerts`, `push-coach-digest`, `push-food`, `push-workout`) were
+already on Kim's 15 Sept deploy, so this changed nothing about them. They are
+still the hazard described at the top of `coach-notify.mjs`.
