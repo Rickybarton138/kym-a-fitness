@@ -2,13 +2,22 @@
 // sessions + a plain-English change ("more hypertrophy", "swap dumbbell work to
 // barbell", "make weeks 5-8 harder") and returns the full revised session set in
 // the same shape, preserving each session's week/day so the schedule is intact.
+//
+// Coach-only. This rewrites up to 90 sessions at 4000 tokens — the largest
+// budget of any endpoint here — and a programme library belongs to the coach.
+import { CORS, HttpError, requireAiUser, requireCoach, readBody } from './_auth.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const { instruction, title, level, weeks, sessions } = JSON.parse(event.body || '{}')
+    const user = await requireAiUser(event)
+    if (user) await requireCoach(user)
+    // 90 sessions of exercises is a big body, well past the 64 KB chat default.
+    const { instruction, title, level, weeks, sessions } = readBody(event, { max: 1024 * 1024 })
     const list = (Array.isArray(sessions) ? sessions : []).slice(0, 90)
     if (!instruction || !list.length) return { statusCode: 200, headers: cors, body: JSON.stringify({ sessions: [], error: 'Nothing to edit.' }) }
 
@@ -77,6 +86,7 @@ export const handler = async (event) => {
     })
     return { statusCode: 200, headers: cors, body: JSON.stringify({ sessions: revised }) }
   } catch (e) {
+    if (e instanceof HttpError) return { statusCode: e.status, headers: cors, body: JSON.stringify({ sessions: [], error: e.message }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ sessions: [], error: String(e.message || e) }) }
   }
 }

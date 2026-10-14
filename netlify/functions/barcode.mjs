@@ -4,7 +4,11 @@
 //                            -> { status:'not_found' }
 // Everything is per 100g; the client scales by the portion the user enters.
 //
-import { CORS } from './_auth.mjs'
+// Authenticated as of 14 Oct 2026. Only the photo path spends model budget, but
+// the gate goes on the whole endpoint: splitting it would mean a caller could
+// probe which branch is cheap, and an unauthenticated proxy to Open Food Facts
+// on our IP is not something to leave standing either.
+import { CORS, HttpError, requireAiUser, readBody, MAX_UPLOAD_BODY } from './_auth.mjs'
 // The photo path exists because BarcodeDetector is Chromium-only: on iPhone the
 // screen said "scan the barcode" with no way to scan one. Every EAN/UPC has its
 // digits printed underneath, so reading those off a photo works on any device.
@@ -64,7 +68,14 @@ export const handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { error: 'POST only.' })
 
   let body
-  try { body = JSON.parse(event.body || '{}') } catch { return json(400, { error: 'Invalid JSON.' }) }
+  try {
+    await requireAiUser(event)
+    // A scaled photo of a barcode, so the chat-sized default is too small.
+    body = readBody(event, { max: MAX_UPLOAD_BODY })
+  } catch (e) {
+    if (e instanceof HttpError) return json(e.status, { error: e.message })
+    return json(400, { error: 'Invalid JSON.' })
+  }
 
   let barcode = String(body.barcode || '').replace(/\D/g, '')
   if (!barcode && body.image) {

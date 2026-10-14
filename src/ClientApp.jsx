@@ -61,6 +61,7 @@ import {
   IconHome, IconTrain, IconFridge, IconMeal, IconBody, IconAsk, IconForm, IconContent, IconCommunity, IconTest, ExSets,
   MEASURE_SITES, BodyTrends, Glp1Field,
 } from './ui.jsx'
+import { authHeaders } from './apiAuth.js'
 
 // The week planner is behind `weekMealPlans` (Rick.Fit only). The tile copy has
 // to follow the flag, or every other brand is promised a shopping list that is
@@ -2907,7 +2908,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
     setSwapBusy(true); setSwapErr('')
     try {
       const res = await fetch(apiUrl('/.netlify/functions/exercise-swap'), {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({ name: exs[i].name, reason: swapReason }),
       })
       const j = await res.json()
@@ -3172,7 +3173,7 @@ function SessionCard({ plan, onUpdate, clientId, trainerId, onWorkoutDone, histo
   async function findAlt(i) {
     setSwapBusy(true); setSwapSug(null); setSwapErr('')
     try {
-      const res = await fetch(apiUrl('/.netlify/functions/exercise-swap'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: exs[i].name, reason: swapReason, ...(swapImg ? { image: swapImg, mediaType: 'image/jpeg' } : {}) }) })
+      const res = await fetch(apiUrl('/.netlify/functions/exercise-swap'), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ name: exs[i].name, reason: swapReason, ...(swapImg ? { image: swapImg, mediaType: 'image/jpeg' } : {}) }) })
       const j = await res.json()
       if (j.name) setSwapSug(j); else setSwapErr(j.error || 'No suggestion — try again.')
     } catch { setSwapErr('Could not get a suggestion.') }

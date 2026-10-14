@@ -6,6 +6,11 @@
 // matcher fix re-matches old rows instead of serving the old answer forever.
 
 import { matchImages, nameKey, MATCHER_V } from './_exercise-match.mjs'
+// Any signed-in user may read a guide — the cache is shared on purpose, so one
+// person paying for the generation serves everyone after them. What is not
+// allowed is an anonymous caller filling that cache at our expense, which is
+// what this endpoint permitted until 14 Oct 2026.
+import { CORS, HttpError, requireAiUser, readBody } from './_auth.mjs'
 
 const SUPABASE_URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 const SUPABASE_KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
@@ -43,9 +48,11 @@ No markdown, no extra text. If the name isn't a real exercise, still give sensib
 }
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const name = (JSON.parse(event.body || '{}').name || '').trim()
+    await requireAiUser(event)
+    const name = String(readBody(event).name || '').trim()
     if (!name) return { statusCode: 400, headers: cors, body: '{"error":"name required"}' }
     const key = nameKey(name)
 
@@ -67,6 +74,13 @@ export const handler = async (event) => {
     await rpc('exercise_guide_put', { p_secret: SECRET, p_name_key: key, p_name: name, p_how_to: guide.how_to, p_cues: guide.cues, p_images: images, p_images_v: MATCHER_V }).catch(() => {})
     return { statusCode: 200, headers: cors, body: JSON.stringify({ ...guide, image_urls: images, cached: false }) }
   } catch (e) {
+    // The empty arrays are kept on the refusal too. `src/ExerciseGuide.jsx`
+    // guards every field, so it would not crash either way, but a 401 whose
+    // shape matches the success shape degrades to "no how-to yet" instead of
+    // to a blank sheet.
+    if (e instanceof HttpError) {
+      return { statusCode: e.status, headers: cors, body: JSON.stringify({ how_to: '', cues: [], image_urls: [], error: e.message }) }
+    }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ how_to: '', cues: [], image_urls: [], error: String(e.message || e) }) }
   }
 }

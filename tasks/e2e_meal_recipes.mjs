@@ -22,6 +22,7 @@
 // No production account is touched and nothing is logged to a food diary: this
 // only calls the planner, which writes nothing.
 import { PRICE_KEYS } from '../src/mealPrices.js'
+import { E2E_TOKEN, authed, noTokenNotice } from './_e2eToken.mjs'
 
 const SITE = process.argv[2] || 'http://localhost:8899'
 const FN = SITE.replace(/\/$/, '') + '/.netlify/functions/meal-plan'
@@ -36,11 +37,25 @@ const ok = (name, cond, detail = '') => {
   else { fail++; console.log(`  FAIL ${name}${detail ? ' — ' + detail : ''}`) }
 }
 
+// Deliberately without a token, for the refusal assertions. If these went
+// through the authenticated helper they would carry a real session and the 401
+// checks would quietly become checks of nothing.
+async function postAnon(body, extraHeaders = {}) {
+  const res = await fetch(FN, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...extraHeaders },
+    body: JSON.stringify(body),
+  })
+  let j = {}
+  try { j = await res.json() } catch { /* leave empty */ }
+  return { status: res.status, ...j }
+}
+
 async function post(body, extraHeaders = {}) {
   const t0 = Date.now()
   const res = await fetch(FN, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...extraHeaders },
+    headers: { ...authed(), ...extraHeaders },
     body: JSON.stringify(body),
   })
   let j = {}
@@ -66,15 +81,23 @@ console.log(`meal planner recipes + cost — ${SITE}\n`)
 // First, because it is the only new thing here that spends model budget per tap
 // on what was an entirely open endpoint.
 console.log('authentication')
-const noAuth = await post({ method: true, title: 'Chicken and rice', ingredients: ['180g chicken thigh fillets', '75g basmati rice'] })
+const noAuth = await postAnon({ method: true, title: 'Chicken and rice', ingredients: ['180g chicken thigh fillets', '75g basmati rice'] })
 ok('the recipe action refuses a caller with no session', noAuth.status === 401, `status ${noAuth.status}`)
 ok('the refusal says what to do about it', /sign in|session/i.test(noAuth.error || ''), noAuth.error)
-const badAuth = await post({ method: true, title: 'x', ingredients: ['1 egg'] }, { authorization: 'Bearer not-a-real-token' })
+const badAuth = await postAnon({ method: true, title: 'x', ingredients: ['1 egg'] }, { authorization: 'Bearer not-a-real-token' })
 ok('a junk token is refused too', badAuth.status === 401, `status ${badAuth.status}`)
 // Auth before validation. If the order were the other way round, an anonymous
 // caller could map out the endpoint's body rules by reading its 400s.
-const noBody = await post({ method: true })
+const noBody = await postAnon({ method: true })
 ok('auth is checked before the body is', noBody.status === 401, `status ${noBody.status}`)
+
+// Every action below needs a session now, not just the recipe one.
+if (!E2E_TOKEN) {
+  console.log(noTokenNotice('the plan, the shopping list, the cost and the swap'))
+  console.log(`\nprice table: ${PRICE_KEYS.length} keys`)
+  console.log(`${pass} pass / ${fail} fail  (refusals only — nothing else was exercised)`)
+  process.exit(fail ? 1 : 0)
+}
 
 // --- 2. A day, with its ingredients ----------------------------------------
 console.log('\na day of the week plan')

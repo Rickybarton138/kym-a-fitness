@@ -1,14 +1,26 @@
 // Suggest a like-for-like alternative exercise when a client can't do the one in
 // their plan (injury or no equipment). Returns a single replacement + why, keeping
 // the same movement pattern / training effect where possible.
+//
+// The house CORS headers replace a hand-rolled pair that set only
+// `allow-origin`. With no `allow-headers` the browser refuses a request that
+// carries an Authorization token before it ever leaves the device, and with no
+// OPTIONS branch the preflight was answered 405 — so adding auth without this
+// would have broken the native shell silently. See tasks/native-app-plan.md.
+import { CORS, HttpError, requireAiUser, readBody, MAX_UPLOAD_BODY } from './_auth.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 const VISION_MODEL = 'claude-sonnet-5' // when a photo of available equipment is sent
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const { name, reason, image, mediaType } = JSON.parse(event.body || '{}')
+    // Before the body, so an anonymous caller cannot learn the body rules by
+    // reading the 400s.
+    await requireAiUser(event)
+    const { name, reason, image, mediaType } = readBody(event, { max: MAX_UPLOAD_BODY })
     const ex = String(name || '').slice(0, 120).trim()
     const why = String(reason || '').slice(0, 300).trim()
     if (!ex) return { statusCode: 400, headers: cors, body: '{"error":"name required"}' }
@@ -42,6 +54,9 @@ export const handler = async (event) => {
     if (!alt) return { statusCode: 200, headers: cors, body: JSON.stringify({ error: 'No suggestion — try again.' }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ name: alt.slice(0, 120), cue: String(parsed.cue || '').slice(0, 120) }) }
   } catch (e) {
+    // A refusal has to arrive AS a refusal. Wrapped in a 200 the client reads
+    // "no suggestion came back" and offers a retry button that can never work.
+    if (e instanceof HttpError) return { statusCode: e.status, headers: cors, body: JSON.stringify({ error: e.message }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ error: String(e.message || e) }) }
   }
 }

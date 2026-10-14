@@ -19,12 +19,14 @@
 //      does not want one: account isolation is then enforced by the database,
 //      not by my remembering to add `.eq('client_id', id)` to every query.
 //
-// `analyze.mjs` stays deliberately unauthenticated. It serves four other brands'
-// paying clients with no Authorization header; adding auth there would break all
-// of them, and the coaching chat lives here instead. It does now import the CORS
-// constant below, because the native shell is a different origin and every
-// endpoint the client calls needs the headers — that is presentation, not auth,
-// and none of the above changes.
+// `analyze.mjs` used to be exempt from all of that, and the note here said so:
+// it served four other brands' paying clients with no Authorization header, so
+// authenticating it would have broken all of them. That was a statement about
+// the CLIENT, not about the rule, and it stopped being true on 14 Oct 2026 when
+// every call site started sending the token (`src/apiAuth.js`). `analyze` and
+// the other eight AI endpoints now go through `requireAiUser` below. The old
+// note is kept in this shape on purpose: left as it was, a future session would
+// read it as a decision and undo the fix.
 
 import { brandForHost } from '../../src/brandHosts.js'
 
@@ -34,6 +36,13 @@ export const SUPABASE_KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
 // 64 KB. The largest legitimate body here is a chat question plus a short
 // client-side signal; anything near this is a mistake or an attempt.
 export const MAX_BODY = 64 * 1024
+
+// The vision endpoints are a different kind of request: `equipment-scan` takes
+// up to four base64 photos and `analyze`'s form mode sends video stills, so
+// 64 KB would 413 every real call. Netlify's own synchronous body limit is 6 MB
+// and a request that hits it dies with no usable body, so this refuses first,
+// with a sentence the UI can show.
+export const MAX_UPLOAD_BODY = 5 * 1024 * 1024
 
 export const CORS = {
   'content-type': 'application/json',
@@ -51,9 +60,9 @@ export class HttpError extends Error {
 }
 
 /** Parse and bound the body. Throws HttpError rather than returning junk. */
-export function readBody(event) {
+export function readBody(event, { max = MAX_BODY } = {}) {
   const raw = event.body || ''
-  if (raw.length > MAX_BODY) throw new HttpError(413, 'Request too large.')
+  if (raw.length > max) throw new HttpError(413, 'Request too large.')
   if (!raw) return {}
   let parsed
   try { parsed = JSON.parse(raw) } catch { throw new HttpError(400, 'Body must be JSON.') }
@@ -89,6 +98,62 @@ export async function requireUser(event) {
 export function rejectImpersonation(body, user) {
   const claimed = body.clientId || body.client_id
   if (claimed && claimed !== user.id) throw new HttpError(403, 'That is not your account.')
+}
+
+/**
+ * The gate for the AI endpoints that were open to the whole internet until
+ * 14 Oct 2026.
+ *
+ * Nine functions called Anthropic on Ricky's key with no caller identity: a
+ * browser console anywhere could spend his credit in a loop, and when the
+ * account did run dry on 12 Oct there was no record of who had spent it.
+ *
+ * The reason this is a switch rather than a plain `requireUser` is the ROLLOUT,
+ * not the rule. An installed PWA that is resumed keeps running the bundle
+ * already in memory for days — `src/UpdatePrompt.jsx` exists because of exactly
+ * that — so a server that starts demanding a token in the same deploy that
+ * teaches the client to send one hands a 401 to every client who has not
+ * reloaded. `AI_AUTH=observe` accepts a token when one arrives and tolerates
+ * its absence, which lets the client half land first and be given time to
+ * spread.
+ *
+ * Enforcing is the DEFAULT, including when the variable is unset. A site nobody
+ * thought about is protected, and the tolerance has to be deliberately asked
+ * for — the opposite way round from `coach-notify`'s empty-body hole, which
+ * failed open and so stayed quiet for ten days.
+ *
+ * Returns the user, or null when the site is still tolerating anonymous callers.
+ */
+export async function requireAiUser(event) {
+  const mode = String(process.env.AI_AUTH || 'enforce').trim().toLowerCase()
+  if (mode !== 'observe') return requireUser(event)
+  try {
+    return await requireUser(event)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Coach-only tools. The brief says authorise, not merely authenticate: a
+ * client's own session is a valid session, and it must not be able to rewrite a
+ * programme library or mint a batch of recipes into one.
+ *
+ * The role is read as the caller through RLS, so this cannot be answered for
+ * somebody else. `userQuery.select` returns null when a table is missing, which
+ * for `profiles` would mean the database is not what we think it is — that is
+ * refused rather than waved through, because failing open on an authorisation
+ * check is how you end up with a client editing a coach's library.
+ *
+ * `user` may be null while a site is in `observe` mode; the caller skips the
+ * check in that case, which is the whole point of the window.
+ */
+export async function requireCoach(user) {
+  const rows = await userQuery(user.token).select('profiles', `id=eq.${user.id}&select=role`)
+  if (rows === null) throw new HttpError(502, 'Could not check your account.')
+  const role = rows[0]?.role
+  if (role !== 'trainer') throw new HttpError(403, 'That tool is for coaches.')
+  return role
 }
 
 /** The brand, from the Host header only. */

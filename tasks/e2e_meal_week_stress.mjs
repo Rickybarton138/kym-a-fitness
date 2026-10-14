@@ -18,6 +18,8 @@
 // Calls only the unauthenticated planner actions. Writes nothing, touches no
 // account, logs no food.
 
+import { E2E_TOKEN, authed, noTokenNotice } from './_e2eToken.mjs'
+
 const SITE = process.argv[2] || 'https://rick-fit.netlify.app'
 const FN = SITE.replace(/\/$/, '') + '/.netlify/functions/meal-plan'
 const DAYS = Number(process.argv[3]) || 7
@@ -39,7 +41,7 @@ const ok = (name, cond, detail = '') => {
 async function post(body) {
   const t0 = Date.now()
   const res = await fetch(FN, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: authed(), body: JSON.stringify(body),
   })
   let j = {}
   try { j = await res.json() } catch { /* leave empty */ }
@@ -50,6 +52,13 @@ const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 const label = (i) => (i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : WD[(new Date().getDay() + i) % 7])
 
 console.log(`full week stress — ${SITE}\n${DAYS} days, ${BASE.meals} meals + snack, ingredients on\n`)
+
+if (!E2E_TOKEN) {
+  // This script is the only guard on the full-week shopping list, so a vacuous
+  // green run would be worse than no run at all.
+  console.log(noTokenNotice('a full week of the meal planner'))
+  process.exit(0)
+}
 
 const skel = await post({ ...BASE, skeleton: true, days: DAYS })
 ok('skeleton', Array.isArray(skel.themes) && skel.themes.length === DAYS, `${skel.ms}ms`)

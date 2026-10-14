@@ -2,14 +2,23 @@
 // equipment, level). Returns a header + one session per training day, each with
 // real exercises. The coach reviews and publishes to the programme library.
 import { laddersForPrompt } from '../../src/calisthenics.js'
+// Authentication only, NOT coach-only: `src/BuildMyProgram.jsx` is a client
+// screen and a client building their own programme is the feature Paul asked
+// for on 4 Sept. The draft it returns is reviewed before anything is saved, and
+// the save goes through `create_client_program`, which derives the coach from
+// the caller — so the authorisation that matters here already lives in the
+// database, not in this function.
+import { CORS, HttpError, requireAiUser, readBody } from './_auth.mjs'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo, style, adapt } = JSON.parse(event.body || '{}')
+    await requireAiUser(event)
+    const { goal, days, equipment, level, weeks, location, notes, rampFrom, rampTo, style, adapt } = readBody(event)
     const d = Math.min(Math.max(Number(days) || 3, 1), 6)
     const w = Math.min(Math.max(Number(weeks) || 4, 1), 16)
     // Where they train changes the answer as much as the kit does: "home, no
@@ -184,6 +193,7 @@ Holds go in the reps field as a time, for example sets 4, reps "15s". A hold is 
     })).filter((s) => s.exercises.length)
     return { statusCode: 200, headers: cors, body: JSON.stringify({ title: String(p.title || 'Programme').slice(0, 120), description: String(p.description || ''), weeks: int(p.weeks, w), sessions }) }
   } catch (e) {
+    if (e instanceof HttpError) return { statusCode: e.status, headers: cors, body: JSON.stringify({ sessions: [], error: e.message }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ sessions: [], error: String(e.message || e) }) }
   }
 }

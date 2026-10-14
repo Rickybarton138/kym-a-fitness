@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { MEALS, mealByHour, analyze, scaleImageToBase64, apiUrl } from './lib.js'
 import { Loader, MacroRow } from './ui.jsx'
 import { CameraCapture } from './CameraCapture.jsx'
+import { authHeaders } from './apiAuth.js'
 
 // Scanning a barcode and photographing a plate.
 //
@@ -38,7 +39,7 @@ export function BarcodeScan({ onLog, onBack, pick }) {
     try {
       const image = await scaleImageToBase64(file, 1200)
       const res = await fetch(apiUrl('/.netlify/functions/barcode'), {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({ image, mediaType: 'image/jpeg' }),
       })
       const j = await res.json()
@@ -64,7 +65,7 @@ export function BarcodeScan({ onLog, onBack, pick }) {
     setState('loading'); setError(''); setProduct(null); setLogged(false)
     try {
       const res = await fetch(apiUrl('/.netlify/functions/barcode'), {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ barcode }),
+        method: 'POST', headers: await authHeaders(), body: JSON.stringify({ barcode }),
       })
       const json = await res.json()
       if (!res.ok || json.status === 'not_found' || !json.product) { setState('notfound'); return }

@@ -15,6 +15,8 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { E2E_TOKEN, authed, noTokenNotice } from '../tasks/_e2eToken.mjs'
+
 const SITE = process.argv[2] || 'https://rick-fit.netlify.app'
 const FN = SITE.replace(/\/$/, '') + '/.netlify/functions/meal-plan'
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', '.private', 'ricky')
@@ -30,8 +32,13 @@ const T = { calories: 2100, protein_g: 180, carbs_g: 187, fat_g: 70 }
 const PREFS = 'British — UK ingredients, UK supermarket names, metric weights, no American products or portions. He cooks from scratch and enjoys it. Appetite is likely still suppressed after Mounjaro, so protein must be dense rather than bulky — he may not manage a big volume in one sitting. Weeknight dinners under 30 minutes; a bigger cook at the weekend is fine. THE SNACK IS NOT A COOKED DISH and is exempt from the week\'s protein pool — it should be something simple and high-protein straight from the fridge or cupboard: Greek yogurt, cottage cheese, a whey shake, skyr, nuts, or a boiled egg.'
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
+if (!E2E_TOKEN) {
+  console.log(noTokenNotice('building a week plan'))
+  process.exit(0)
+}
+
 const post = async (body) => {
-  const r = await fetch(FN, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const r = await fetch(FN, { method: 'POST', headers: authed(), body: JSON.stringify(body) })
   if (!(r.headers.get('content-type') || '').includes('json')) throw new Error(`HTTP ${r.status} — timed out at the edge`)
   return r.json()
 }

@@ -13,29 +13,38 @@
 // Haiku vision, like the barcode reader — naming gym kit is easy recognition,
 // nothing like the macro estimation that justifies Opus.
 
-import { upstreamMessage } from './_auth.mjs'
+import { upstreamMessage, CORS, HttpError, requireAiUser, readBody, MAX_UPLOAD_BODY } from './_auth.mjs'
 
 const VISION_MODEL = 'claude-haiku-4-5-20251001'
 const API_URL = 'https://api.anthropic.com/v1/messages'
 const MAX_IMAGES = 4
 
-const cors = {
-  'content-type': 'application/json',
-  'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'content-type',
-  'access-control-allow-methods': 'POST, OPTIONS',
-}
+// The house headers, not a local copy. The local one allowed only `content-type`
+// in `allow-headers`, which the browser reads as "an Authorization header is not
+// welcome here" and refuses the request before sending it.
+const cors = CORS
 const json = (statusCode, body) => ({ statusCode, headers: cors, body: JSON.stringify(body) })
 
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   if (event.httpMethod !== 'POST') return json(405, { error: 'POST only' })
 
+  // Identity first: this is a vision call, the dearest kind, and it was open.
+  try {
+    await requireAiUser(event)
+  } catch (e) {
+    if (e instanceof HttpError) return json(e.status, { error: e.message })
+    throw e
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json(503, { error: 'AI is not configured on the server.' })
 
   let body
-  try { body = JSON.parse(event.body || '{}') } catch { return json(400, { error: 'Bad request.' }) }
+  // Four base64 photos do not fit in the 64 KB chat default.
+  try { body = readBody(event, { max: MAX_UPLOAD_BODY }) } catch (e) {
+    return json(e instanceof HttpError ? e.status : 400, { error: e instanceof HttpError ? e.message : 'Bad request.' })
+  }
 
   const images = Array.isArray(body.images) ? body.images.slice(0, MAX_IMAGES) : []
   if (!images.length) return json(400, { error: 'Add at least one photo.' })

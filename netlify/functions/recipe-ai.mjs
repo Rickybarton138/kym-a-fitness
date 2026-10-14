@@ -2,6 +2,13 @@
 // title, ingredients, servings, method and PER-SERVING macros (estimated from the
 // ingredients when the source doesn't state them). Also pulls a meal image from
 // the page. Powers URL-import, paste, and screenshot migration.
+//
+// Two holes closed on 14 Oct 2026: it took no identity, and it fetched whatever
+// URL it was handed. The second is the worse of the two — see _fetchPage.mjs
+// for why a host allowlist would not have been enough.
+import { CORS, HttpError, requireAiUser, readBody, MAX_UPLOAD_BODY } from './_auth.mjs'
+import { fetchPage, BlockedUrl } from './_fetchPage.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 // Recosting an edited ingredient list asks a model to do two different jobs:
@@ -113,9 +120,12 @@ async function claudeMacros(ingredients, servings) {
 }
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const { url, text, image, mediaType, ingredients, servings } = JSON.parse(event.body || '{}')
+    await requireAiUser(event)
+    // A screenshot of a recipe is the whole point of the photo path.
+    const { url, text, image, mediaType, ingredients, servings } = readBody(event, { max: MAX_UPLOAD_BODY })
 
     // Macros-only mode: recost an ingredient list that has been edited.
     // Deliberately NOT the import path — that returns a title, a method and a
@@ -169,12 +179,19 @@ export const handler = async (event) => {
         { type: 'text', text: 'Read this recipe from the image. ' + INSTRUCTION },
       ]
     } else if (url) {
-      const res = await fetch(url, { headers: {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'accept-language': 'en-GB,en;q=0.9',
-      } })
-      const html = await res.text()
+      // Scheme, address and redirect checks, a timeout and a byte cap all live
+      // in fetchPage. A refusal here is the caller's address being out of
+      // bounds, which is worth saying plainly rather than reporting as "that
+      // isn't a recipe".
+      let html
+      try {
+        html = await fetchPage(url)
+      } catch (e) {
+        if (e instanceof BlockedUrl) {
+          return { statusCode: 400, headers: cors, body: JSON.stringify({ error: e.message + ' Try the Paste or Photo option instead.' }) }
+        }
+        throw e
+      }
       image_url = extractImage(html)
       const ld = jsonLdRecipe(html)
       const src = ld ? JSON.stringify({ name: ld.name, recipeIngredient: ld.recipeIngredient, recipeInstructions: ld.recipeInstructions, recipeYield: ld.recipeYield, nutrition: ld.nutrition }).slice(0, 6000)
@@ -208,6 +225,7 @@ export const handler = async (event) => {
       }),
     }
   } catch (e) {
+    if (e instanceof HttpError) return { statusCode: e.status, headers: cors, body: JSON.stringify({ error: e.message }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ error: String(e.message || e) }) }
   }
 }

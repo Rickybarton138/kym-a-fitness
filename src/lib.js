@@ -50,9 +50,16 @@ export async function analyze(payload) {
   if (activeNutritionStyle && !body.nutritionStyle) body = { ...body, nutritionStyle: activeNutritionStyle }
   if (activeRecovery && !body.recovery) body = { ...body, recovery: activeRecovery }
   if (activeHealthContext && !body.healthContext) body = { ...body, healthContext: activeHealthContext }
+  // Imported here rather than at the top of the file on purpose. This module is
+  // also loaded by node tests and e2e scripts (`targetOn`, `sortDays`,
+  // `linkParts`), and a Supabase client needs `import.meta.env`, which does not
+  // exist outside Vite — a static import would break those the moment it was
+  // added. A dynamic one is only evaluated when a browser actually calls this,
+  // and unlike a register-a-callback arrangement it cannot be forgotten.
+  const { authHeaders } = await import('./apiAuth.js')
   const res = await fetch(apiUrl('/.netlify/functions/analyze'), {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   })
   const json = await res.json()

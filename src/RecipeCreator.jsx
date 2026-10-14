@@ -4,6 +4,7 @@ import { scaleImageToBase64, apiUrl } from './lib.js'
 import { THEME } from './themes.js'
 import { FoodSearch } from './FoodSearch.jsx'
 import { BarcodeScan } from './FoodCapture.jsx'
+import { authHeaders } from './apiAuth.js'
 
 // Create a recipe three ways: import from a link, build your own (ingredients +
 // servings -> per-portion macros), or paste text / snap a screenshot (great for
@@ -42,7 +43,7 @@ function Preview({ draft, setDraft, onSave, saving, saveLabel = 'Save recipe' })
     try {
       const res = await fetch(apiUrl('/.netlify/functions/recipe-ai'), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ ingredients: list, servings }),
       })
       const j = await res.json()
@@ -195,7 +196,7 @@ export function RecipeCreator({ clientId, onSaved, onClose }) {
   async function callAI(payload) {
     setBusy(true); setError('')
     try {
-      const res = await fetch(apiUrl('/.netlify/functions/recipe-ai'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const res = await fetch(apiUrl('/.netlify/functions/recipe-ai'), { method: 'POST', headers: await authHeaders(), body: JSON.stringify(payload) })
       const j = await res.json()
       if (j.error || !j.title) { setError(j.error || 'Could not read that recipe.'); return }
       setDraft({ ...j, servings: j.servings || 1 })

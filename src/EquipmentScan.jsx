@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { scaleImageToBase64, apiUrl } from './lib.js'
+import { authHeaders } from './apiAuth.js'
 
 // Photos of a space in, a corrected list of kit out.
 //
@@ -45,7 +46,7 @@ export function EquipmentScan({ items, setItems, label = 'Photos of your kit', h
     try {
       const res = await fetch(apiUrl('/.netlify/functions/equipment-scan'), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ images: shots.map((s) => ({ data: s.data, mediaType: 'image/jpeg' })) }),
       })
       const j = await res.json()

@@ -3,7 +3,7 @@
 
 import { kbForPrompt } from '../../src/nutritionExpert.js'
 import { LEVELS } from '../../src/accountability.js'
-import { CORS, upstreamMessage } from './_auth.mjs'
+import { CORS, upstreamMessage, HttpError, requireAiUser, readBody, MAX_UPLOAD_BODY } from './_auth.mjs'
 
 // Model routing by job (cost lever). Vision stays on Opus for macro/photo
 // accuracy; client-facing coaching text runs on Sonnet; mechanical/internal
@@ -375,10 +375,25 @@ export const handler = async (event) => {
     return json(500, { error: 'Server not configured: ANTHROPIC_API_KEY is missing.' })
   }
 
+  // Identity BEFORE the body. This endpoint has the most callers and the widest
+  // mode switch of anything here, so an anonymous caller reading its 400s was
+  // being handed a map of it. It was open until 14 Oct 2026; the reason given
+  // was that no call site sent a token, and `src/apiAuth.js` is the fix for
+  // that half.
+  try {
+    await requireAiUser(event)
+  } catch (e) {
+    if (e instanceof HttpError) return json(e.status, { error: e.message })
+    throw e
+  }
+
   let body
   try {
-    body = JSON.parse(event.body || '{}')
-  } catch {
+    // Fridge and meal photos, and video stills from form mode — megabytes, not
+    // the 64 KB a chat turn needs.
+    body = readBody(event, { max: MAX_UPLOAD_BODY })
+  } catch (e) {
+    if (e instanceof HttpError) return json(e.status, { error: e.message })
     return json(400, { error: 'Invalid JSON body.' })
   }
 

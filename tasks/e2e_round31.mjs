@@ -17,16 +17,23 @@
 // thing that passes a shape assertion and still ships broken.
 //
 // Run: node tasks/e2e_round31.mjs <deploy-url>
+import { E2E_TOKEN, authed, noTokenNotice } from './_e2eToken.mjs'
+
 const SITE = process.argv[2]
 if (!SITE) { console.error('usage: node tasks/e2e_round31.mjs <url>'); process.exit(1) }
 const FN = SITE.replace(/\/$/, '') + '/.netlify/functions/meal-plan'
+
+if (!E2E_TOKEN) {
+  console.log(noTokenNotice('the meal planner (this script drives it end to end)'))
+  process.exit(0)
+}
 
 let failures = 0
 const ok = (l, pass, extra = '') => { if (!pass) failures++; console.log(`${pass ? 'PASS' : 'FAIL'}  ${l}${extra ? ' — ' + extra : ''}`) }
 
 const post = async (body) => {
   const t0 = Date.now()
-  const r = await fetch(FN, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const r = await fetch(FN, { method: 'POST', headers: authed(), body: JSON.stringify(body) })
   const ct = r.headers.get('content-type') || ''
   const secs = ((Date.now() - t0) / 1000).toFixed(1)
   if (!ct.includes('json')) return { error: `HTTP ${r.status} in ${secs}s (not JSON — timed out at the edge?)`, secs }

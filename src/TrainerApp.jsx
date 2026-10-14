@@ -31,6 +31,7 @@ import { BODY_REGIONS, SIDES, TISSUES, SEVERITIES, INJURY_STATUS, AVAILABILITY, 
 import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
+import { authHeaders } from './apiAuth.js'
 
 export default function TrainerApp({ profile, onSignOut }) {
   const [clients, setClients] = useState([])
@@ -2065,7 +2066,7 @@ function CoachRecipes({ coachId }) {
   async function generate() {
     setGenBusy(true); setGenErr('')
     try {
-      const res = await fetch(apiUrl('/.netlify/functions/recipe-generate'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: genCat, count: genCount }) })
+      const res = await fetch(apiUrl('/.netlify/functions/recipe-generate'), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ category: genCat, count: genCount }) })
       const j = await res.json()
       if (!j.recipes?.length) { setGenErr(j.error || 'Nothing came back — try again.') }
       else setGen({ recipes: j.recipes, sel: new Set(j.recipes.map((_, i) => i)) })
@@ -3522,7 +3523,7 @@ function CoachPrograms({ coachId, clientId = null, clientName, onProgramsChanged
     try {
       // The corrected kit list wins over the free-text box when there is one.
       const equipment = kit.length ? kit.join(', ') : g.equipment
-      const res = await fetch(apiUrl('/.netlify/functions/program-generate'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...g, equipment }) })
+      const res = await fetch(apiUrl('/.netlify/functions/program-generate'), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ ...g, equipment }) })
       const j = await res.json()
       if (!j.sessions?.length) setGenErr(j.error || 'Nothing came back — try again.')
       else setGenDraft(j)
@@ -3566,7 +3567,7 @@ function CoachPrograms({ coachId, clientId = null, clientName, onProgramsChanged
     setAiBusy(true); setAiErr('')
     try {
       const res = await fetch(apiUrl('/.netlify/functions/program-edit'), {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: await authHeaders(),
         body: JSON.stringify({ instruction: aiInstr.trim(), title: pr.title, level: pr.level, weeks: pr.weeks, sessions: cur }),
       })
       const j = await res.json()

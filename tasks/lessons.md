@@ -852,3 +852,72 @@ determinism while its label claimed arithmetic.
 Before loosening a flaky assertion, work out which half of it is wrong. Here
 the code was right and the claim was wrong. Had it been the other way round,
 loosening it would have buried the bug.
+
+## A URL allowlist does not stop an SSRF, because fetch follows redirects
+
+`recipe-ai` fetched whatever URL it was handed. The obvious fix — only allow
+known recipe hosts — would have been worthless on its own: Node's `fetch`
+follows redirects by default, so an allowed host can answer 302 to
+`http://127.0.0.1/` and the request goes there. The allowlist only ever sees
+the first address.
+
+What actually closes it is `redirect: 'manual'` plus re-validating every hop,
+and resolving the hostname first and checking EVERY address it returns, not the
+first. `::ffff:127.0.0.1` and `64:ff9b::169.254.169.254` are loopback and cloud
+metadata wearing an IPv6 coat, so the address rules have to understand those
+forms too.
+
+The test worth having is not "a private address is blocked". It is "a PUBLIC
+page redirecting to a private one is blocked, and the second hop is never
+requested" — `tests/fetch-page.test.mjs`.
+
+## The server half of an auth change is the easy half
+
+Adding `requireUser` to nine endpoints took minutes. The work was everywhere
+else: twelve browser call sites that had never sent a token, four endpoints
+whose CORS answered the preflight so badly that adding an `Authorization`
+header would have had the browser refuse the call before it left the device,
+two e2e scripts that would have gone red, and installed PWAs that keep running
+a resumed bundle for days and would have met a 401 they could not fix.
+
+So the phase is a per-site env var (`AI_AUTH=observe`), not a second code
+change — the client half lands everywhere first, and enforcing becomes a config
+decision per brand that can be reverted in seconds. Default to enforce,
+including when the variable is unset: `coach-notify`'s hole lasted ten days
+precisely because it failed open and so stayed quiet.
+
+## Prove a refusal AND prove you did not break permission
+
+`tasks/e2e_auth_refusals.mjs` proves every endpoint says no to an anonymous
+caller. It cannot prove the app says who it is, because that needs a real
+logged-in browser — and a missing `Authorization` header fails at no build step
+and in no test, it fails as "the AI has stopped working" on somebody's phone.
+
+`tests/api-auth-callsites.test.mjs` is the static half of that: it walks `src/`
+for fetches to the gated endpoints and asserts each one carries the header. Then
+I broke one call site on purpose to check the test went red, because a guard
+that cannot fail is not a guard.
+
+## Do not reach for a password to finish a verification
+
+The success path needed a session token. The documented seeded test account
+would have produced one, and the pull to use it was strong — the alternative was
+reporting an unverified gap.
+
+It is still a password, on a production Supabase host, and that is not mine to
+type. The honest move was to close as much of the gap as could be closed
+without one (a static call-site guard, and a mutation test proving it bites),
+then name the exact remaining step and who can take it. Reaching for the
+credential would have made a complete-looking report out of a rule quietly
+broken.
+
+## Inserting an import after "the last import line" breaks a multi-line import
+
+A script that found the last `/^import .*$/m` and inserted after it put a new
+import INSIDE `ClientApp.jsx`'s multi-line `import {` block, and the build died
+with "Expected 'as' but found '{'". Nine other files were fine, which is what
+made it look like a safe pattern.
+
+Anchor on the END of the import block (`} from '...'`), or on a line that is
+unambiguously a complete statement. And run the build before the deploy, not
+after — this cost one cycle and would have cost a broken draft.

@@ -1,13 +1,24 @@
 // Coach tool: generate a batch of original recipes for a category, with per-serving
 // macros — the coach reviews and saves them to their library. Lets a coach stand up
 // an owned recipe library fast instead of inheriting a provider's.
+//
+// Coach-only, and that is authorisation rather than authentication: a client's
+// own session is a perfectly valid session, and it must not be able to mint
+// eight recipes at 2500 tokens a go into somebody else's library.
+import { CORS, HttpError, requireAiUser, requireCoach, readBody } from './_auth.mjs'
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const MODEL = 'claude-haiku-4-5-20251001'
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const { category, count } = JSON.parse(event.body || '{}')
+    const user = await requireAiUser(event)
+    // Null only while a site is still tolerating anonymous callers; that window
+    // is the rollout, not a policy, and it closes per brand.
+    if (user) await requireCoach(user)
+    const { category, count } = readBody(event)
     const n = Math.min(Math.max(Number(count) || 6, 1), 8)
     const cat = String(category || 'healthy meals').slice(0, 80)
     const prompt =
@@ -39,6 +50,7 @@ export const handler = async (event) => {
     })).filter((r) => r.calories > 0)
     return { statusCode: 200, headers: cors, body: JSON.stringify({ recipes }) }
   } catch (e) {
+    if (e instanceof HttpError) return { statusCode: e.status, headers: cors, body: JSON.stringify({ recipes: [], error: e.message }) }
     return { statusCode: 200, headers: cors, body: JSON.stringify({ recipes: [], error: String(e.message || e) }) }
   }
 }

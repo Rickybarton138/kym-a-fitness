@@ -2,7 +2,7 @@
 // qualifying answers (meals/day, options per meal, snacks, preferences, dietary
 // needs, allergies), returns a one-day plan where picking one option per meal
 // lands roughly on their targets. Haiku — structured text, no vision.
-import { upstreamMessage, requireUser, HttpError } from './_auth.mjs'
+import { upstreamMessage, requireUser, requireAiUser, readBody, CORS, HttpError } from './_auth.mjs'
 import { PRICE_KEYS, costOf, aggregate } from '../../src/mealPrices.js'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
@@ -28,9 +28,16 @@ const ingredientsOf = (v) => (Array.isArray(v) ? v : [])
   .slice(0, 24)
 
 export const handler = async (event) => {
-  const cors = { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+  const cors = CORS
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' }
   try {
-    const b = JSON.parse(event.body || '{}')
+    // The whole endpoint, not just `method`. Until 14 Oct 2026 only the recipe
+    // action asked who was calling and the other five — skeleton, day, swap,
+    // shopping, single-day plan — were open to anyone, which on a week build is
+    // nine model calls a go. Auth sits before the parse so an anonymous caller
+    // cannot read the action rules off the 400s.
+    await requireAiUser(event)
+    const b = readBody(event, { max: 1024 * 1024 })
     // Used to time-box the shopping action's second model call. See there.
     const startedAt = Date.now()
 
@@ -43,9 +50,11 @@ export const handler = async (event) => {
     // and this only writes the method for a list that already exists — which is
     // what keeps the recipe and the shopping list agreeing with each other.
     //
-    // Authenticated, unlike the older actions in this file. It is new, it
-    // spends model budget on every tap, and identity for a coaching AI endpoint
-    // comes from the verified session.
+    // `requireUser`, not `requireAiUser`, and that is deliberate rather than
+    // leftover. The whole endpoint is now gated above, but the gate above can
+    // be put in `observe` mode per site while the client half of the rollout
+    // spreads. This action has never been open, so it must not be loosened by
+    // that window — it enforces unconditionally.
     if (b.method) {
       await requireUser(event)
       const title = String(b.title || '').slice(0, 90).trim()

@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient.js'
 import { THEME } from './themes.js'
 import { getRickFitVideos } from './rickFitVideos.js'
 import { RickFitExerciseVideo } from './RickFitExerciseVideo.jsx'
+import { authHeaders } from './apiAuth.js'
 
 // Tap an exercise name -> how-to. Shows the coach's own video if they set one, else
 // a correct-form demo (start/end images) matched from the free exercise library,
@@ -32,7 +33,7 @@ export function ExerciseGuide({ ex, onClose }) {
       const { data } = await supabase.from('exercise_guides').select('how_to, cues, image_urls').eq('name_key', key).maybeSingle()
       if (data && data.how_to) { if (!cancelled) setGuide(data); return }
       try {
-        const res = await fetch(apiUrl('/.netlify/functions/exercise-guide'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: ex.name }) })
+        const res = await fetch(apiUrl('/.netlify/functions/exercise-guide'), { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ name: ex.name }) })
         const j = await res.json()
         if (!cancelled) setGuide(j)
       } catch { if (!cancelled) setGuide({ how_to: '', cues: [], image_urls: [] }) }

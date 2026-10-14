@@ -6,6 +6,7 @@ import { sortDays, apiUrl } from './lib.js'
 import { WEEKDAYS } from './booking.js'
 import { TRAIN_WHERE } from './programMeta.js'
 import { THEME } from './themes.js'
+import { authHeaders } from './apiAuth.js'
 
 // Paul, 4 Sept: "The program library is awesome but I wonder if it could be an
 // option to let people use the ai to create a programme where they can state if
@@ -70,7 +71,7 @@ export function BuildMyProgram({ clientId, onDone }) {
     try {
       const res = await fetch(apiUrl('/.netlify/functions/program-generate'), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({ goal, days: days.length, equipment: equipmentText, level, weeks, location: where, notes: notes.trim().slice(0, 400), ...(stylePicker && style === 'calisthenics' ? { style, adapt } : {}), ...(ramp ? { rampFrom, rampTo } : {}) }),
       })
       const j = await res.json()
