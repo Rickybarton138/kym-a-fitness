@@ -25,10 +25,12 @@ const GATED = [
   'meal-plan', 'program-edit', 'program-generate', 'recipe-ai', 'recipe-generate',
 ]
 
-// coachClient.js and MealPlan.jsx attach the token their own way, both of which
-// predate the shared helper and both of which are correct. Named rather than
-// pattern-matched, so a NEW file cannot join this list by accident.
-const OWN_WAY = { 'MealPlan.jsx': 'builds the header inline from getSession()' }
+// MealPlan.jsx builds the header inline from getSession(), which predates the
+// shared helper and is correct. The exemption is keyed on the FILE AND THE
+// ENDPOINT, not the file alone: exempting a whole file would let a second,
+// tokenless call added to it later pass this guard unnoticed, which is exactly
+// the failure the guard exists to catch.
+const OWN_WAY = new Set(['MealPlan.jsx::meal-plan'])
 
 const files = readdirSync(SRC).filter((f) => /\.(js|jsx)$/.test(f))
 
@@ -50,7 +52,7 @@ test('every call to a gated endpoint carries a session token', () => {
         // statement, which could lend its headers to this one.
         const call = window.split(/\n\s*const |\n\s*await (?!fetch)/)[0]
         const hasToken = /authHeaders\(/.test(call) || /authorization/i.test(call)
-        if (!hasToken && !OWN_WAY[file]) {
+        if (!hasToken && !OWN_WAY.has(`${file}::${name}`)) {
           offenders.push(`${file} -> ${name}`)
         }
       }

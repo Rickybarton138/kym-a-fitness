@@ -107,3 +107,81 @@ The success paths are not re-tested from a script with somebody's password. The
 meal-plan e2e scripts take a token from `E2E_TOKEN` and skip their success
 assertions when it is absent, so they stay honest instead of passing vacuously.
 Nothing writes to a food diary and no production account is signed into.
+
+## Phase 1 on a brand that is not Rick.Fit — the exact procedure
+
+Verified facts this rests on: **no site auto-builds from the repo**
+(`build_settings.repo_url` is empty on all seven), so pushing to GitHub deploys
+nothing and the only way enforcement reaches a brand is somebody running a
+deploy for that site. The brands and their site ids:
+
+| Brand | Site | id |
+|---|---|---|
+| Rick.Fit | rick-fit | `8c3924ca-1d69-46ad-b211-c10229216882` |
+| Coached by Kim | coached-by-kim | `08a2f0ba-f0a8-4ee9-80f5-cd314abacce3` |
+| ReDefine (Paul) | redefine-academy | `bda91296-2224-4923-b91c-d6482971eab1` |
+| ReDefine coaching | redefine-academy-coaching | `380c0cdc-d7d7-4e80-b12e-2c7533291584` |
+| PPH (Jordan) | the-physical-performance-hub | `5e998585-cfd2-4e16-a272-b5ceac659c95` |
+| Elev8 | elev8-hyrox | `a7852fc7-7d64-429c-a9d5-041084399b9d` |
+| Elev8 landing | elev8-landing | `aba10137-4e67-4777-9a3a-91525f16f54b` |
+
+1. **Set the variable BEFORE the deploy**, through `netlify api` with an
+   explicit `site_id`, and read it back:
+
+       npx netlify api createEnvVars --data '{"account_id":"698094fd72d00ee4b3786542","site_id":"<id>","env_vars":[{"key":"AI_AUTH","scopes":["functions"],"values":[{"context":"all","value":"observe"}]}]}'
+       npx netlify api getEnvVars --data '{"account_id":"698094fd72d00ee4b3786542","site_id":"<id>"}'
+
+   NOT `netlify env:set --site`. That flag was ignored once and set Kim's BRAND
+   to another brand's value — see CLAUDE.md. Use `deleteEnvVar` +
+   `createEnvVars` to change one.
+
+2. **Deploy with `--skip-functions-cache`.** A new env var does not reach
+   functions otherwise; that is a known trap in this account
+   (`netlify-cli-stale-function-env`). Build with the brand's own script first,
+   or the site ships Kim's branding.
+
+       npm run build:<brand>
+       npx netlify deploy --dir=dist --site=<id> --skip-functions-cache
+
+3. **Prove observe is actually observing**, on the draft:
+
+       node tasks/e2e_auth_refusals.mjs https://<draft>--<site>.netlify.app
+
+   Expect it to report **STILL OPEN on all ten**. That is the pass condition
+   for this step, not a failure. If it reports 401s, the variable did not reach
+   the functions and the deploy would enforce — stop.
+
+4. Promote the tested draft with `netlify api restoreSiteDeploy` (a direct
+   `--prod` gets a 403 on this account).
+
+5. **Wait, then read the logs.** Every anonymous call now logs
+   `ai-auth observe: anonymous call allowed <path>`. When a brand's functions
+   stop producing that line, every client on it has reloaded onto a bundle that
+   sends the token, and enforcing is safe. That is a measurement, not a guess
+   about how long a week is.
+
+6. **Enforce** by deleting the variable and redeploying with
+   `--skip-functions-cache`, then run the refusal script again and expect
+   60/60.
+
+## The landmine, and where the warning lives
+
+The code default is enforce. That is the right default for security and the
+wrong one for a surprise deploy: a session that deploys Kim, Paul, PPH or Elev8
+for an unrelated fix turns enforcement on for paying clients with no refresh
+window. The warning therefore sits in `CLAUDE.md`'s deploy section, which is
+what a deploying session actually reads, not only here.
+
+## What is NOT closed
+
+- **Production is still open on every brand.** This commit changes code, not
+  exposure. All brands share one Anthropic key, so until the LAST site enforces,
+  the credit-spend hole is reachable through whichever site still has the old
+  functions.
+- **The success path has not been driven by a logged-in browser.** The refusals
+  are proven on a real deploy and the call sites are checked statically; what is
+  unproven is a real session going all the way through. That needs the Chrome
+  extension connected, or one tap in the app.
+- **The full-week shopping list has no running guard** until somebody supplies
+  `E2E_TOKEN`. `tasks/e2e_meal_week_stress.mjs` now skips rather than passing
+  vacuously, which is honest but is not cover.

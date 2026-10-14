@@ -130,6 +130,12 @@ export async function requireAiUser(event) {
   try {
     return await requireUser(event)
   } catch {
+    // The window has to be OBSERVABLE or it is just a hole with a nicer name.
+    // This line is how the decision to enforce gets made: when the logs for a
+    // brand go quiet, every client on it has reloaded and the switch can be
+    // thrown. Without it, the flip would be a guess about how long is long
+    // enough. The path only — no token, no header, nothing about the caller.
+    console.warn('ai-auth observe: anonymous call allowed', event.path || event.rawUrl || '(unknown path)')
     return null
   }
 }

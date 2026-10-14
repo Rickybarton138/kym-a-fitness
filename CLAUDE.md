@@ -44,6 +44,14 @@
   whichever site you deploy to. The runtime brand still comes from the hostname
   (HOST_BRAND in `src/themes.js`) — this only stamps the static metadata that
   crawlers and "add to home screen" read.
+- **STOP before deploying kim / paul / pph / elev8.** Since `9765f90`
+  (14 Oct 2026) the ten AI endpoints require a session, and the code default is
+  to ENFORCE. Deploying any of those brands for an unrelated fix will therefore
+  switch enforcement on for their paying clients, and an installed PWA that has
+  not reloaded gets a 401 on every AI screen. Set `AI_AUTH=observe` on that site
+  FIRST and deploy with `--skip-functions-cache` — the full procedure, the site
+  ids and the pass conditions are in `tasks/hardening-pass-1.md`. Rick.Fit is
+  already enforcing and needs nothing.
 - Deploy Paul: `npm run build:paul` then
   `npx netlify deploy --dir dist --site bda91296-2224-4923-b91c-d6482971eab1`
   (this folder is linked to Kim's site, so `--site` is not optional), then promote
