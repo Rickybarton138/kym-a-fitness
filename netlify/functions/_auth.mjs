@@ -210,6 +210,19 @@ export function userQuery(token) {
       }
       return res.json()
     },
+    async rpc(fn, args) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+        method: 'POST', headers, body: JSON.stringify(args),
+      })
+      if (!res.ok) {
+        // A 404 is the function not existing yet, which is the expected state
+        // before the migration is applied; the caller decides what to do about
+        // that, exactly as `select` does for a missing table.
+        if (res.status === 404 || res.status === 400) return null
+        throw new HttpError(502, `Could not call ${fn}.`)
+      }
+      return res.json()
+    },
     async remove(table, query) {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { method: 'DELETE', headers })
       if (!res.ok && res.status !== 404) throw new HttpError(502, `Could not delete from ${table}.`)
@@ -223,20 +236,39 @@ export function userQuery(token) {
  *
  * A module-scope counter would be worthless here: Netlify runs many short-lived
  * concurrent instances, so each would keep its own count and the ceiling would
- * be the limit times the number of instances. This costs one round trip and
- * actually holds. It fails OPEN — if the table is missing (before the migration)
- * or unreadable, the request proceeds, because a broken counter must not take
- * the feature out.
+ * be the limit times the number of instances.
+ *
+ * It used to read the row, add one, and write it back from here, and that was
+ * wrong twice over — found in the hardening audit on 14 Oct 2026:
+ *
+ *   The person being limited could reset it. `coach_usage`'s policy was ALL,
+ *   not SELECT, on `client_id = auth.uid()`, so a client could UPDATE their own
+ *   row to zero from the browser console. The row was correctly restricted TO
+ *   them, which was precisely the problem — the same shape as the `trainer_id`
+ *   hole in migration_profile_column_grants.sql.
+ *
+ *   It lost concurrent calls. Read, add one, write back is not atomic, and a
+ *   week-long meal plan fires nine calls at once: several read the same number
+ *   and all write the same number back, so nine calls counted as one.
+ *
+ * Both live in the database now, in one statement, with the identity taken from
+ * `auth.uid()` inside the function rather than from anything a caller sends.
+ * See tasks/migration_coach_usage_counter.sql — part 2 of which, revoking the
+ * direct write, must wait until every brand runs this code.
+ *
+ * Still fails OPEN: a missing function (pre-migration) or an unreadable counter
+ * lets the request through, because a broken ceiling must not take the coaching
+ * feature out.
  */
-export async function withinDailyLimit(q, userId, day, limit = 120) {
+export async function withinDailyLimit(q, day, limit = 120) {
   try {
-    const rows = await q.select('coach_usage', `client_id=eq.${userId}&day=eq.${day}&select=calls`)
+    const rows = await q.rpc('coach_usage_bump', { p_day: day, p_limit: limit })
     if (rows === null) return { ok: true, counted: false }
-    const used = rows[0]?.calls || 0
-    if (used >= limit) return { ok: false, counted: true, used }
-    await q.insert('coach_usage', [{ client_id: userId, day, calls: used + 1 }],
-      { upsert: true, onConflict: 'client_id,day' })
-    return { ok: true, counted: true, used: used + 1 }
+    const row = Array.isArray(rows) ? rows[0] : rows
+    // A shape we do not recognise is a broken counter, not a refusal. Refusing
+    // on it would turn a schema drift into "the coach has stopped answering".
+    if (!row || typeof row.allowed !== 'boolean') return { ok: true, counted: false }
+    return { ok: row.allowed, counted: true, used: row.used }
   } catch {
     return { ok: true, counted: false }
   }

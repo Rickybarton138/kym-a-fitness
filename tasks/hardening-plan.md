@@ -70,6 +70,17 @@ allowlist, a size cap, a timeout, and no redirects to private ranges.
 
 ## 3. Rate limiting is per-user, so it cannot bind an anonymous caller
 
+> **PART DONE, 14 Oct 2026.** Authenticating the endpoints (item 1) made the
+> limit possible; the audit then found it was not working anyway. The policy on
+> `coach_usage` was ALL rather than SELECT, so the person being limited could
+> reset their own counter, and the read-add-write was not atomic, so nine
+> concurrent calls counted as one. Both fixed - see
+> `tasks/hardening-db-audit-2026-10-14.md` and
+> `tasks/migration_coach_usage_counter.sql`. What is still NOT done is wiring
+> the nine AI endpoints into a ceiling: they would share coach chat's 120 a day,
+> and giving them their own bucket needs the primary key widened, which would
+> break the brands still running the old code. After Phase 2.
+
 `withinDailyLimit` counts against a user id. With no user there is nothing to
 count, so the only brake on the nine endpoints above is Anthropic's own. Once
 they authenticate, the limit starts working — which is another reason to do 1
@@ -84,12 +95,25 @@ before anything clever.
   `dd54cac`. `coach_notifications` is empty: nothing has ever been delivered,
   which is still unexplained and needs either a function log or an 08:07
   observation.
-- `app_config` `nudge_cron_secret` — confirm no RPC remains callable without it.
-- The `*` CORS on most functions can narrow to the known brand hosts, which are
-  already enumerated in `src/brandHosts.js`.
-- RLS spot-check across the newer coaching tables, the way
-  `kym-a-fitness-rls-column-grants` was done: rows are restricted, columns were
-  not, and that gap let a client rewrite their own `trainer_id` once already.
+- ~~`app_config` `nudge_cron_secret` — confirm no RPC remains callable without
+  it.~~ **Done, 14 Oct: none is.** All 19 secret-taking RPCs read the key from
+  `app_config` and gate on `coalesce(ok, false)`, so a missing key fails closed.
+  The secret is 48 characters and `app_config` has RLS on with no policies, so
+  it cannot be read through the API.
+- ~~The `*` CORS on most functions can narrow to the known brand hosts.~~
+  **Deliberately NOT doing this.** With the endpoints authenticated, the token
+  is what stands between a stranger and the key, not the origin header — and
+  narrowing it would break the native shell, which is cross-origin to every
+  brand. CORS never stopped a non-browser caller. Reasoning in
+  `tasks/hardening-db-audit-2026-10-14.md`.
+- ~~RLS spot-check across the newer coaching tables.~~ **Done, 14 Oct.** The
+  September column-grant fix holds; `push_subscriptions` pins
+  `client_id = auth.uid()` on write; `exercise_guides` has no write policy at
+  all so the shared cache cannot be poisoned. Every `SECURITY DEFINER` function
+  that takes an id was read and is scoped by `auth.uid()`. One finding, in
+  `coach_usage` — see item 3.
+- **NEW, Ricky's call:** leaked-password protection is off in Supabase Auth.
+  An account setting, not a code change.
 
 ## What "hardening" should NOT mean here
 

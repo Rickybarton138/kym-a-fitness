@@ -75,7 +75,10 @@ export const handler = wrap(async (event) => {
 
   // Memory reads and clears are free — they are not AI calls.
   if (action !== 'memory') {
-    const limit = await withinDailyLimit(q, user.id, today)
+    // The user id is NOT passed any more: the counter takes its identity from
+    // the verified session inside the database function, so there is nothing
+    // here that could name somebody else's quota.
+    const limit = await withinDailyLimit(q, today)
     if (!limit.ok) throw new HttpError(429, 'That is a lot of coaching for one day. Back tomorrow.')
   }
 

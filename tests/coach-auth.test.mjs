@@ -95,21 +95,40 @@ test('the brand comes from the host, never from the body', async () => {
   assert.deepEqual(brandOf({ headers: { host: 'localhost:5220' } }), { brand: null, local: true })
 })
 
-test('the daily limit counts in the database and fails open when it cannot', async () => {
+test('the daily limit is counted by the database, not by us', async () => {
   const { userQuery, withinDailyLimit } = await load()
 
-  stubFetch({ rows: { coach_usage: [{ calls: 5 }] } })
-  let out = await withinDailyLimit(userQuery('t'), f.CLIENT, f.TODAY, 120)
+  // The counter is one RPC now. It used to be a read here, an add here and a
+  // write back, which the person being limited could simply undo - the policy
+  // on coach_usage was ALL, not SELECT. See migration_coach_usage_counter.sql.
+  stubFetch({ rows: { 'rpc/coach_usage_bump': [{ allowed: true, used: 6 }] } })
+  let out = await withinDailyLimit(userQuery('t'), f.TODAY, 120)
   assert.equal(out.ok, true)
-  assert.equal(out.used, 6, 'incremented')
+  assert.equal(out.used, 6)
 
-  stubFetch({ rows: { coach_usage: [{ calls: 120 }] } })
-  out = await withinDailyLimit(userQuery('t'), f.CLIENT, f.TODAY, 120)
+  // And the request carries NO client id: the identity is taken from the
+  // session inside the function. A parameter could name somebody else.
+  const rpcCall = calls.find((c) => c.url.includes('/rpc/coach_usage_bump'))
+  assert.ok(rpcCall, 'the counter went through the RPC')
+  const sent = JSON.parse(rpcCall.body)
+  assert.deepEqual(Object.keys(sent).sort(), ['p_day', 'p_limit'])
+  assert.ok(!JSON.stringify(sent).includes(f.CLIENT), 'no client id is sent')
+
+  stubFetch({ rows: { 'rpc/coach_usage_bump': [{ allowed: false, used: 120 }] } })
+  out = await withinDailyLimit(userQuery('t'), f.TODAY, 120)
   assert.equal(out.ok, false)
+  assert.equal(out.used, 120)
 
-  // Table missing (pre-migration): the feature must still work.
+  // Function missing (pre-migration): the feature must still work.
   globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })
-  out = await withinDailyLimit(userQuery('t'), f.CLIENT, f.TODAY, 1)
+  out = await withinDailyLimit(userQuery('t'), f.TODAY, 1)
+  assert.equal(out.ok, true)
+  assert.equal(out.counted, false)
+
+  // A shape we do not recognise is a broken counter, not a refusal - refusing
+  // would turn schema drift into "the coach has stopped answering".
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => [{ unexpected: 1 }] })
+  out = await withinDailyLimit(userQuery('t'), f.TODAY, 1)
   assert.equal(out.ok, true)
   assert.equal(out.counted, false)
 })

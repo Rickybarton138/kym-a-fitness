@@ -921,3 +921,59 @@ made it look like a safe pattern.
 Anchor on the END of the import block (`} from '...'`), or on a line that is
 unambiguously a complete statement. And run the build before the deploy, not
 after — this cost one cycle and would have cost a broken draft.
+
+## A row restricted TO someone is not a row they should be able to write
+
+`coach_usage` counts a client's AI calls against a daily ceiling. Its policy was
+`ALL using (client_id = auth.uid())`, which reads like textbook RLS and meant
+the person being rate-limited could UPDATE their own counter to zero from the
+browser console. The limit was decoration.
+
+This is the second time the same mistake has appeared in this schema. In
+September it was `profiles`: a client could rewrite their own `trainer_id`,
+because the row was theirs. The question to ask of an `ALL` policy is not "whose
+row is this" but "would I let them write every column of it". A counter, a
+status, an owner link and an audit trail are all rows that belong to someone and
+that they must not be able to write.
+
+Found by reading `pg_policies`, not by reading the app.
+
+## Three round trips is not a counter
+
+The same function read the count, added one, and wrote it back. Netlify runs
+many concurrent short-lived instances and a week-long meal plan fires nine calls
+at once, so several read the same number and all wrote the same number back:
+nine calls counted as one. The ceiling leaked in both directions at the same
+time — resettable by the user AND undercounting.
+
+`insert ... on conflict do update set calls = calls + 1 where calls < limit
+returning calls` is the whole thing, atomic, in the database. The conditional
+`WHERE` on the DO UPDATE is what makes the ceiling atomic too, not just the
+increment. Watch the one case it cannot see: a brand-new row has no conflict, so
+a limit of zero still allows the first call unless it is guarded separately.
+
+## revoke execute ... from anon does nothing on its own
+
+Postgres grants `EXECUTE` on a new function to `PUBLIC` by default, and `anon`
+inherits that. Revoking from `anon` by name leaves the PUBLIC grant in place, so
+the function stays callable and the revoke looks like it worked.
+
+Name `PUBLIC` in the revoke, then grant to the roles that should have it, then
+prove it with `has_function_privilege('anon', oid, 'EXECUTE')` rather than
+believing the statement that returned no error.
+
+This is also why Supabase's advisor lists dozens of functions as anon-executable
+at once: it is one default, not dozens of decisions. Do not bulk-revoke in
+response — the cron senders call those RPCs with the publishable key, as anon,
+and they already fail closed on a secret check.
+
+## An audit has to write down what came back clean
+
+Nine `p_client` setters, five id-taking functions, nineteen secret-takers and
+five tables' policies were checked and only one was wrong. Recording only the
+finding would mean the next person re-derives all of it, or assumes the rest is
+unchecked and either panics or ignores it.
+
+The clean list is the deliverable as much as the fix is — and it has to say what
+was actually verified. "References auth.uid()" is not "scoped by auth.uid()": a
+function can mention it and still `delete where id = p_id`.
