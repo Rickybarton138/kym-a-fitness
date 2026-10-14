@@ -66,7 +66,17 @@ export const handler = async (event) => {
   // no body of its own. Anything that arrives with a body is somebody calling it
   // by hand, and that needs the secret. The empty-body case is checked too
   // rather than trusting one header to always be there.
-  const scheduled = !!(event.headers?.['x-nf-event'] || event.headers?.['X-Nf-Event']) || !event.body
+  //
+  // `|| !event.body` used to be part of this, and it was a hole: a POST with an
+  // empty body is indistinguishable from Netlify's own invocation, so ANYONE
+  // could trigger a real send run against every client in the queue, with no
+  // secret, just by curling the URL. Confirmed live on 14 Oct — it returned
+  // `enabled: true, dryRun: false` and ran the loop.
+  //
+  // Now the header is the only thing that marks an invocation as the cron's. If
+  // Netlify ever stops sending it the schedule starts failing with a 401, which
+  // is noisy and safe; the old version failed open, which was quiet and not.
+  const scheduled = !!(event.headers?.['x-nf-event'] || event.headers?.['X-Nf-Event'])
 
   if (!scheduled && (!SECRET || body.secret !== SECRET)) return json(401, { error: 'no' })
   if (!SECRET) return json(503, { error: 'NUDGE_CRON_SECRET is not set.' })
