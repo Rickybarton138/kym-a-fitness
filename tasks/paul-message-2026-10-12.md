@@ -4,13 +4,24 @@ Covers his four messages of 12 Oct, plus two things he hasn't noticed yet and
 should hear from us first.
 
 **Do not send until the promote has run.** Re-checked 13 Oct: the live site is
-still deploy `6ac74d8369c7ca281c89fe3d` from 8 Oct. The draft to promote is now
-`6acea44428a31a05289667c7`, which supersedes `6acccbc959e1f0058ac7fc46`. Nothing below is live, and
+still deploy `6ac74d8369c7ca281c89fe3d` from 8 Oct. Re-checked again 14 Oct: still
+`6ac74d8369c7ca281c89fe3d`. Paul chased it a second time.
+
+The draft to promote is `6acff9eb4c7a993adc4d6cf7`, built 14 Oct from a clean
+worktree at commit `dd54cac`. Every earlier deploy id is superseded
+(`6acccbc9`, `6acea444`).
+
+`dd54cac` is chosen, not just "latest": it carries all of Paul's fixes but
+stops short of `9765f90`, which makes the ten AI endpoints demand a session.
+The code default there is ENFORCE, so deploying HEAD to Paul's site would 401
+every client whose installed PWA has not reloaded. That rollout needs
+`AI_AUTH=observe` set first and belongs to its own pass — see
+`tasks/hardening-pass-1.md`. Nothing below is live, and
 the food-search bug he reported again at 12:03 is the one that has been sitting
 in an unpromoted draft since 9 Oct.
 
 ```
-npx netlify api restoreSiteDeploy --data '{"site_id":"bda91296-2224-4923-b91c-d6482971eab1","deploy_id":"6acea44428a31a05289667c7"}'
+npx netlify api restoreSiteDeploy --data '{"site_id":"bda91296-2224-4923-b91c-d6482971eab1","deploy_id":"6acff9eb4c7a993adc4d6cf7"}'
 ```
 
 **The AI paragraph is now true.** The Anthropic account has been topped up —
