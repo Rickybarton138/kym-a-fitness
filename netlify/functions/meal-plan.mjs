@@ -430,9 +430,9 @@ export const handler = async (event) => {
             })
           }))
 
-          const { shopping: agg, cost } = aggregate(tagged.flat())
+          const { shopping: agg, cost, lines } = aggregate(tagged.flat())
           if (agg.length) {
-            return { statusCode: 200, headers: cors, body: JSON.stringify({ shopping: agg, cost }) }
+            return { statusCode: 200, headers: cors, body: JSON.stringify({ shopping: agg, cost, lines }) }
           }
         } catch (e) {
           // Fall through to the model-written list below. A worse list beats no

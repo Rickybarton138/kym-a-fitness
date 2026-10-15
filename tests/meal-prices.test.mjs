@@ -221,3 +221,46 @@ test('the key list stays small enough to put in a prompt', () => {
   const chars = PRICE_KEYS.join(' ').length
   assert.ok(chars < 4000, `${chars} characters of keys`)
 })
+
+// `lines` was added on 15 Oct 2026 so the UI can take a line to a specific
+// supermarket PRODUCT rather than a search. It has to be additive: the Netlify
+// function that returns `shopping` runs on five brands, and the model-written
+// fallback list has no keys at all.
+test('every finished line carries its key and the quantity its label was built from', () => {
+  const { shopping, lines } = aggregate([
+    { text: '180g chicken thigh fillets', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+    { text: '200g chicken thigh fillets', key: 'chicken-thigh-fillet', name: 'chicken thigh fillets' },
+    { text: '60g red pepper', key: 'pepper', name: 'red pepper' },
+    { text: '1 red pepper', key: 'pepper', name: 'red pepper' },
+    { text: '2 star anise', key: '', name: 'star anise' },
+  ])
+  // One per finished line, and the labels are the same strings the UI renders —
+  // which is what lets it look one up by the label it is drawing.
+  assert.equal(lines.length, shopping.flatMap((g) => g.items).length)
+  assert.deepEqual(
+    [...lines].map((l) => l.label).sort(),
+    shopping.flatMap((g) => g.items).sort(),
+  )
+
+  const thighs = lines.find((l) => l.key === 'chicken-thigh-fillet')
+  assert.equal(thighs.label, '380g chicken thigh fillets')
+  assert.equal(thighs.grams, 380)
+  assert.equal(thighs.count, 0)
+
+  // A per-item food carries the COUNT the label rounded up to, not the raw
+  // weight, or the pack maths would ask for a pepper and a bit.
+  const pepper = lines.find((l) => l.key === 'pepper')
+  assert.equal(pepper.label, '2 red pepper')
+  assert.equal(pepper.count, 2)
+  assert.equal(pepper.grams, 0)
+
+  // No price key, so nothing can be looked up for it. It still gets a line.
+  const anise = lines.find((l) => l.key === '')
+  assert.equal(anise.label, '2 star anise')
+  assert.equal(anise.count, 2)
+})
+
+test('aggregating nothing returns no lines rather than undefined', () => {
+  assert.deepEqual(aggregate([]).lines, [])
+  assert.deepEqual(aggregate(null).lines, [])
+})

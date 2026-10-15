@@ -4,6 +4,7 @@ import { THEME } from './themes.js'
 import { supabase } from './supabaseClient.js'
 import { PRICE_NOTE } from './mealPrices.js'
 import { STORES, searchUrl } from './shopLinks.js'
+import { productFor, packsFor, productLinksAllowed, PRODUCT_NOTE } from './shopProducts.js'
 
 // Client meal-plan builder. Uses their saved macro targets as the budget, asks a
 // few qualifying questions, then the AI returns either:
@@ -112,6 +113,24 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   const shopAt = STORES.find((x) => x.id === store) || STORES[0]
   const shopUrl = (line) => searchUrl(shopAt.id, line)
 
+  // A line looked up by the LABEL the UI is drawing. `week.lines` carries the
+  // price key the tagging step produced, which the list itself throws away —
+  // the key is the only stable handle on the food, because the label's words
+  // come from the model and move about between weeks.
+  //
+  // A week with no `lines` finds nothing and gets searches: one saved before
+  // this existed, or one whose list came from the model-written fallback.
+  const lineByLabel = new Map((week?.lines || []).map((l) => [l.label, l]))
+  const packLinks = productLinksAllowed(week?.inputs)
+
+  function packFor(label) {
+    const info = lineByLabel.get(label)
+    if (!info) return null
+    const found = productFor(shopAt.id, info.key, label, week?.inputs)
+    if (!found) return null
+    return { ...found, packs: packsFor(found, info) }
+  }
+
   // Everything currently on offer. Sent back on a regenerate so the next one
   // isn't the same four dinners again. Takes the accumulator explicitly while a
   // week is mid-build, because `week` state hasn't caught up between days.
@@ -210,7 +229,10 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
       const s = await post({ ...baseBody(), shoppingFor: meals })
       // The cost comes back with the list it was worked out from, in the same
       // response, so the two cannot drift apart.
-      acc = { ...acc, shopping: s.shopping || [], cost: s.cost || null, stale: false }
+      // `lines` is REPLACED, never merged: the model-written fallback list comes
+      // back without it, and keeping the last one would hand a label that happens
+      // to match the pack count from a different week's shop.
+      acc = { ...acc, shopping: s.shopping || [], cost: s.cost || null, lines: s.lines || null, stale: false }
       setWeek(acc); saveWeek({ plan: acc, ticked: [] })
       if (!s.shopping?.length) setErr('The plan is done, but the shopping list didn’t come back — tap “Shopping list” to try that bit again.')
     } catch {
@@ -229,7 +251,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
     try {
       const s = await post({ ...baseBody(), shoppingFor: week.days.flatMap((d) => d.meals) })
       if (s.shopping?.length) {
-        const next = { ...week, shopping: s.shopping, cost: s.cost || null, stale: false }
+        const next = { ...week, shopping: s.shopping, cost: s.cost || null, lines: s.lines || null, stale: false }
         setWeek(next); saveWeek({ plan: next, ticked })
       } else setErr(s.error || 'The shopping list didn’t come back — try again.')
     } catch {
@@ -499,7 +521,10 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
                   <button key={x.id} type="button" className={store === x.id ? 'on' : ''} onClick={() => { setStore(x.id); saveStore(x.id) }}>{x.name}</button>
                 ))}
               </div>
-              <p className="muted-note" style={{ marginTop: 6 }}>A line’s {shopAt.name} button opens that item in {shopAt.name}’s own search with the words already in — you pick the pack and add it there. Neither shop lets an app fill a basket for you, so this saves the typing, not the choosing.</p>
+              <p className="muted-note" style={{ marginTop: 6 }}>A line’s {shopAt.name} button opens it at {shopAt.name} — the named pack where we know it, a search for the words where we don’t. You add it there: neither shop lets an app fill a basket for you, so this saves the typing, not the choosing.</p>
+              {packLinks
+                ? <p className="muted-note" style={{ marginTop: 6 }}>{PRODUCT_NOTE}</p>
+                : <p className="muted-note" style={{ marginTop: 6 }}>Every line goes to a search rather than a named pack, because this week was built around {week.inputs ? 'what you can’t eat' : 'answers that weren’t saved'} — and a named pack would be us choosing the exact product for you, which is the one thing that could put the wrong thing in your trolley.</p>}
               {week.cost && week.cost.priced > 0 && (
                 <div className="shop-cost">
                   <div className="shop-cost-total">About £{week.cost.gbp.toFixed(2)}</div>
@@ -516,6 +541,17 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
                   <button className="btn ghost sm" style={{ marginTop: 6 }} disabled={busy} onClick={buildShopping}>Try the cost again</button>
                 </div>
               )}
+              {/* A list built before `lines` existed has no keys on it, so every
+                  line falls back to a search and it looks as though the pack
+                  suggestions simply do not work. The week on an installed PWA
+                  can be days old, so this says what is going on and offers the
+                  one thing that fixes it. */}
+              {!week.lines && week.shopping?.length > 0 && !week.stale && (
+                <div style={{ marginTop: 8 }}>
+                  <p className="muted-note">This list was worked out before pack suggestions existed, so every line goes to a search. Redo it and the ones we know a pack for will link straight to it.</p>
+                  <button className="btn ghost sm" style={{ marginTop: 6 }} disabled={busy} onClick={buildShopping}>Redo the list</button>
+                </div>
+              )}
               {week.stale && (
                 <div style={{ marginTop: 6 }}>
                   <p className="muted-note" style={{ color: 'var(--accent)' }}>You’ve swapped a meal since this was worked out, so one or two lines — and the total — will be off.</p>
@@ -527,22 +563,35 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
                   <div key={gi}>
                     <p className="eyebrow">{g.aisle}</p>
                     <div className="stack" style={{ marginTop: 4, gap: 2 }}>
-                      {g.items.map((it, ii) => (
+                      {g.items.map((it, ii) => {
+                        const pack = packFor(it)
+                        return (
                         <div key={ii} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           {/* The shop link sits OUTSIDE the label deliberately.
                               Anything inside a label toggles its checkbox when
                               tapped, so a button in there would tick the line
                               off on the way to the shop — and the tick is how
                               they know what is already in the trolley. */}
-                          <label className="field" style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, margin: 0 }}>
-                            <input type="checkbox" checked={ticked.includes(it)} onChange={() => tick(it)} style={{ width: 'auto' }} />
-                            <span style={{ textDecoration: ticked.includes(it) ? 'line-through' : 'none', opacity: ticked.includes(it) ? 0.5 : 1 }}>{it}</span>
+                          <label className="field" style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 10, margin: 0 }}>
+                            <input type="checkbox" checked={ticked.includes(it)} onChange={() => tick(it)} style={{ width: 'auto', marginTop: 3 }} />
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ textDecoration: ticked.includes(it) ? 'line-through' : 'none', opacity: ticked.includes(it) ? 0.5 : 1 }}>{it}</span>
+                              {/* The pack is NAMED, never swapped in silently. If the
+                                  table has the wrong thing in it, it is readable here
+                                  before anyone taps it into a trolley. */}
+                              {pack && (
+                                <span className="muted-note" style={{ display: 'block' }}>
+                                  {pack.packs > 1 ? `${pack.packs} x ` : ''}{pack.name}
+                                </span>
+                              )}
+                            </span>
                           </label>
-                          {shopUrl(it) && (
-                            <a className="btn ghost sm" href={shopUrl(it)} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0 }}>{shopAt.name}</a>
-                          )}
+                          {pack
+                            ? <a className="btn sm" href={pack.url} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0 }}>{shopAt.name}</a>
+                            : shopUrl(it) && <a className="btn ghost sm" href={shopUrl(it)} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0 }}>{shopAt.name}</a>}
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 ))}

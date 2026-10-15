@@ -381,6 +381,15 @@ export function aggregate(tagged) {
   }
 
   const byAisle = new Map()
+  // One entry per finished LINE, carrying the price key the tagging step
+  // produced and the quantity the label was built from. Additive: `shopping`
+  // and `cost` are untouched, because the function reading them is deployed on
+  // five brands and the model-written fallback list has no keys at all.
+  //
+  // It exists so the UI can link a line to a specific supermarket PRODUCT
+  // instead of a search. The key is the only stable handle on the food — the
+  // label's words come from the model and vary between weeks.
+  const lines = []
   let pence = 0
   let priced = 0
   const unpriced = []
@@ -390,6 +399,8 @@ export function aggregate(tagged) {
     let label
     let p = null
 
+    let need = { grams: 0, count: 0 }
+
     if (entry && entry.per === 'each') {
       // Things bought whole. A weight converts, and the total rounds UP,
       // because you cannot put 1.7 peppers in the trolley.
@@ -397,12 +408,14 @@ export function aggregate(tagged) {
       n = Math.max(1, Math.ceil(n))
       label = `${n} ${grp.name}`
       p = Math.round(n * entry.gbp * 100)
+      need = { grams: 0, count: n }
     } else if (entry) {
       // Priced by weight, so the quantity stays as it is — pro-rata.
       const g = grp.grams + (grp.count && entry.g ? grp.count * entry.g : 0)
       if (g > 0) {
         label = `${formatGrams(g)} ${grp.name}`
         p = Math.round((g / 1000) * entry.gbp * 100)
+        need = { grams: g, count: 0 }
       } else {
         label = grp.name
       }
@@ -411,7 +424,10 @@ export function aggregate(tagged) {
       label = grp.grams > 0 ? `${formatGrams(grp.grams)} ${grp.name}`
         : grp.count > 0 ? `${Math.ceil(grp.count)} ${grp.name}`
         : grp.name
+      need = { grams: grp.grams > 0 ? grp.grams : 0, count: grp.grams > 0 ? 0 : Math.ceil(grp.count) }
     }
+
+    lines.push({ label, key: grp.key, grams: need.grams, count: need.count })
 
     if (p === null) unpriced.push(label)
     else { pence += p; priced++ }
@@ -427,6 +443,7 @@ export function aggregate(tagged) {
 
   return {
     shopping,
+    lines,
     cost: {
       pence,
       gbp: pence / 100,

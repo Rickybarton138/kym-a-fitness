@@ -1067,3 +1067,38 @@ inside that label would have made "go and buy this" also mean "I already have
 this", and the tick is how they know what is in the trolley. The button is a
 sibling of the label, not a child, and the comment in `MealPlan.jsx` says why so
 nobody tidies it back in.
+
+## A price key is a FOOD, so it cannot stand in for a product
+
+The shopping list's price keys come from a tagging step told to match "by FOOD,
+ignoring brand and preparation". That is right for pricing and wrong for buying:
+"gluten-free pasta" is tagged `pasta`, "oat milk" is `milk`, halal chicken is
+`chicken-breast`. A search link survives it, because the line's own words go to
+the shop. A product link throws them away, and the product's NAME would not warn
+anyone, because wheat pasta is not called anything.
+
+So product links need three things to agree: the week has answers on file, those
+answers name no dietary requirement and no allergy, and the line itself does not
+name its own version of the food. Any one missing and it stays a search. It is
+the same failure MealPlan.jsx already guards in another place — the app putting
+back the allergy it had just been told about.
+
+## "Add the top search result" would have bought adverts
+
+Asda's first result for "semi-skimmed milk" is Sponsored: Arla 2L at GBP 2.50,
+with the own-label 2 pints at GBP 1.20 further down. So any auto-fill built on
+"search, take the first hit" quietly buys the ad and inflates the shop. It is
+also the argument FOR a hand-kept product table rather than against it.
+
+## Verify a hand-kept table against the thing it names
+
+Sixty product rows were read off results pages, then every id was opened and its
+page title compared to the name stored beside it. One mismatch came back — a row
+I had shortened to "Tesco Red Onions 1kg" when the product is "Tesco Red Onions
+Pack 1Kg". Nothing else would have caught that, and the name is the bit the app
+shows the client as a promise about what they are about to add.
+
+Own-label naming is not a reliable signal either: Asda's plain bag of carrots is
+"ASDA Crunchy & Sweet Carrots 1kg", so "&" cannot be used to spot a variant the
+way it can at Tesco. The guard test checks shape, plausible pack sizes, and that
+every key is a real price key; the browser check is what proves the ids.
