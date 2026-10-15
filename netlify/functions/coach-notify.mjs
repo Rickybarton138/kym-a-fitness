@@ -22,7 +22,7 @@ import webpush from 'web-push'
 import { shouldSend, withDefaults, recipientAllowed, candidatesFor } from '../../src/coachNotify.js'
 import { londonDay, londonHour, lastCompleteWeek, weekStart } from '../../src/coachTime.js'
 import { sessionForDay } from '../../src/programSchedule.js'
-import { brandForHost } from '../../src/brandHosts.js'
+import { brandForHost, HOST_BRAND } from '../../src/brandHosts.js'
 
 const SUPABASE_URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 const SUPABASE_KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
@@ -53,6 +53,46 @@ async function rpc(fn, args) {
   return res.json()
 }
 
+// THE BRAND OF A REQUEST WITH NO REQUESTER.
+//
+// 15 Oct 2026. The queue read `coach_push_state` has not been called ONCE in
+// the last 23 hours of Supabase edge logs, against 23 scheduled runs — so this
+// function is not "running and deciding not to send", which is what an empty
+// `coach_notifications` on its own was consistent with. It is failing before it
+// ever reads the queue, or not running at all.
+//
+// This is the most likely reason, and it predates the 14 Oct header fix. The
+// brand came from the Host header and nothing else, and a SCHEDULED invocation
+// has no requester — Netlify synthesises the event. No host, no brand, and the
+// handler then refuses with a 400 before touching the database, every hour,
+// silently. A manual call with a real host resolved the brand fine, which is
+// exactly why the fault never showed up when it was probed by hand.
+//
+// So on a scheduled run the brand comes from the SITE, which is the only thing
+// that can know it: each brand has its own Netlify site and its own cron, and
+// the site's own identity is not caller-supplied — making this strictly more
+// trustworthy than the header, not less. The Host header is still what decides
+// a hand-made call.
+const KNOWN_BRANDS = new Set(Object.values(HOST_BRAND))
+
+export function brandFromSite() {
+  // BRAND is set per site, but it is scoped to `builds` on some of them and so
+  // may be absent here. Validated against the known slugs rather than trusted.
+  const direct = String(process.env.BRAND || '').trim().toLowerCase()
+  if (KNOWN_BRANDS.has(direct)) return { brand: direct, from: 'BRAND' }
+
+  // URL is the site's primary address, injected by Netlify.
+  let host = ''
+  try { host = process.env.URL ? new URL(process.env.URL).host : '' } catch { /* not a URL */ }
+  const fromUrl = brandForHost(host, null)
+  if (fromUrl) return { brand: fromUrl, from: 'URL' }
+
+  const fromName = brandForHost(`${String(process.env.SITE_NAME || '').trim()}.netlify.app`, null)
+  if (fromName) return { brand: fromName, from: 'SITE_NAME' }
+
+  return { brand: null, from: 'none' }
+}
+
 // Midday UTC of a London civil day — programSchedule reads dates with host-local
 // getters and this runs in UTC, so noon lands on the right date either way.
 function probeDate(day) {
@@ -81,12 +121,23 @@ export const handler = async (event) => {
   if (!scheduled && (!SECRET || body.secret !== SECRET)) return json(401, { error: 'no' })
   if (!SECRET) return json(503, { error: 'NUDGE_CRON_SECRET is not set.' })
 
-  const brand = brandForHost(event.headers?.host || '', null)
+  let brand = brandForHost(event.headers?.host || '', null)
+  let brandFrom = brand ? 'host' : null
+  if (!brand && scheduled) {
+    const site = brandFromSite()
+    brand = site.brand
+    brandFrom = site.from
+  }
   if (!brand) {
     // Without a brand there is no safe recipient set, so this refuses rather
     // than falling back to "everyone".
-    return json(400, { error: 'Brand could not be resolved from the host.' })
+    return json(400, { error: 'Brand could not be resolved.', scheduled, brandFrom: 'none' })
   }
+  // A line per scheduled run, so "is the cron even firing?" is answerable from
+  // the function log without a database write. It was not answerable before:
+  // the only evidence a run left behind was a notification, and a run that
+  // refused itself at the brand check left nothing at all.
+  if (scheduled) console.log('coach-notify scheduled run', JSON.stringify({ brand, brandFrom, siteUrl: process.env.URL || null }))
 
   const now = new Date()
   const day = londonDay(now)
@@ -191,7 +242,7 @@ export const handler = async (event) => {
   }
 
   return json(200, {
-    brand, day, hour, enabled: ENABLED, dryRun,
+    brand, brandFrom, day, hour, enabled: ENABLED, dryRun,
     inQueue: rows.length,
     sent, pruned,
     decisions,

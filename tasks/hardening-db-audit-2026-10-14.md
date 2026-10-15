@@ -83,6 +83,20 @@ That is a real improvement and it is not "closed". The thing that bounds the
 spend is the ceiling, not the gate — which is why item 3 could not wait for the
 brand rollout after all.
 
+**And the ceiling bounds spend PER ACCOUNT, not in total.** That distinction
+matters enough to spell out, because the phrase "spend 200 calls, then go and
+make another account" still describes a loop — just a slower one, against a
+throwaway email address, since confirmation is off. What bounds the TOTAL today
+is only:
+
+- whatever signup rate limit Supabase Auth applies, and
+- any spend limit set on the Anthropic account itself.
+
+The second of those is the only control that holds whatever the code does, which
+is why it is the first thing on Ricky's list rather than a footnote. Separate
+keys per site would also stop abuse through one brand's URL starving another
+brand's paying clients — which is exactly what happened on 12 Oct.
+
 `ai_usage` + `ai_usage_bump` (`tasks/migration_ai_usage_counter.sql`), applied,
 with a 200-a-day ceiling wired into `requireAiUser` itself rather than into ten
 call sites. Ten call sites is ten chances to forget one, and a forgotten one

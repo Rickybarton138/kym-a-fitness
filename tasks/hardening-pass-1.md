@@ -244,7 +244,16 @@ trainer session that satisfies both `requireAiUser` and `requireCoach`. Phase 1
 and Phase 2 buy attribution and a per-account cap, not a closed door. Full
 reasoning in `tasks/hardening-db-audit-2026-10-14.md`.
 
-So the order of value is now: the **ceiling** is what bounds the Anthropic
+**Careful with the claim, though: the ceiling bounds spend PER ACCOUNT.** An
+account costs one POST and an unconfirmed email address, so "spend 200 calls,
+then make another account" is still a loop. What bounds the TOTAL is the signup
+rate limit Supabase Auth applies, plus any spend limit set on the Anthropic
+account — and that second one is the only control that holds whatever the code
+does. None of this applies on the four client brands yet: they run `dd54cac`,
+answer anonymous POSTs with 200, never call `ai_usage_bump`, and use the same
+key.
+
+So the order of value is now: the **ceiling** is what bounds per-account
 spend; enforcement is what makes the ceiling attachable. That is an argument for
 getting Phase 1 onto the four brands reasonably soon, not for treating
 enforcement as the finish line.
