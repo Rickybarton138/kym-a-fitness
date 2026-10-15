@@ -92,8 +92,19 @@ grant execute on function public.coach_usage_bump(date, integer) to authenticate
 
 
 -- ---------------------------------------------------------------------------
--- PART 2 — DO NOT APPLY YET.
+-- PART 2 — APPLIED 15 Oct 2026.
 -- ---------------------------------------------------------------------------
+--
+-- The precondition turned out to be met immediately, so this did not have to
+-- wait for the brand rollout after all. The precondition is "every site whose
+-- clients call coach.mjs runs the new code", and the coaching engine is gated
+-- on `features.coach` in src/themes.js, which is set for Rick.Fit ONLY. The old
+-- coach.mjs on the other four brands has no callers at all, so there was
+-- nothing left to fail open. Rick.Fit was already on the deploy that counts
+-- through coach_usage_bump.
+--
+-- Applied as migration `coach_usage_counter_part2_revoke_direct_write`. The
+-- statements are below as a record; they do not need running again.
 --
 -- This is what actually closes the hole, and it must be the LAST step, after
 -- every brand is running code that calls `coach_usage_bump`. The database is

@@ -31,12 +31,17 @@ directions at once.
 
 Fixed in `tasks/migration_coach_usage_counter.sql`: `coach_usage_bump(p_day,
 p_limit)`, which does it in one statement, takes the identity from `auth.uid()`
-rather than a parameter, and refuses a null session. Part 1 (the function) is
-applied. **Part 2 — revoking the direct write — is deliberately NOT applied**,
-because `withinDailyLimit` fails open by design and the database is shared by
-seven sites: revoking while a brand still does its own read-add-write would move
-that brand from an advisory limit to no limit at all. It is the last step of the
-Phase 2 rollout.
+rather than a parameter, and refuses a null session.
+
+**Both parts are applied.** Part 2 — dropping the `ALL` policy and revoking the
+direct write — was going to wait for the brand rollout, on the reasoning that
+`withinDailyLimit` fails open and revoking under a brand still doing its own
+read-add-write would leave it with no limit at all. That reasoning was wrong
+about the precondition: the coaching engine is gated on `features.coach`, which
+is set for **Rick.Fit only**, so the old `coach.mjs` on the other four brands
+has no callers and there was nothing to fail open. Applied 15 Oct as
+`coach_usage_counter_part2_revoke_direct_write`, so the reset hole closed the
+same day rather than whenever Paul's rollout happens.
 
 Verified: `anon` calling the RPC gets `401 permission denied for function
 coach_usage_bump` — refused at the grant, before the body runs.
@@ -49,6 +54,68 @@ function to `PUBLIC` by default and `anon` inherits it, so the revoke has to nam
 `has_function_privilege('anon', oid, 'EXECUTE')` is what showed it. This is also
 why the Supabase advisor lists **45** functions as anon-executable — that is the
 default PUBLIC grant, not 45 separate decisions.
+
+## The bigger finding, found by asking what a session is worth
+
+**Authenticating the AI endpoints does not make them unreachable, and the
+write-up has to say so.**
+
+Signup is open on this project — it has to be, it is how Kim and Paul onboarded
+— email confirmation is off (`CLAUDE.md` requires that for smooth onboarding),
+and `handle_new_user` reads the role straight from
+`raw_user_meta_data->>'role'`, which the client supplies. The app's own sign-up
+screen has an "I'm the coach" button that sets it. Probed without creating an
+account, by sending a deliberately invalid signup: the reply was
+`weak_password`, which means the request got past the signups-allowed check.
+
+So one POST to `/auth/v1/signup` with the publishable key returns a **trainer**
+session, and that session satisfies both `requireAiUser` and `requireCoach`.
+
+What yesterday's pass actually bought, stated plainly:
+
+| Before | After |
+|---|---|
+| Anonymous | Attributable to an account |
+| Untraceable | Logged against a client id |
+| Unlimited | Capped per account per day |
+
+That is a real improvement and it is not "closed". The thing that bounds the
+spend is the ceiling, not the gate — which is why item 3 could not wait for the
+brand rollout after all.
+
+`ai_usage` + `ai_usage_bump` (`tasks/migration_ai_usage_counter.sql`), applied,
+with a 200-a-day ceiling wired into `requireAiUser` itself rather than into ten
+call sites. Ten call sites is ten chances to forget one, and a forgotten one
+here is invisible: the feature keeps working and the ceiling simply does not
+exist. A new table rather than a bucket in `coach_usage`, because widening that
+primary key would break the four brands still upserting on it.
+
+**Verified against the real database, in a rolled-back transaction**, because
+both counters fail open and a broken one looks exactly like everything working:
+impersonating a client as `authenticated`, three calls against a ceiling of 2
+returned `true/1`, `true/2`, `false/2`, and a ceiling of 0 returned `false/0`.
+Nothing persisted — `ai_usage` has zero rows.
+
+Whether coaches should be able to self-register is a **product** decision, not a
+security one, and it is Ricky's: it decides how Paul's coaches onboard. The
+options, roughly — leave it open and rely on the ceiling; require a code to
+register as a coach; or turn on email confirmation, which `CLAUDE.md` says
+breaks onboarding today because there is no SMTP.
+
+## TRUNCATE was granted to every client role on all 80 tables
+
+Supabase's default `grant all on all tables ... to anon, authenticated`
+includes TRUNCATE, **and RLS does not restrict TRUNCATE** — a policy saying
+"your own row" is no defence against emptying the table.
+
+Not reachable through the API today: PostgREST only issues
+SELECT/INSERT/UPDATE/DELETE and RPC calls, and has no TRUNCATE verb. So it was
+a latent footgun rather than a live hole. Nothing in the app or its migrations
+truncates anything, so revoking it cost nothing and it is now gone from all 80.
+
+Worth knowing: a freshly created table gets the default grant again. The next
+migration that creates a table should include the revoke, or re-run
+`revoke truncate on all tables in schema public from anon, authenticated;`.
 
 ## Checked and clean
 

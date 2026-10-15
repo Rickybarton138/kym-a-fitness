@@ -29,6 +29,7 @@
 // read it as a decision and undo the fix.
 
 import { brandForHost } from '../../src/brandHosts.js'
+import { londonDay } from '../../src/coachTime.js'
 
 export const SUPABASE_URL = 'https://ezwmfbuuopsnpanebtal.supabase.co'
 export const SUPABASE_KEY = 'sb_publishable__wzWH_b0wD6_KkqEC4o_hw_RXQfsjCv'
@@ -122,14 +123,45 @@ export function rejectImpersonation(body, user) {
  * for — the opposite way round from `coach-notify`'s empty-body hole, which
  * failed open and so stayed quiet for ten days.
  *
+ * AND IT COUNTS THE CALL, which is why identity and metering are one function
+ * rather than two. Authentication on its own does NOT make these endpoints
+ * safe, and it is worth being blunt about why:
+ *
+ *   Signup is open on this project — it has to be, it is how Kim and Paul
+ *   onboarded — email confirmation is off, and `handle_new_user` reads the role
+ *   from `raw_user_meta_data->>'role'`, which the client supplies. The app's own
+ *   sign-up screen has an "I'm the coach" button that sets it. So one POST to
+ *   /auth/v1/signup returns a TRAINER session that satisfies both this function
+ *   and `requireCoach`.
+ *
+ * What the auth pass bought was attribution and this hook. The ceiling is what
+ * turns "spend the whole Anthropic balance in a loop" into "spend 200 calls,
+ * then go and make another account" — a cost the caller keeps paying and a
+ * shape that shows up in the data.
+ *
+ * Combined into one function deliberately. Ten endpoints each needing a second
+ * line is ten chances to forget one, and a forgotten line here is invisible:
+ * the feature keeps working and the ceiling simply does not exist. The one gate
+ * cannot be half-applied.
+ *
  * Returns the user, or null when the site is still tolerating anonymous callers.
  */
 export async function requireAiUser(event) {
   const mode = String(process.env.AI_AUTH || 'enforce').trim().toLowerCase()
-  if (mode !== 'observe') return requireUser(event)
+  if (mode !== 'observe') {
+    const user = await requireUser(event)
+    await countAiCall(user)
+    return user
+  }
   try {
-    return await requireUser(event)
-  } catch {
+    const user = await requireUser(event)
+    // An identified caller is metered even during the window. Anonymous ones
+    // cannot be — there is nothing to count against — which is one more reason
+    // the window is meant to be short.
+    await countAiCall(user)
+    return user
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 429) throw e
     // The window has to be OBSERVABLE or it is just a hole with a nicer name.
     // This line is how the decision to enforce gets made: when the logs for a
     // brand go quiet, every client on it has reloaded and the switch can be
@@ -137,6 +169,50 @@ export async function requireAiUser(event) {
     // enough. The path only — no token, no header, nothing about the caller.
     console.warn('ai-auth observe: anonymous call allowed', event.path || event.rawUrl || '(unknown path)')
     return null
+  }
+}
+
+/**
+ * How many AI-endpoint calls one account gets a day.
+ *
+ * 200 is set from what a heavy real day looks like rather than from a round
+ * number: a full week's meal plan is nine calls, tapping through its recipes is
+ * another handful, a few fridge scans, a programme build. Nobody using the app
+ * normally will see this. It exists to bound an account that is not using the
+ * app normally.
+ *
+ * Separate from coach chat's 120, on purpose and in its own table. One shared
+ * counter would mean a busy Sunday of meal planning stopping the coach from
+ * answering, which is a worse bug than the one being fixed.
+ */
+export const AI_DAILY_LIMIT = Math.max(1, Number(process.env.AI_DAILY_LIMIT) || 200)
+
+/**
+ * Count one AI call. Throws 429 when the account is over its ceiling.
+ *
+ * Fails OPEN, like `withinDailyLimit`: a missing function (before the
+ * migration) or an unreadable counter lets the request through, because a
+ * broken ceiling must not take every AI feature out across five brands. The
+ * trade is deliberate and it is why the counter was proved against the real
+ * database before being relied on — a silent no-op here looks exactly like
+ * everything working.
+ */
+async function countAiCall(user) {
+  let row
+  try {
+    const rows = await userQuery(user.token).rpc('ai_usage_bump', {
+      p_day: londonDay(), p_limit: AI_DAILY_LIMIT,
+    })
+    if (rows === null) return
+    row = Array.isArray(rows) ? rows[0] : rows
+  } catch {
+    return
+  }
+  // A shape we do not recognise is a broken counter, not a refusal.
+  if (!row || typeof row.allowed !== 'boolean') return
+  if (!row.allowed) {
+    console.warn('ai-usage ceiling reached', user.id, row.used)
+    throw new HttpError(429, 'That is a lot of AI for one day. It will reset tomorrow.')
   }
 }
 

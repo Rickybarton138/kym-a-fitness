@@ -977,3 +977,57 @@ unchecked and either panics or ignores it.
 The clean list is the deliverable as much as the fix is — and it has to say what
 was actually verified. "References auth.uid()" is not "scoped by auth.uid()": a
 function can mention it and still `delete where id = p_id`.
+
+## Ask what a session is actually worth before calling an endpoint closed
+
+I authenticated ten AI endpoints, proved 60/60 refusals on a real deploy, and
+was about to report the credit-spend hole closed. Then: what does it cost to get
+a session? Signup is open on this project, email confirmation is off, and
+`handle_new_user` reads the role from `raw_user_meta_data->>'role'` — which the
+client supplies, via the app's own "I'm the coach" button. One POST to
+/auth/v1/signup returns a trainer session that satisfies both the gate and the
+coach-only check.
+
+So the pass bought attribution and a place to hang a ceiling. It did not buy
+unreachability. "Authenticated" is only a barrier if an account is expensive,
+and an account was free.
+
+The honest table is anonymous/untraceable/unlimited becoming
+attributable/logged/capped. Writing "closed" would have been the most damaging
+sentence in the whole piece, because it would have stopped anyone looking.
+
+## RLS does not restrict TRUNCATE
+
+Supabase's default grant hands `TRUNCATE` to `anon` and `authenticated` on every
+table, and a policy saying "your own row" is no defence against emptying the
+table. It was on all 80 here.
+
+Not reachable through PostgREST, which has no TRUNCATE verb — so latent rather
+than live, and worth saying which it is instead of either panicking or
+shrugging. Revoked, since nothing truncates anything. A freshly created table
+gets the default back, so the revoke belongs in the migration that creates one.
+
+## Verify a fail-open counter against the real thing, in a transaction
+
+Both usage counters fail open on purpose: a broken ceiling must not take every
+AI feature out across five brands. The cost of that choice is that a counter
+which never counts is indistinguishable from one that works — the app keeps
+answering either way, which is the quiet-failure pattern three other lessons
+here already name.
+
+`begin; set_config('request.jwt.claims', ...); set local role authenticated;
+<call it three times>; rollback;` proved the conditional DO UPDATE and the
+`returning into` going null at the ceiling, against the live schema, with
+nothing persisted. Unit tests with a stubbed fetch could never have caught a
+wrong ON CONFLICT clause.
+
+## A blocker is worth re-checking once the facts are in
+
+I parked the `coach_usage` revoke as "after the brand rollout", because the
+helper fails open and revoking under a brand still doing its own read-add-write
+would leave it with no limit at all. Sound reasoning, wrong precondition: the
+coaching engine is gated on `features.coach`, set for Rick.Fit only, so the old
+code on the other four brands has no callers and there was nothing to fail open.
+
+One grep of `themes.js` turned a parked item into a done one. Before deferring
+something behind a rollout, check the rollout actually applies to it.
