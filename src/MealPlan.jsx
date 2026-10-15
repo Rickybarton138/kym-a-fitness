@@ -3,6 +3,7 @@ import { getRecovery, getHealthContext, apiUrl } from './lib.js'
 import { THEME } from './themes.js'
 import { supabase } from './supabaseClient.js'
 import { PRICE_NOTE } from './mealPrices.js'
+import { STORES, searchUrl } from './shopLinks.js'
 
 // Client meal-plan builder. Uses their saved macro targets as the budget, asks a
 // few qualifying questions, then the AI returns either:
@@ -40,6 +41,13 @@ const WEEK_ON = THEME.features?.weekMealPlans === true
 // the next deploy of either would ship this to them untested.
 const RECIPES_ON = THEME.features?.mealRecipes === true
 
+// Which supermarket the shopping list links out to. Its own key rather than a
+// field on the week, so choosing Asda once survives building a new week — and
+// so clearing the week does not quietly put it back to Tesco.
+const STORE_KEY = 'mp_store_v1'
+const loadStore = () => { try { return STORES.some((s) => s.id === localStorage.getItem(STORE_KEY)) ? localStorage.getItem(STORE_KEY) : STORES[0].id } catch { return STORES[0].id } }
+const saveStore = (v) => { try { localStorage.setItem(STORE_KEY, v) } catch { /* private mode */ } }
+
 const WEEK_KEY = 'mp_week_v1'
 const loadWeek = () => { try { return JSON.parse(localStorage.getItem(WEEK_KEY) || 'null') } catch { return null } }
 const saveWeek = (v) => { try { v ? localStorage.setItem(WEEK_KEY, JSON.stringify(v)) : localStorage.removeItem(WEEK_KEY) } catch { /* private mode */ } }
@@ -62,6 +70,7 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   const [plan, setPlan] = useState(null)
   const [week, setWeek] = useState(null)
   const [ticked, setTicked] = useState([])
+  const [store, setStore] = useState(loadStore)
   const [err, setErr] = useState('')
   const [logged, setLogged] = useState('')
   const [openMeal, setOpenMeal] = useState('')
@@ -97,6 +106,11 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
   const toggleDiet = (d) => setDiet((s) => (s.includes(d) ? s.filter((x) => x !== d) : [...s, d]))
   const hasTargets = !!targets?.calories
   const recovery = getRecovery()
+
+  // The shopping list links OUT to a supermarket's own search. It is a search
+  // and not a basket for a reason, and the reason is in src/shopLinks.js.
+  const shopAt = STORES.find((x) => x.id === store) || STORES[0]
+  const shopUrl = (line) => searchUrl(shopAt.id, line)
 
   // Everything currently on offer. Sent back on a regenerate so the next one
   // isn't the same four dinners again. Takes the accumulator explicitly while a
@@ -480,6 +494,12 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
             <div className="card">
               <p className="eyebrow accent">Shopping list</p>
               <p className="muted-note" style={{ marginTop: 4 }}>Everything the {week.days.length} days need, added up. Tick as you go — it’ll still be here next time you open it.</p>
+              <div className="seg small" style={{ marginTop: 8 }}>
+                {STORES.map((x) => (
+                  <button key={x.id} type="button" className={store === x.id ? 'on' : ''} onClick={() => { setStore(x.id); saveStore(x.id) }}>{x.name}</button>
+                ))}
+              </div>
+              <p className="muted-note" style={{ marginTop: 6 }}>A line’s {shopAt.name} button opens that item in {shopAt.name}’s own search with the words already in — you pick the pack and add it there. Neither shop lets an app fill a basket for you, so this saves the typing, not the choosing.</p>
               {week.cost && week.cost.priced > 0 && (
                 <div className="shop-cost">
                   <div className="shop-cost-total">About £{week.cost.gbp.toFixed(2)}</div>
@@ -508,10 +528,20 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
                     <p className="eyebrow">{g.aisle}</p>
                     <div className="stack" style={{ marginTop: 4, gap: 2 }}>
                       {g.items.map((it, ii) => (
-                        <label key={ii} className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, margin: 0 }}>
-                          <input type="checkbox" checked={ticked.includes(it)} onChange={() => tick(it)} style={{ width: 'auto' }} />
-                          <span style={{ textDecoration: ticked.includes(it) ? 'line-through' : 'none', opacity: ticked.includes(it) ? 0.5 : 1 }}>{it}</span>
-                        </label>
+                        <div key={ii} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {/* The shop link sits OUTSIDE the label deliberately.
+                              Anything inside a label toggles its checkbox when
+                              tapped, so a button in there would tick the line
+                              off on the way to the shop — and the tick is how
+                              they know what is already in the trolley. */}
+                          <label className="field" style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, margin: 0 }}>
+                            <input type="checkbox" checked={ticked.includes(it)} onChange={() => tick(it)} style={{ width: 'auto' }} />
+                            <span style={{ textDecoration: ticked.includes(it) ? 'line-through' : 'none', opacity: ticked.includes(it) ? 0.5 : 1 }}>{it}</span>
+                          </label>
+                          {shopUrl(it) && (
+                            <a className="btn ghost sm" href={shopUrl(it)} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0 }}>{shopAt.name}</a>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>

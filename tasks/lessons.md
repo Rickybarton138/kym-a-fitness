@@ -1031,3 +1031,39 @@ code on the other four brands has no callers and there was nothing to fail open.
 
 One grep of `themes.js` turned a parked item into a done one. Before deferring
 something behind a rollout, check the rollout actually applies to it.
+
+## 403 to curl, 200 to a browser, is a finding in itself
+
+Both Tesco and Asda refused a plain HTTP client with 403 and served a real
+browser 200 on the identical URL. That one asymmetry answered three questions at
+once: the URL shape was fine all along (so the 403 proved nothing about it), the
+sites are edge-protected against non-browser callers, and anything server-side —
+including a Netlify function — is a dead end rather than merely a terms-of-service
+problem.
+
+Worth the two minutes before designing around a 403. It also means a URL shape
+can only be verified in a real browser, which is why the test file says so
+rather than pretending the assertion covers it.
+
+## There is no UK grocery basket API, and the vendors are not hiding one
+
+Tesco's developer programme was retired years ago; Asda never ran one. Every
+product that claims to fill a UK basket — Pepesto, and the reverse-engineered
+projects behind it — does the same thing: drives the retailer's own site with the
+shopper's logged-in session. There is no secret endpoint to find. What a vendor
+actually sells is maintaining that treadmill across 27 retailers, which is also
+the reason not to start it: the app would be holding a credential that can place
+orders on a card-linked account.
+
+So the shopping list hands OVER to a search instead. Writing down why in
+`src/shopLinks.js` matters more than the code does, because the next person to
+look at this will otherwise spend the same afternoon finding the same nothing.
+
+## A link inside a `<label>` ticks the checkbox
+
+Each shopping line is a `<label>` wrapping the tickbox and the text, which is
+right — tapping anywhere on the line ticks it off. Putting the supermarket button
+inside that label would have made "go and buy this" also mean "I already have
+this", and the tick is how they know what is in the trolley. The button is a
+sibling of the label, not a child, and the comment in `MealPlan.jsx` says why so
+nobody tidies it back in.
