@@ -541,14 +541,14 @@ export function MealPlanBuilder({ targets, onLog, coachName, onBack }) {
                   <button className="btn ghost sm" style={{ marginTop: 6 }} disabled={busy} onClick={buildShopping}>Try the cost again</button>
                 </div>
               )}
-              {/* A list built before `lines` existed has no keys on it, so every
-                  line falls back to a search and it looks as though the pack
-                  suggestions simply do not work. The week on an installed PWA
-                  can be days old, so this says what is going on and offers the
-                  one thing that fixes it. */}
+              {/* A list with no keys on it sends every line to a search, which
+                  looks exactly like the pack suggestions not working. TWO things
+                  cause it: a week saved before `lines` existed, and a list that
+                  came back from the model-written fallback — so the wording has
+                  to be true of both, and "built before this existed" is not. */}
               {!week.lines && week.shopping?.length > 0 && !week.stale && (
                 <div style={{ marginTop: 8 }}>
-                  <p className="muted-note">This list was worked out before pack suggestions existed, so every line goes to a search. Redo it and the ones we know a pack for will link straight to it.</p>
+                  <p className="muted-note">This list has no pack matches on it, so every line goes to a search. Redo it and the ones we know a pack for will link straight to it.</p>
                   <button className="btn ghost sm" style={{ marginTop: 6 }} disabled={busy} onClick={buildShopping}>Redo the list</button>
                 </div>
               )}

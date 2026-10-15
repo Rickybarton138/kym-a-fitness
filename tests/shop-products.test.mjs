@@ -29,6 +29,27 @@ test('a week with dietary requirements gets no product links at all', () => {
   assert.equal(productLinksAllowed(CLEAN), true)
 })
 
+test('the free-text box is a dietary channel too, and was the hole in this', () => {
+  // The chips are not the only way a requirement arrives. The same form has an
+  // "anything else" box, sent to the model as `preferences`, and a requirement
+  // typed in there never touches `diet`. The label check cannot cover for it:
+  // aggregate() keeps the shortest name per group, so a "gluten-free pasta"
+  // line merged with a "pasta" line comes out labelled plain "pasta".
+  const withPrefs = (prefs) => productLinksAllowed({ ...CLEAN, prefs })
+  assert.equal(withPrefs('halal please'), false)
+  assert.equal(withPrefs('no gluten'), false)
+  assert.equal(withPrefs('dairy free thanks'), false)
+  assert.equal(withPrefs('nut allergy in the house'), false)
+  assert.equal(withPrefs('lactose intolerant'), false)
+  assert.equal(withPrefs('kosher'), false)
+  // And it must not swallow ordinary preferences, which is most of what the box
+  // is actually used for.
+  assert.equal(withPrefs('quick weeknight dinners, love spice'), true)
+  assert.equal(withPrefs('no mushrooms please'), true)
+  assert.equal(withPrefs('high protein, batch cook on a Sunday'), true)
+  assert.equal(withPrefs(''), true)
+})
+
 test('a week saved before the answers were kept gets no product links either', () => {
   // MealPlan.jsx already warns about this week: restored without its inputs, so
   // nobody knows what it was built around. Absent beats assumed.

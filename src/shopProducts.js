@@ -136,10 +136,24 @@ export const PRODUCT_URL = {
  * told about. So: no dietary requirements, no allergies, and answers actually
  * on file. A week saved before `inputs` existed has none, and gets searches.
  */
+// The dietary chips are not the only way a requirement arrives. The same form
+// has a free-text "anything else" box, and it is sent to the model as
+// `preferences` — so "halal please" or "no gluten" typed in there is a real
+// dietary requirement that never touches `diet`.
+//
+// The label check cannot cover for it either: aggregate() keeps the SHORTEST
+// name per group, so a "gluten-free pasta" line merged with a "pasta" line ends
+// up labelled plain "pasta". By then the qualifier is gone.
+//
+// Wide on purpose. A false refusal costs one search; a false allowance puts
+// wheat pasta in a coeliac's trolley.
+const DIETARY_WORDS = /\b(halal|kosher|vegan|vegetarian|veggie|pescatarian|plant.?based|gluten|coeliac|celiac|dairy|lactose|intoleran\w*|allerg\w*|free.?from|nut.?free|no .{0,12}(gluten|dairy|meat|pork|nuts?|wheat)|religio\w*)\b/i
+
 export function productLinksAllowed(inputs) {
   if (!inputs) return false
   if (Array.isArray(inputs.diet) && inputs.diet.length > 0) return false
   if (String(inputs.allergies || '').trim()) return false
+  if (DIETARY_WORDS.test(String(inputs.prefs || ''))) return false
   return true
 }
 
