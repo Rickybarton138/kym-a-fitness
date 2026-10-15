@@ -222,3 +222,29 @@ The old cross-brand nudge functions (`push-reminders`, `push-daily-reminder`,
 `push-coach-alerts`, `push-coach-digest`, `push-food`, `push-workout`) were
 already on Kim's 15 Sept deploy, so this changed nothing about them. They are
 still the hazard described at the top of `coach-notify.mjs`.
+
+## The database side is ALREADY live on every brand — 15 Oct 2026
+
+Worth knowing before reading the deploy table above and concluding that nothing
+has changed for the four client brands. The schema is shared by all seven sites,
+so these landed everywhere the moment they were applied, regardless of which
+commit a site is deployed from:
+
+| Change | Effect on a brand still running `dd54cac` |
+|---|---|
+| `ai_usage` + `ai_usage_bump`, 200 calls a day (`migration_ai_usage_counter.sql`) | None. Pre-auth code does not call it. The ceiling starts applying to a brand when Phase 1 ships there. |
+| `coach_usage` part 2 — `ALL` policy dropped, direct write revoked | None. The coaching engine is gated on `features.coach`, which is Rick.Fit only, so the old `coach.mjs` on those four has no callers. `withinDailyLimit` fails open regardless. |
+| `TRUNCATE` revoked from `anon`/`authenticated` on all 80 tables | None. Nothing in the app truncates anything, and PostgREST has no TRUNCATE verb. |
+
+**And the reason the ceiling exists at all**, which changes how Phase 1 should be
+read: authenticating these endpoints does **not** make them unreachable. Signup
+is open, email confirmation is off, and `handle_new_user` takes the role from
+client-supplied signup metadata — so one POST to `/auth/v1/signup` returns a
+trainer session that satisfies both `requireAiUser` and `requireCoach`. Phase 1
+and Phase 2 buy attribution and a per-account cap, not a closed door. Full
+reasoning in `tasks/hardening-db-audit-2026-10-14.md`.
+
+So the order of value is now: the **ceiling** is what bounds the Anthropic
+spend; enforcement is what makes the ceiling attachable. That is an argument for
+getting Phase 1 onto the four brands reasonably soon, not for treating
+enforcement as the finish line.
