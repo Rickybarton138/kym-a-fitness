@@ -45,8 +45,30 @@ test('a line that names its own version of the food stays a search', () => {
   assert.equal(labelIsPlain('400g free-from pasta'), false)
   assert.equal(labelIsPlain('200g vegan cheddar'), false)
   assert.equal(labelIsPlain('500g halal chicken breast'), false)
-  assert.equal(labelIsPlain('400g brown rice'), false)
+  assert.equal(labelIsPlain('400g wholewheat pasta'), false)
   assert.equal(labelIsPlain('600g chicken breast'), true)
+})
+
+test('a food word only disqualifies a line when it is standing in for something', () => {
+  // The first version of the rule listed these as bare words, so `rice` matched
+  // "basmati rice" and `soy` matched "soy sauce" — two rows in the table that
+  // could then never be reached. Caught before it shipped; this is the guard.
+  assert.equal(labelIsPlain('1kg basmati rice'), true)
+  assert.equal(labelIsPlain('150g soy sauce'), true)
+  assert.equal(labelIsPlain('500ml rice milk'), false)
+  assert.equal(labelIsPlain('500ml soya milk'), false)
+  assert.equal(labelIsPlain('150g coconut yoghurt'), false)
+  // And the rows really are reachable, which is the thing that actually matters.
+  assert.ok(productFor('tesco', 'basmati-rice', '1kg basmati rice', CLEAN))
+  assert.ok(productFor('tesco', 'soy-sauce', '150g soy sauce', CLEAN))
+  assert.ok(productFor('asda', 'soy-sauce', '30g soy sauce', CLEAN))
+})
+
+test('fat and salt wording does not block a pack', () => {
+  // "light soy sauce" is a kind of soy sauce, and nobody is allergic to 15% fat.
+  assert.equal(labelIsPlain('150g light soy sauce'), true)
+  assert.equal(labelIsPlain('500g lean beef mince'), true)
+  assert.equal(labelIsPlain('500g reduced fat greek yogurt'), true)
 })
 
 test('the whole chain has to agree before a line gets a pack', () => {

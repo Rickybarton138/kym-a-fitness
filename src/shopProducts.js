@@ -145,9 +145,18 @@ export function productLinksAllowed(inputs) {
 
 // A line that names its own version of the food is not safe to swap for a
 // specific pack, whatever the week's answers say — "oat milk" tagged as `milk`
-// must not become dairy. Deliberately wide: "free" catches free-from and
-// free-range alike, and a false refusal only costs a search.
-const QUALIFIED = /\b(free|vegan|vegetarian|veggie|halal|kosher|plant|unsweetened|reduced|light|low|skimmed|wholemeal|wholewheat|brown|gluten|dairy|lactose|soya?|oat|almond|coconut|rice)\b/i
+// must not become dairy.
+//
+// The first version of this listed the substitute ingredients as bare words,
+// which was wrong in a way worth leaving written down: `rice` then matched
+// "basmati rice" and `soy` matched "soy sauce", so two perfectly safe rows
+// could never be reached at all. A food word only disqualifies a line when it
+// is standing in for something else — "oat MILK", "coconut YOGHURT" — so it is
+// matched together with the thing it is replacing.
+//
+// Fat and salt wording is deliberately NOT in here. "light soy sauce" is a kind
+// of soy sauce rather than a different food, and nobody is allergic to 15% fat.
+const QUALIFIED = /\b(free|vegan|vegetarian|veggie|plant|halal|kosher|gluten|lactose|dairy|wholemeal|wholewheat)\b|\b(oat|almond|soya?|rice|coconut|hemp|cashew)\s+(milks?|yogh?urts?|cream|cheese|butter|drink)\b/i
 
 export function labelIsPlain(label) {
   return !QUALIFIED.test(String(label || ''))
