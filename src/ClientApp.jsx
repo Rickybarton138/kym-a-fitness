@@ -3763,7 +3763,12 @@ function FormCheck({ clientId, coachName, onBack }) {
 
       const up = await uploadPromise
       if (up.error) throw new Error(up.error.message)
-      const { data } = await supabase.from('form_checks').insert({ client_id: clientId, storage_path: path, exercise: exercise.trim() || null, ai_feedback: null }).select().single()
+      // THROW on a failed insert. This used to ignore `error`, and the hang was
+      // hiding it: with the hang gone, a refused insert would otherwise show
+      // "Sent to Paul ✓" while nothing reached him, which is worse than the bug
+      // Paul reported because it looks like success.
+      const { data, error: insErr } = await supabase.from('form_checks').insert({ client_id: clientId, storage_path: path, exercise: exercise.trim() || null, ai_feedback: null }).select().single()
+      if (insErr) throw new Error(insErr.message)
       if (data) setChecks((c) => [data, ...c])
       setExercise('')
       setState('done')

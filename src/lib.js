@@ -168,6 +168,10 @@ export async function extractFrames(file, count = 3, { totalMs = 10000, seekMs =
     }
     video.onerror = finish
     video.src = url // last, so no event can fire before its handler exists
+    // Some mobile browsers will not begin fetching an unattached element's
+    // media until asked, which is one way `loadedmetadata` never arrives.
+    // Harmless where it is not needed.
+    try { video.load() } catch { /* ignore */ }
   })
 }
 

@@ -40,8 +40,19 @@ revoke update on public.profiles from authenticated, anon;
 --   ClientApp.jsx:3939       the health-context block
 -- full_name is not written by the app yet; it is granted for the account screen
 -- that is coming, and a display name is the user's own to change.
+-- KEEP THIS LIST CURRENT. It is a revoke-then-re-grant, so re-running a stale
+-- copy silently REVOKES any column added since it was written, and the only
+-- symptom is a save that quietly stops working. Three were added after the
+-- original: glp1 + glp1_med (the GLP-1 field, live on Paul's and Elev8's apps)
+-- and avatar_path (the account screen's profile picture, 17 Oct 2026 —
+-- tasks/migration_account_avatar.sql grants it incrementally for exactly this
+-- reason). Verified against production on 17 Oct: these 19 are what
+-- `authenticated` holds.
 grant update (
   full_name,
+  avatar_path,
+  glp1,
+  glp1_med,
   sex,
   age,
   height_cm,
