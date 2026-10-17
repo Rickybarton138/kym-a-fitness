@@ -18,6 +18,7 @@ import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTyp
 import { lastSetsByName } from './lifts.js'
 import { ParqSection } from './Parq.jsx'
 import { latestParq } from './parq.js'
+import { Avatar, AvatarPicker } from './Avatar.jsx'
 import { computeTargets, GOALS, ACTIVITY } from './Onboarding.jsx'
 import { MessageThread } from './MessageThread.jsx'
 import { ValdTests } from './VALD.jsx'
@@ -95,7 +96,7 @@ const DEFAULT_NAV = [
 // So a hub tab stays lit while you're inside one of its screens.
 const HUB_CHILDREN = {
   trainhub:  ['train', 'programs', 'myprogram', 'muscles', 'testing', 'strava', 'calisthenics', 'readiness'],
-  nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert', 'health'],
+  nutrition: ['meal', 'fridge', 'food', 'barcode', 'recipes', 'calc', 'expert'],
   body:      ['body', 'growth', 'monitoring'],
   coachhub:  ['ask', 'form', 'content', 'community', 'mygroups', 'videos', 'supplements', 'shop', 'podcasts', 'files'],
 }
@@ -303,7 +304,22 @@ export default function ClientApp({ profile, onSignOut }) {
           {THEME.logo ? <img className="mark-img" src={THEME.logo} alt="" /> : <span className="mark-badge">{THEME.mark}</span>}
           <span className="brand-name">{THEME.name}</span>
         </div>
-        <button className="link-btn" onClick={() => { try { localStorage.removeItem('cbk_screen') } catch { /* ignore */ } onSignOut() }}>Sign out</button>
+        {/* Tapping your own picture opens your account. This is the ONLY route
+            that works on every brand: the account screen used to be reachable
+            solely from a tile inside the Nutrition hub, and brands on the
+            default six-tab bar (Kim, PPH, BBL) have no Nutrition tab at all —
+            so their clients could not reach their own details or change their
+            own password. The header is on every screen, so it fixes that
+            without touching any per-brand `nav`. */}
+        <div className="topbar-right">
+          <button
+            className="avatar-btn" onClick={() => setScreen('health')}
+            aria-label="Your account"
+          >
+            <Avatar path={avatarPath} name={displayName} className="sm" />
+          </button>
+          <button className="link-btn" onClick={() => { try { localStorage.removeItem('cbk_screen') } catch { /* ignore */ } onSignOut() }}>Sign out</button>
+        </div>
       </header>
 
       <main className="screen">
@@ -331,7 +347,7 @@ export default function ClientApp({ profile, onSignOut }) {
             onDiscard={() => { clearFoodQueue(profile.id); setPendingFood(0) }}
           />
         )}
-        {screen === 'home' && <Home profile={profile} name={profile.full_name} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
+        {screen === 'home' && <Home profile={profile} name={displayName} coachName={coachName} heroImages={heroImages} targets={targets} consumed={consumed} remaining={remaining} foodLoggedToday={todayLogs.length > 0} clientId={profile.id} workoutTick={workoutTick} events={events} onGo={setScreen} onSaveTargets={saveTargets} />}
         {screen === 'train' && <Train key={'train' + resumeTick} onSaved={() => {}} clientId={profile.id} trainerId={profile.trainer_id} stepTarget={profile.step_target} onWorkoutDone={() => setWorkoutTick((t) => t + 1)} />}
         {screen === 'trainhub' && <TrainHub clientId={profile.id} coachName={coachName} stepTarget={profile.step_target} onGo={setScreen} />}
         {screen === 'myprogram' && <MyProgram clientId={profile.id} onBack={() => setScreen(THEME.nav ? 'trainhub' : 'train')} onGo={setScreen} />}
@@ -341,7 +357,10 @@ export default function ClientApp({ profile, onSignOut }) {
           <HealthDetails
             profile={profile}
             coachName={coachName}
-            onBack={() => setScreen(cameFrom.current === 'home' ? 'home' : (THEME.nav ? 'nutrition' : 'home'))}
+            avatarPath={avatarPath}
+            onAvatarChanged={setAvatarPath}
+            onNameChanged={setDisplayName}
+            onBack={() => setScreen('home')}
             onSaved={(patch) => {
               setRecovery({ on: patch.nutrition_sensitive, note: patch.nutrition_sensitive_note })
               setHealthContext({
@@ -529,7 +548,10 @@ function homeTileDefs(coachFirst) {
     { id: 'mealplan', group: 'Nutrition', hero: true, show: THEME.features?.mealPlans, Icon: IconMeal, title: 'Meal plan', sub: MEAL_PLAN_SUB },
     { id: 'myplan', group: 'Nutrition', hero: true, show: THEME.features?.coachMealPlans, Icon: IconMeal, title: 'My meal plan', sub: `${coachFirst}’s plan for you — ideas & structure` },
     { id: 'expert', group: 'Nutrition', hero: true, show: THEME.features?.nutritionExpert, Icon: IconMeal, title: 'Nutrition Expert', sub: 'Evidence-based sports nutrition, any time' },
-    { id: 'health', group: 'Nutrition', show: true, Icon: IconAsk, title: 'My details', sub: THEME.features?.parq ? 'PAR-Q, health conditions & life circumstances' : 'Health conditions & life circumstances — optional' },
+    // Its own group, not Nutrition — a password and a profile picture were
+    // never nutrition. Also reachable from the picture in the header, which is
+    // the only route that exists on brands with no Nutrition tab.
+    { id: 'health', group: 'Your account', show: true, Icon: IconAsk, title: 'My account', sub: THEME.features?.parq ? 'Your photo, login, PAR-Q & health details' : 'Your photo, login & health details' },
     { id: 'body', group: 'Progress & Body', show: true, Icon: IconBody, title: 'Body scan', sub: 'Track your progress' },
     { id: 'cycle', group: 'Progress & Body', show: THEME.features?.cycle, Icon: IconBody, title: 'Cycle', sub: 'Log your period, train with your body' },
     { id: 'checkin', group: 'Progress & Body', hero: true, show: true, Icon: IconAsk, title: 'Weekly check-in', sub: `Send ${coachFirst} your progress & how the week went` },
@@ -551,8 +573,8 @@ function homeTileDefs(coachFirst) {
 // Section order matches the bottom nav order (Home, Train, Nutrition,
 // Check-ins & Progress, Coach); labels match the nav's own labels too — Paul's
 // ask, so Home and the tab bar read as the same taxonomy.
-const HOME_GROUPS = ['Training', 'Nutrition', 'Progress & Body', 'Coach & Community']
-const HOME_GROUP_LABELS = { Training: 'Train', Nutrition: 'Nutrition', 'Progress & Body': 'Check-ins & Progress', 'Coach & Community': 'Coach & Community' }
+const HOME_GROUPS = ['Training', 'Nutrition', 'Progress & Body', 'Coach & Community', 'Your account']
+const HOME_GROUP_LABELS = { Training: 'Train', Nutrition: 'Nutrition', 'Progress & Body': 'Check-ins & Progress', 'Coach & Community': 'Coach & Community', 'Your account': 'Your account' }
 
 function HomeTile({ t, onGo }) {
   const Icon = t.Icon
@@ -695,6 +717,11 @@ function AgendaCard({ profile, coachName, foodLoggedToday, workoutTick, events, 
   const [tasks, setTasks] = useState([])                 // coach-scheduled recurring tasks
   const [parqMissing, setParqMissing] = useState(false)  // PAR-Q outstanding (existing clients)
   const [foodDone, setFoodDone] = useState(false)        // client marked today's logging finished
+  // Mirrored here so changing the picture updates the header immediately.
+  // `profile` is owned by App.jsx and has no setter down here, which is the
+  // same reason recovery/healthContext below are mirrored rather than read.
+  const [avatarPath, setAvatarPath] = useState(profile.avatar_path || null)
+  const [displayName, setDisplayName] = useState(profile.full_name || '')
 
   async function load() {
     const dow = new Date().getDay()
@@ -4110,10 +4137,9 @@ function NutritionHub({ profile, coachName, onGo }) {
           <IconMeal />
           <div><b>Calorie calculator</b><span>Recalculate your targets any time</span></div>
         </button>
-        <button className="tile" onClick={() => onGo('health')}>
-          <IconAsk />
-          <div><b>My details</b><span>{THEME.features?.parq ? 'PAR-Q, health conditions & life circumstances' : 'Health conditions & life circumstances — optional'}</span></div>
-        </button>
+        {/* "My details" used to sit here. It is the account screen now — the
+            picture in the header reaches it from anywhere, and it has its own
+            Home section. */}
       </div>
     </div>
   )
@@ -4353,10 +4379,15 @@ function CalcTargets({ profile, onSaveTargets, onBack }) {
   )
 }
 
-// Client-editable health conditions + life circumstances (Paul's ask). Same
-// fields captured at onboarding, editable any time. Feeds AI tone only —
-// see healthLine() in analyse.mjs — never changes calorie/macro maths.
-function HealthDetails({ profile, coachName, onBack, onSaved }) {
+// The client's account screen: who they are, how they sign in, and their
+// health information in one place (Ricky's ask, 15 Oct). Screen id stays
+// 'health' so the existing onGo('health') routes and any persisted
+// `cbk_screen` keep working.
+//
+// Health conditions + life circumstances were Paul's ask. Same fields captured
+// at onboarding, editable any time. They feed AI tone only — see healthLine()
+// in analyse.mjs — and never change calorie/macro maths.
+function HealthDetails({ profile, coachName, avatarPath, onAvatarChanged, onNameChanged, onBack, onSaved }) {
   const [nutritionSensitive, setNutritionSensitive] = useState(!!profile.nutrition_sensitive)
   const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState(profile.nutrition_sensitive_note || '')
   const [healthConditions, setHealthConditions] = useState(profile.health_conditions || '')
@@ -4395,9 +4426,13 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
       {!parqEditing && (
         <>
           <button className="link-btn" onClick={onBack}>‹ Back</button>
-          <p className="eyebrow">My details</p>
-          <h1 className="h1">Health &amp; circumstances.</h1>
-          <p className="lead">Optional — sharing this helps your coach and the AI support you better. Private to you and your coach.</p>
+          <p className="eyebrow">My account</p>
+          <h1 className="h1">Your details.</h1>
+          <p className="lead">Your picture, how you sign in, and the health information your coach trains you around. Private to you and your coach.</p>
+          <AccountCard
+            profile={profile} coachName={coachName} avatarPath={avatarPath}
+            onAvatarChanged={onAvatarChanged} onNameChanged={onNameChanged}
+          />
         </>
       )}
       {/* PAR-Q sits at the top of this screen because it's the one part that
@@ -4448,6 +4483,73 @@ function HealthDetails({ profile, coachName, onBack, onSaved }) {
       <ChangePassword />
         </>
       )}
+    </div>
+  )
+}
+
+// Picture, display name and sign-in email.
+//
+// The email is READ-ONLY on purpose. supabase.auth.updateUser({ email }) sends
+// a confirmation to the new address, and this project has no SMTP configured —
+// the change would sit unconfirmed forever while the client believed they had
+// moved their login. Until there is a mailer, changing it is a job for the
+// coach. Same reason the forgotten-password link has never reached a client.
+function AccountCard({ profile, coachName, avatarPath, onAvatarChanged, onNameChanged }) {
+  const [name, setName] = useState(profile.full_name || '')
+  // Read from the session rather than threaded down as a prop: `profiles` has
+  // no email column (the address lives in auth.users), and nothing else in the
+  // app needed it until now. getSession reads the local token, so no round trip.
+  const [email, setEmail] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+  const clean = name.trim()
+  const dirty = clean.length > 0 && clean !== (profile.full_name || '')
+
+  useEffect(() => {
+    let live = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (live) setEmail(data?.session?.user?.email || '')
+    })
+    return () => { live = false }
+  }, [])
+
+  async function saveName() {
+    setSaving(true); setError('')
+    const { error: err } = await supabase.from('profiles').update({ full_name: clean }).eq('id', profile.id)
+    setSaving(false)
+    // Surface it rather than silently not lighting up "Saved" — full_name is in
+    // the column-level UPDATE allow-list, but that is exactly the kind of grant
+    // that goes missing without anything visible happening.
+    if (err) { setError(err.message); return }
+    onNameChanged?.(clean)
+    setSaved(true); setTimeout(() => setSaved(false), 2000)
+  }
+
+  return (
+    <div className="card">
+      <p className="eyebrow">You</p>
+      <AvatarPicker
+        profile={{ ...profile, avatar_path: avatarPath }}
+        onChanged={onAvatarChanged}
+      />
+      <label className="field" style={{ marginTop: 14 }}>Your name
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First and last name" />
+      </label>
+      {dirty && (
+        <button className="btn ghost sm" style={{ marginTop: 8 }} disabled={saving} onClick={saveName}>
+          {saving ? 'Saving…' : 'Save name'}
+        </button>
+      )}
+      {saved && <p className="logged-ok">Saved ✓</p>}
+      {error && <p className="error">Couldn’t save that — {error}</p>}
+      <div className="know-row" style={{ marginTop: 12 }}>
+        <div>
+          <span className="muted" style={{ fontSize: 13 }}>You sign in with</span>
+          <p style={{ margin: '2px 0 0' }}>{email || '—'}</p>
+        </div>
+      </div>
+      <p className="muted-note">Need that changed? Ask {(coachName || 'your coach').split(' ')[0]} — we’ll move it for you.</p>
     </div>
   )
 }

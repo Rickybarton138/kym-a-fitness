@@ -32,6 +32,7 @@ import { CashflowDashboard } from './CashflowDashboard.jsx'
 import { WEEKDAYS, WEEKDAYS_FULL, upcomingSessions, bookingKey, dayLabel, fmtTime, ymd } from './booking.js'
 import { SEGMENTS, loadMemberActivity, segmentCounts, lastSeenLabel } from './crm.js'
 import { authHeaders } from './apiAuth.js'
+import { Avatar, useAvatarUrls } from './Avatar.jsx'
 
 export default function TrainerApp({ profile, onSignOut }) {
   const [clients, setClients] = useState([])
@@ -45,7 +46,7 @@ export default function TrainerApp({ profile, onSignOut }) {
 
   async function loadClients() {
     const { data } = await supabase
-      .from('profiles').select('id, full_name, created_at, membership_tier, status, status_note, is_test, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note, glp1, glp1_med')
+      .from('profiles').select('id, full_name, avatar_path, created_at, membership_tier, status, status_note, is_test, goal, step_target, water_target_ml, nutrition_sensitive, nutrition_sensitive_note, health_conditions, has_kids, single_parent, shift_worker, life_context_note, glp1, glp1_med')
       .eq('trainer_id', profile.id).order('created_at', { ascending: true })
     setClients(data || [])
     setLoading(false)
@@ -515,6 +516,8 @@ function ClientList({ clients, loading, onOpen }) {
   const shown = clients.filter(def.match)
   const active = clients.filter(billable).length
   const hidden = clients.length - active
+  // Signed once for the whole list, not per row.
+  const avatarUrls = useAvatarUrls(shown)
 
   return (
     <>
@@ -551,7 +554,9 @@ function ClientList({ clients, loading, onOpen }) {
           const st = c.status || 'active'
           return (
             <button className="tile" key={c.id} onClick={() => onOpen(c)}>
-              <span className="avatar">{(c.full_name || '?').charAt(0).toUpperCase()}</span>
+              {/* url only, never path: passing both would make Avatar sign its
+                  own URL as well as using the batched one. */}
+              <Avatar url={avatarUrls[c.avatar_path]} name={c.full_name} />
               <div>
                 <b>{c.full_name || 'Client'}</b>
                 <span>{st === 'paused' ? 'Paused — everything kept' : st === 'ended' ? 'Ended — everything kept' : 'View progress & set targets'}</span>
@@ -4643,6 +4648,7 @@ function CoachMembers({ clients, loading, onOpen }) {
   const counts = rows ? segmentCounts(rows) : { active: 0, new: 0, atrisk: 0, dormant: 0 }
   const needsCount = counts.atrisk + counts.dormant
   const shown = (rows || []).filter((r) => filter === 'all' ? true : r.seg.needs)
+  const avatarUrls = useAvatarUrls(shown)
 
   return (
     <div className="card">
@@ -4668,8 +4674,8 @@ function CoachMembers({ clients, loading, onOpen }) {
       <div className="stack" style={{ marginTop: 10 }}>
         {shown.map((r) => (
           <button className="tile" key={r.id} onClick={() => onOpen(r)}>
-            <span className="avatar" style={{ position: 'relative' }}>
-              {(r.full_name || '?').charAt(0).toUpperCase()}
+            <span className="avatar-wrap">
+              <Avatar url={avatarUrls[r.avatar_path]} name={r.full_name} />
               <span className={'rd-light ' + r.seg.color} style={{ position: 'absolute', right: -2, bottom: -2 }} />
             </span>
             <div>
