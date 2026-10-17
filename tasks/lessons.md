@@ -1127,3 +1127,32 @@ already sitting next to the user.
 Worth keeping from the dead end: "search, take the first hit" buys sponsored
 products (see above), and both shops bounce a signed-out Add to a login page, so
 nothing server-side can ever touch a basket.
+
+## A promise that can never settle beats every error path (17 Oct 2026)
+
+Paul: the form reviewer "just seems to hang and get stuck saying 'checking your
+form' but nothing actually happens." `extractFrames` waited on
+`loadedmetadata` and `seeked`. A clip the browser cannot demux fires neither of
+those AND NOT `error` either, so the promise never settled. The caller wrapped
+it in `try/catch`, which looked like diligence and caught nothing: a catch block
+only helps against a promise that rejects, never against one that stays
+pending. Any `await` on an event-driven promise needs a clock, not a catch.
+
+It had a second, worse consequence. The database insert sat *behind* that await,
+so a stalled analysis meant no row at all — the member filmed their set, the
+clip uploaded fine, and the coach never knew it existed. An optional
+enhancement must never sit upstream of the save. Start it alongside, write the
+record the moment the essential part lands, and patch the extra in afterwards.
+
+**The tell I should have looked for first, and the general rule:** there were
+ZERO `form_checks` rows on the whole platform, for every coach, ever. Nine
+orphaned clips sat in `form-videos` with no matching row — four from Paul the
+night before, five from Ricky's own account in July. The feature had never
+completed once in three months and nobody noticed, because the only person who
+would notice is a coach waiting for something they do not know was sent.
+
+Before trusting any code path downstream of a bug, check whether it has ever
+run in production. `select count(*)` on the table the feature writes answers it
+in one query. If the answer is zero, everything after the bug is unproven, and
+the bug was probably masking a second one — here, an insert that ignored its
+`error` and would have shown "Sent ✓" while sending nothing.
