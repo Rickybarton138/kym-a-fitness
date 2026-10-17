@@ -1102,3 +1102,28 @@ Own-label naming is not a reliable signal either: Asda's plain bag of carrots is
 "ASDA Crunchy & Sweet Carrots 1kg", so "&" cannot be used to spot a variant the
 way it can at Tesco. The guard test checks shape, plausible pack sizes, and that
 every key is a real price key; the browser check is what proves the ids.
+
+## Ask where the user actually is before building the clever version
+
+Two days went into working out how to press Add in Ricky's logged-in browser:
+which store pages name the product on the button, how to tell a login bounce
+from a real page, how an extension survives a navigation. All of it correct, and
+all of it pointless, because he shops on his phone. Chrome on Android and iOS
+runs no extensions at all, the Tesco app is sealed, and the app's session is not
+the mobile browser's session, so none of the three ways in exist there.
+
+What works, and already shipped weeks before any of that: sign in to the shop in
+the PHONE browser once, then every pack link on the shopping list opens the
+product and Add is one tap. The basket is held against the account, so items
+added in the mobile browser are in the native app's basket when he goes to book
+a slot. Fifteen taps for a fifteen-item list, nothing installed.
+
+The phone was also the right place for a second reason that should have been the
+tell: the week lives in the phone PWA's localStorage. The desktop extension
+needed a whole extra mechanism just to get the list to where it was running.
+When the plan needs a bridge to reach the data, check whether the data is
+already sitting next to the user.
+
+Worth keeping from the dead end: "search, take the first hit" buys sponsored
+products (see above), and both shops bounce a signed-out Add to a login page, so
+nothing server-side can ever touch a basket.
