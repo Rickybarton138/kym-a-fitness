@@ -52,3 +52,12 @@ drop policy if exists "avatars coach read clients" on storage.objects;
 create policy "avatars coach read clients" on storage.objects
   for select to authenticated
   using (bucket_id = 'avatars' and is_my_client(((storage.foldername(name))[1])::uuid));
+
+-- Tightened after the fact, to match body-photos. The bucket had no ceiling and
+-- no mime restriction: the app only ever puts a ~320px JPEG in it, so anything
+-- larger or of another type is a bug or an abuse, and the cheapest place to say
+-- no is the bucket itself.
+update storage.buckets
+   set file_size_limit = 5242880,  -- 5MB; a scaled avatar is tens of KB
+       allowed_mime_types = array['image/jpeg','image/png','image/webp']
+ where id = 'avatars';

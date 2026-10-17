@@ -57,11 +57,26 @@ export async function analyze(payload) {
   // added. A dynamic one is only evaluated when a browser actually calls this,
   // and unlike a register-a-callback arrangement it cannot be forgotten.
   const { authHeaders } = await import('./apiAuth.js')
-  const res = await fetch(apiUrl('/.netlify/functions/analyze'), {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(body),
-  })
+  // A fetch with no timeout can stay pending indefinitely when a phone drops
+  // off mid-request: the request is sent, nothing comes back, and the promise
+  // never settles. Everything that awaits this then hangs too, which is how the
+  // form checker got stuck. 45s is longer than any of these calls legitimately
+  // take and still bounded.
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 45000)
+  let res
+  try {
+    res = await fetch(apiUrl('/.netlify/functions/analyze'), {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(body),
+      signal: ctl.signal,
+    })
+  } catch (e) {
+    throw new Error(e?.name === 'AbortError' ? 'That took too long — try again in a moment.' : (e?.message || 'Something went wrong.'))
+  } finally {
+    clearTimeout(timer)
+  }
   const json = await res.json()
   if (!res.ok) throw new Error(json.error || 'Something went wrong.')
   return json
@@ -85,21 +100,51 @@ export function startOfWeekISO() {
 
 // Extract a few still frames from a video File as base64 JPEGs (downscaled),
 // so Claude vision can assess form without server-side video processing.
-export async function extractFrames(file, count = 3) {
-  return new Promise((resolve, reject) => {
+// Pull a few still frames out of a video for the vision call.
+//
+// EVERY EXIT PATH IS TIMED OUT, and that is the whole point. This used to be a
+// promise that could simply never settle: it waited on `loadedmetadata` and
+// `seeked`, and a clip the browser cannot demux fires NEITHER those nor
+// `error`. Paul reported the form checker stuck on "Checking your form…"
+// forever, and this was it — the await never returned, so the clip was never
+// even recorded for the coach, never mind reviewed.
+//
+// So it resolves rather than rejects, with however many frames it managed:
+// zero is a perfectly good answer that means "skip the AI pointers". There are
+// two clocks, because there are two ways to stall — the file never opening at
+// all, and one individual seek never completing on a variable-frame-rate clip.
+export async function extractFrames(file, count = 3, { totalMs = 10000, seekMs = 3500 } = {}) {
+  return new Promise((resolve) => {
     const video = document.createElement('video')
     video.preload = 'auto'
     video.muted = true
     video.playsInline = true
     const url = URL.createObjectURL(file)
-    video.src = url
     const frames = []
     let times = []
     let i = 0
-    const done = () => { URL.revokeObjectURL(url); resolve(frames) }
+    let settled = false
+    let seekTimer = null
+
+    const finish = () => {
+      if (settled) return // a timer and an event can both arrive
+      settled = true
+      clearTimeout(totalTimer)
+      clearTimeout(seekTimer)
+      video.onloadedmetadata = video.onseeked = video.onerror = null
+      URL.revokeObjectURL(url)
+      // Drop the decoder's buffers rather than leaving a hidden element holding
+      // a whole video in memory, which on iOS is enough to lose the tab.
+      try { video.removeAttribute('src'); video.load() } catch { /* ignore */ }
+      resolve(frames)
+    }
+    const totalTimer = setTimeout(finish, totalMs)
+
     const seekNext = () => {
-      if (i >= times.length) return done()
-      try { video.currentTime = Math.min(times[i], (video.duration || 1) - 0.05) } catch { done() }
+      if (i >= times.length) return finish()
+      clearTimeout(seekTimer)
+      seekTimer = setTimeout(finish, seekMs)
+      try { video.currentTime = Math.min(times[i], (video.duration || 1) - 0.05) } catch { finish() }
     }
     video.onloadedmetadata = () => {
       const dur = video.duration && isFinite(video.duration) ? video.duration : 1
@@ -107,6 +152,7 @@ export async function extractFrames(file, count = 3) {
       seekNext()
     }
     video.onseeked = () => {
+      clearTimeout(seekTimer)
       const w = video.videoWidth || 640
       const h = video.videoHeight || 360
       const scale = Math.min(1, 640 / w)
@@ -116,10 +162,12 @@ export async function extractFrames(file, count = 3) {
       canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
       const b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
       if (b64) frames.push(b64)
+      canvas.width = canvas.height = 0
       i++
       seekNext()
     }
-    video.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read the video.')) }
+    video.onerror = finish
+    video.src = url // last, so no event can fire before its handler exists
   })
 }
 

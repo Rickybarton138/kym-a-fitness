@@ -3696,6 +3696,10 @@ function UsedRecords({ used }) {
   )
 }
 
+// 80MB: comfortably a minute of 1080p, well inside the form-videos bucket's
+// own 300MB ceiling, and small enough to actually finish on gym wifi.
+const FORM_CLIP_MAX_BYTES = 80 * 1024 * 1024
+
 function FormCheck({ clientId, coachName, onBack }) {
   const coachFirst = coachName?.split(' ')[0] || 'your coach'
   const [exercise, setExercise] = useState('')
@@ -3713,9 +3717,24 @@ function FormCheck({ clientId, coachName, onBack }) {
 
   async function onPick(e) {
     const file = e.target.files?.[0]
+    // Clear it straight away, or picking the same file twice running fires no
+    // change event and the button looks dead.
+    e.target.value = ''
     if (!file) return
     setError('')
     setPreview('')
+
+    // A modern phone shoots ~350MB a minute at 4K60. The bucket's own ceiling
+    // is 300MB, so a long clip either crawls for ten minutes on mobile data or
+    // is rejected after uploading the lot — both of which look exactly like
+    // "it just hangs". Say so up front instead, while they are still standing
+    // in the gym and can film a shorter set.
+    if (file.size > FORM_CLIP_MAX_BYTES) {
+      setError(`That clip is ${Math.round(file.size / 1048576)}MB, which is too big to upload reliably. Film just a few reps, or record at a lower quality in your camera settings.`)
+      setState('error')
+      return
+    }
+
     try {
       setState('analysing')
       const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
@@ -3725,23 +3744,39 @@ function FormCheck({ clientId, coachName, onBack }) {
       // pointers (what the client is waiting for) don't sit behind the upload.
       const uploadPromise = supabase.storage.from('form-videos').upload(path, file, { contentType: file.type || 'video/mp4', upsert: false })
 
-      let ai_feedback = null
-      try {
+      // The AI pointers are a BONUS and must never gate the save. Paul reported
+      // this screen stuck on "Checking your form…" with nothing reaching the
+      // coach: the frame extraction could hang forever (fixed in lib.js), and
+      // because the insert sat behind it, the clip was never recorded either.
+      // So it runs alongside, and the row is written the moment the upload
+      // lands — with the feedback patched in afterwards if it arrives.
+      const aiPromise = (async () => {
         // A video → pull a few frames; a photo → use the photo itself as one frame.
         const frames = file.type.startsWith('image/') ? [await scaleImageToBase64(file, 800)] : await extractFrames(file, 3)
-        if (frames.length) {
-          const { feedback } = await analyze({ mode: 'form', exercise: exercise.trim(), frames })
-          ai_feedback = feedback
-          if (feedback) setPreview(feedback) // show pointers instantly, upload keeps running
-        }
-      } catch { /* AI is best-effort — Kim still reviews */ }
+        if (!frames.length) return null
+        const { feedback } = await analyze({ mode: 'form', exercise: exercise.trim(), frames })
+        return feedback || null
+      })().then((fb) => {
+        if (fb) setPreview(fb) // show pointers as soon as they land
+        return fb
+      }).catch(() => null) // AI is best-effort — the coach still reviews
 
       const up = await uploadPromise
       if (up.error) throw new Error(up.error.message)
-      const { data } = await supabase.from('form_checks').insert({ client_id: clientId, storage_path: path, exercise: exercise.trim() || null, ai_feedback }).select().single()
+      const { data } = await supabase.from('form_checks').insert({ client_id: clientId, storage_path: path, exercise: exercise.trim() || null, ai_feedback: null }).select().single()
       if (data) setChecks((c) => [data, ...c])
       setExercise('')
       setState('done')
+
+      // Patch the pointers in when they arrive. The clip is already safely with
+      // the coach by this point, so a failure here costs the AI note and
+      // nothing else.
+      aiPromise.then(async (fb) => {
+        if (!fb || !data) return
+        await supabase.from('form_checks').update({ ai_feedback: fb }).eq('id', data.id)
+        setChecks((c) => c.map((x) => (x.id === data.id ? { ...x, ai_feedback: fb } : x)))
+      })
+
       setTimeout(() => { setState('idle'); setPreview('') }, 4000)
     } catch (err) {
       setError(err.message)
@@ -3758,7 +3793,11 @@ function FormCheck({ clientId, coachName, onBack }) {
       <label className="field">Which exercise?<input value={exercise} onChange={(e) => setExercise(e.target.value)} placeholder="e.g. Back squat" /></label>
       <input ref={inputRef} type="file" accept="video/*,image/*" hidden onChange={onPick} />
       {state === 'idle' && <button className="btn primary big" onClick={() => inputRef.current?.click()}>Upload a video or photo</button>}
-      {state === 'analysing' && !preview && <Loader text="Checking your form…" />}
+      {/* "Uploading", not "Checking": once the AI step stopped gating the save,
+          the thing actually being waited on here is the clip going up. Naming
+          the right one is the difference between a slow upload and an app that
+          looks broken. */}
+      {state === 'analysing' && !preview && <Loader text="Uploading your clip…" />}
       {preview && <div className="card"><div className="fc-block"><b>Instant AI pointers</b><p>{preview}</p></div>{state === 'analysing' && <p className="disclaimer-note">Saving your clip for {coachFirst}…</p>}</div>}
       {state === 'done' && <p className="logged-ok">Sent to {coachFirst} ✓</p>}
       {state === 'error' && <div className="stack"><p className="error">{error}</p><button className="btn ghost" onClick={() => inputRef.current?.click()}>Try again</button></div>}
@@ -4386,7 +4425,7 @@ function CalcTargets({ profile, onSaveTargets, onBack }) {
 //
 // Health conditions + life circumstances were Paul's ask. Same fields captured
 // at onboarding, editable any time. They feed AI tone only — see healthLine()
-// in analyse.mjs — and never change calorie/macro maths.
+// in the AI proxy function — and never change calorie/macro maths.
 function HealthDetails({ profile, coachName, avatarPath, onAvatarChanged, onNameChanged, onBack, onSaved }) {
   const [nutritionSensitive, setNutritionSensitive] = useState(!!profile.nutrition_sensitive)
   const [nutritionSensitiveNote, setNutritionSensitiveNote] = useState(profile.nutrition_sensitive_note || '')
