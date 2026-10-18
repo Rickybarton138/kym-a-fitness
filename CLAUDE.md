@@ -36,7 +36,10 @@
   `netlify env:set` and `--site` are NOT reliable here — this folder is linked to
   Kim's site and the flag was ignored, which set Kim's BRAND to another brand.
   Use `deleteEnvVar` + `createEnvVars` through `netlify api` with an explicit
-  `site_id`, and read it back afterwards.
+  `site_id`, and read it back afterwards. The payload key is **`body`** (an
+  array), not `env_vars` — the wrong key gets `JSONHTTPError: Bad Request` and
+  no other explanation. Copy the working command from
+  `tasks/hardening-pass-1.md`.
 - **`npm run build:paul`** (or `build:kim` / `build:pph` / `build:elev8` / `build:ricky`) — build
   with the per-brand script before deploying. `npx vite build` skips
   `scripts/brand-html.mjs`, and plain `npm run build` defaults to BRAND=kim, so

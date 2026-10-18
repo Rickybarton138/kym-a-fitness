@@ -128,8 +128,17 @@ deploy for that site. The brands and their site ids:
 1. **Set the variable BEFORE the deploy**, through `netlify api` with an
    explicit `site_id`, and read it back:
 
-       npx netlify api createEnvVars --data '{"account_id":"698094fd72d00ee4b3786542","site_id":"<id>","env_vars":[{"key":"AI_AUTH","scopes":["functions"],"values":[{"context":"all","value":"observe"}]}]}'
+       npx netlify api createEnvVars --data '{"account_id":"698094fd72d00ee4b3786542","site_id":"<id>","body":[{"key":"AI_AUTH","scopes":["builds","functions","post_processing","runtime"],"values":[{"context":"all","value":"observe"}]}]}'
        npx netlify api getEnvVars --data '{"account_id":"698094fd72d00ee4b3786542","site_id":"<id>"}'
+
+   The payload key is **`body`**, not `env_vars`. This document said `env_vars`
+   until 18 Oct 2026, when the command was run against Paul's site for the first
+   time and the API answered `JSONHTTPError: Bad Request` with nothing else. The
+   CLI passes an operation's request body under `body`, and anything else is
+   simply dropped, so the call is well-formed JSON describing no env var at all.
+   Give the full four scopes too: every other variable on these sites carries
+   `builds, functions, post_processing, runtime`, and `["functions"]` alone was
+   the other half of the guess.
 
    NOT `netlify env:set --site`. That flag was ignored once and set Kim's BRAND
    to another brand's value — see CLAUDE.md. Use `deleteEnvVar` +
