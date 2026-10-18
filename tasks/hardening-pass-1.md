@@ -276,8 +276,32 @@ true, and the observe window has now begun for one brand.
 |---|---|---|---|---|
 | ricky (Rick.Fit) | `8c3924ca-1d69-46ad-b211-c10229216882` | `6ad40a66f063ce971a670a97` | unset (enforcing) | draft, tested, awaiting promote |
 | paul (ReDefine) | `bda91296-2224-4923-b91c-d6482971eab1` | `6ad4963b9d59fd9abf919820` | `observe`, all four scopes | draft, tested, awaiting promote |
+| pph (PPH) | `5e998585-cfd2-4e16-a272-b5ceac659c95` | `6ad40b1c3492a7843a2349ba` | unset (enforcing) | **PROMOTED 18 Oct 00:57** |
+| elev8 (Elev8u) | `a7852fc7-7d64-429c-a9d5-041084399b9d` | `6ad40bf52053c7efb7468f8a` | unset (enforcing) | **PROMOTED 18 Oct 11:31** |
 
-Both drafts are built from the code at `fbb072c` — `0fbb9ef` landed afterwards
+**PPH and Elev8 went straight to enforce, with no observe window, and that was
+a deliberate exception to step 1 above.** The window exists to protect clients
+whose installed PWA has not reloaded. A session-by-session check of
+`auth.sessions` on 18 Oct showed these two brands have no such clients, and no
+clients at all: every account on them is seeded, every sign-in is either `node`
+or HeadlessChrome, and the only real browser session on either was Ricky's own
+desktop demoing Elev8 on 30 Jul. Jordan has never opened PPH in a browser. With
+nobody to lock out, an observe window would have bought nothing and left the
+endpoints open for the length of it. The method is worth keeping: **row counts
+cannot tell seeded data from use** — the seed rows share identical microsecond
+timestamps across different "clients" — so the question was settled on session
+user agents and IPs instead. Full findings in `PROGRESS.md`, 18 Oct.
+
+Both of these were verified after promotion, not only on the draft:
+`node tasks/e2e_auth_refusals.mjs` against each live site → **60 pass / 0 fail**.
+
+Still open after today, on the shared Anthropic key: **kim** (15 Sept deploy,
+pre-auth code) and **paul** (14 Oct, `dd54cac`). `redefine-academy-coaching` and
+`elev8-landing` carry no functions at all, so there is nothing to close on
+either. Until Kim and Paul enforce, the credit-spend hole is still reachable
+through them, exactly as the "What is NOT closed" section says.
+
+Both Rick.Fit and Paul drafts are built from the code at `fbb072c` — `0fbb9ef` landed afterwards
 and changes only these notes. Both carry the form-checker fix (the clip saves
 even when the AI step stalls, and a failed insert now throws) and the account
 screen.
