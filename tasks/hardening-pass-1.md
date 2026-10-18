@@ -266,3 +266,39 @@ So the order of value is now: the **ceiling** is what bounds per-account
 spend; enforcement is what makes the ceiling attachable. That is an argument for
 getting Phase 1 onto the four brands reasonably soon, not for treating
 enforcement as the finish line.
+
+## Deploy state as of 18 Oct 2026 — this supersedes the 14 Oct section above
+
+The 14 Oct section says `AI_AUTH` was not set on any site. That is no longer
+true, and the observe window has now begun for one brand.
+
+| Brand | Site id | Draft | AI_AUTH | State |
+|---|---|---|---|---|
+| ricky (Rick.Fit) | `8c3924ca-1d69-46ad-b211-c10229216882` | `6ad40a66f063ce971a670a97` | unset (enforcing) | draft, tested, awaiting promote |
+| paul (ReDefine) | `bda91296-2224-4923-b91c-d6482971eab1` | `6ad4963b9d59fd9abf919820` | `observe`, all four scopes | draft, tested, awaiting promote |
+
+Both drafts are built from the code at `fbb072c` — `0fbb9ef` landed afterwards
+and changes only these notes. Both carry the form-checker fix (the clip saves
+even when the AI step stalls, and a failed insert now throws) and the account
+screen.
+
+Pass conditions met on the drafts:
+
+- Rick.Fit: `node tasks/e2e_auth_refusals.mjs https://6ad40a66f063ce971a670a97--rick-fit.netlify.app`
+  → **60 pass / 0 fail**. Enforcing, as this brand already was.
+- Paul: same script against `https://6ad4963b9d59fd9abf919820--redefine-academy.netlify.app`
+  → **STILL OPEN on all ten**, which is the pass condition for observe, not a
+  regression. Brand stamp checked on both drafts (`Rick.Fit`, `ReDefine
+  Academy`) before either was handed over.
+
+**The observe window for Paul starts when his draft is promoted**, not now — a
+draft's functions are not what his clients call. Step 5 above (watch for
+`ai-auth observe: anonymous call allowed` to stop appearing) is measured from
+the promote. Step 6, enforcing, is then `deleteEnvVar` for `AI_AUTH` plus a
+redeploy with `--skip-functions-cache`.
+
+Two dead deploys on Paul's site from this session, both harmless and neither
+promoted: `6ad40be8700f9d10cd77e82f` errored as "Deploy canceled" for a reason
+that was never established, and `6ad40c36f7620ef32e6ed864` stalled at "CDN
+diffing files" when the machine idled overnight and was cancelled by hand before
+the retry. Production stayed on `6acff9eb4c7a993adc4d6cf7` throughout.
