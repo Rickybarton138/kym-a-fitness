@@ -1156,3 +1156,26 @@ run in production. `select count(*)` on the table the feature writes answers it
 in one query. If the answer is zero, everything after the bug is unproven, and
 the bug was probably masking a second one — here, an insert that ignored its
 `error` and would have shown "Sent ✓" while sending nothing.
+
+## Never write "it is live" into a message while the promote is still Ricky's to run (19 Oct 2026)
+
+`tasks/paul-message-2026-10-19.md` said "It is live now." It was not. The
+promote of Paul's draft `6ad4963b9d59fd9abf919820` goes through
+`netlify api restoreSiteDeploy`, which Ricky has to run himself with `!`
+because the permission classifier blocks it here — so the sentence described
+something only he could make true, and he had not done it yet. Paul tested at
+16:19, got the same hang, and reported it as the fix having failed.
+
+It cost a round trip with the customer and, worse, it spent credibility: the
+second "found it, fixed" in a week, on a build that was still the 14 Oct one
+(`index-CoDMx1y9.js` published, `index-CBnSBWGK.js` sitting in the draft).
+
+The proof was one query. A clip at `2026-10-19 15:19:59+00` in `form-videos`
+with no `form_checks` row — the exact old-code signature, an upload that
+succeeded and then hung before the insert. New code cannot produce that.
+
+**How to apply:** any copy-paste message that claims a deploy state gets a
+`DO NOT SEND` header naming the command that has to run first. Write the live
+wording only after `getSite` shows the expected `published_deploy.id` and the
+apex serves the expected bundle hash. "Tested and ready" is honest before a
+promote; "live" is not.
