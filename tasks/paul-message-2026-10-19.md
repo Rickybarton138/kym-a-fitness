@@ -1,7 +1,9 @@
 # Reply to Paul — 19 Oct 2026
 
 Covers his two questions: Alanna's check-in (still open, narrowed) and the form
-checker (fixed, tested, awaiting the promote). Deliberately does NOT say "found
+checker. Ricky chose to promote straight to Paul rather than rehearse on his own
+phone first, so this says it is live and asks Paul to verify on his test
+account. Deliberately does NOT say "found
 it" about Alanna — tasks/paul-message-2026-10-12.md said that once already and
 she still cannot submit.
 
@@ -20,17 +22,20 @@ you. The upload and the AI pointers are now separate: the clip saves and comes
 through to you either way, and if anything does go wrong you get a clear message
 instead of a spinner.
 
-It is built and tested. It goes live as soon as Ricky has run one last check on
-his own phone, which should be today.
+It is live now.
 
 One piece of good news - the four clips you sent on Tuesday night were never
 lost. They were sitting in storage with no record attached to them, and they are
 now in your review queue. Two of the four are the same clip sent twice, which
 was the hang making you retry, so ignore whichever you like.
 
-When it does go live, please close the app down fully and reopen it. An app that
-has only been minimised keeps running the old version, and the problem would
-look like it was still there.
+Before you try it, please close the app down fully and reopen it - swipe it away
+rather than just minimising it. An app that has only been minimised keeps
+running the old version, and the problem would look like it was still there.
+
+Would you give it one go on your test account and tell me how it goes? If
+anything is still not right I would rather hear it from you than have your
+clients find it.
 
 **Alanna's check-in**
 
