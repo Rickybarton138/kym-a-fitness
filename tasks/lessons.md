@@ -1179,3 +1179,26 @@ succeeded and then hung before the insert. New code cannot produce that.
 wording only after `getSite` shows the expected `published_deploy.id` and the
 apex serves the expected bundle hash. "Tested and ready" is honest before a
 promote; "live" is not.
+
+### The file header was not enough (same day, second time)
+
+The DO NOT SEND header went in the file; the block pasted into chat started at
+"Hi Paul". Ricky copied the chat block, as he always does and as the global
+CLAUDE.md tells me to provide, and Paul was told a second time that it was live
+and "checked properly this time". It still was not. Published was still
+`6acff9eb` and a clip landed orphaned at 18:38.
+
+**The rule is not "add a header".** It is: do not hand Ricky any text that
+asserts a deploy state until I have verified that state myself. Before the
+promote, the pasteable message says "tested and ready, Ricky is putting it live
+now". The live wording gets written in a later turn, after `getSite` and the
+apex bundle agree.
+
+### And the verification signal was ruined by the fix for the first mistake
+
+I backfilled the orphans twice, so `form_checks` went 9 -> 10 -> 11 by my own
+hand. "The count goes up by one" therefore proves nothing about Paul's next
+test. The new-code signature is a row that appears **with `exercise` non-null**,
+because the backfill always writes null. Do not backfill again until the next
+real test has been read. A repair that writes to the same table being used as
+evidence destroys the evidence.
