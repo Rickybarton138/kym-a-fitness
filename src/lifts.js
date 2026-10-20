@@ -106,5 +106,27 @@ export function lastSetsByName(plans) {
   }
   collect(true)   // sessions we know were done
   collect(false)  // then older history, which predates the marker
+
+  // Rick, 20 Oct: show the best weight ever lifted alongside last time. Same
+  // trust rule as above: completed sessions count; an unmarked session counts
+  // only if it is older than the first completed one (i.e. it predates the
+  // marker), so a coach's unperformed prescription can't pose as a PB.
+  const firstDone = list.filter((p) => p.completed_at).map((p) => p.created_at || '').sort()[0]
+  for (const p of list) {
+    if (!p.completed_at && firstDone && (p.created_at || '') >= firstDone) continue
+    for (const ex of p.exercises || []) {
+      const key = (ex.name || '').trim().toLowerCase()
+      if (!key || !map[key]) continue
+      for (const s of loggedSets(ex)) {
+        const w = parseWeight(s.weight)
+        if (w == null || w <= 0) continue
+        const reps = parseInt(String(s.reps ?? ''), 10) || 0
+        const cur = map[key].best
+        if (!cur || w > cur.weight || (w === cur.weight && reps > cur.reps)) {
+          map[key].best = { weight: w, reps, date: p.completed_at || p.created_at || null }
+        }
+      }
+    }
+  }
   return map
 }

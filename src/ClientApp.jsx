@@ -14,7 +14,7 @@ import { NUTRITION_KB, NUTRITION_AREAS } from './nutritionExpert.js'
 import { WELLNESS, readinessScore, readinessLight, loadMetrics, acwrFlag, combinedReadiness } from './monitoring.js'
 import { ageYears, maturityOffset, maturityPhase, growthVelocity, growthGuidance } from './growth.js'
 import { pushSupported, pushStatus, enablePush, disablePush, sendTestPush, isIOS, isStandalone } from './push.js'
-import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel, lastTimeLabel, useWorkoutDraft } from './WorkoutRows.jsx'
+import { ExerciseRowsEditor, newExerciseRow, rowsToExercises, planToRows, setTypeLabel, LastAndBest, useWorkoutDraft } from './WorkoutRows.jsx'
 import { lastSetsByName } from './lifts.js'
 import { ParqSection } from './Parq.jsx'
 import { latestParq } from './parq.js'
@@ -3068,11 +3068,7 @@ function GuidedWorkout({ plan, clientId, onDone, onFinishedToday, onExit, lastBy
               {(ex.set_type && ex.set_type !== 'straight') && <span className="settype-chip">{ex.set_type === 'superset' && ex.group ? 'Superset ' + ex.group : setTypeLabel(ex.set_type)}</span>}
               {ex.rpe && <span className="settype-chip rpe">RPE {ex.rpe}</span>}
             </div>
-            {(() => {
-              const last = lastByName?.[(ex.name || '').trim().toLowerCase()]
-              const label = last && lastTimeLabel(last)
-              return label ? <p className="muted-note gw-last-time">{label}</p> : null
-            })()}
+            <LastAndBest className="gw-last-time" last={lastByName?.[(ex.name || '').trim().toLowerCase()]} />
             {embed && <div className="video-embed"><iframe src={embed} title={ex.name} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen /></div>}
             <div className="gw-sets">
               {ex.sets.map((s, si) => (

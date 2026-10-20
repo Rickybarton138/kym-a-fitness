@@ -903,3 +903,6 @@ html.brand-ricky .btn.primary { box-shadow: 0 0 18px rgba(46, 232, 92, .28); }
    the picture, so the circle needs a positioned wrapper now that the picture is
    an <img> filling it rather than a letter. */
 .avatar-wrap { position: relative; display: grid; place-items: center; flex: 0 0 40px; }
+
+/* Last time + best lift under each exercise (Rick, 20 Oct) */
+.last-best .best-line { margin-top: 2px; color: var(--accent, inherit); font-weight: 600; }

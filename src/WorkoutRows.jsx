@@ -85,6 +85,27 @@ export function lastTimeLabel(last) {
   return `Last time${when ? ` (${when})` : ''}: ${sets}`
 }
 
+// Heaviest set ever logged for one exercise — e.g. "Best: 6×75kg (3 Oct)".
+export function bestLabel(last) {
+  const b = last?.best
+  if (!b) return ''
+  const when = b.date ? new Date(b.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''
+  return `Best: ${b.reps ? `${b.reps}×` : ''}${b.weight}kg${when ? ` (${when})` : ''}`
+}
+
+// Last time + best, stacked under the exercise name.
+export function LastAndBest({ last, className }) {
+  const l = last && lastTimeLabel(last)
+  const b = last && bestLabel(last)
+  if (!l && !b) return null
+  return (
+    <div className={'muted-note last-best ' + (className || '')}>
+      {l && <div>{l}</div>}
+      {b && <div className="best-line">{b}</div>}
+    </div>
+  )
+}
+
 // Shared exercise editor: pick an exercise, then log each set's reps and weight
 // (different per set). Used by the client's "Build your own" and the coach's
 // "Assign a workout" / squad builders. `lastByName` (optional) maps a lowercased
@@ -196,11 +217,7 @@ export function ExerciseRowsEditor({ rows, setRows, lastByName, coachId, contrib
                 value={r.rpe || ''} onChange={(e) => update(i, 'rpe', e.target.value)} />
             </div>
             {(r.set_type && r.set_type !== 'straight') && <p className="muted-note ex-settype-note">{setTypeNote(r.set_type)}</p>}
-            {(() => {
-              const last = lastByName?.[(r.name || '').trim().toLowerCase()]
-              const label = last && lastTimeLabel(last)
-              return label ? <p className="muted-note ex-last-time">{label}</p> : null
-            })()}
+            <LastAndBest className="ex-last-time" last={lastByName?.[(r.name || '').trim().toLowerCase()]} />
 
             <div className={'set-grid' + (r.set_type === 'dropset' ? ' with-drops' : '')}>
               <div className="set-head">
