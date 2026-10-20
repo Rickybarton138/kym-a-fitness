@@ -1202,3 +1202,30 @@ test. The new-code signature is a row that appears **with `exercise` non-null**,
 because the backfill always writes null. Do not backfill again until the next
 real test has been read. A repair that writes to the same table being used as
 evidence destroys the evidence.
+
+## A table the UI writes to is not a table the AI reads
+
+19 Oct 2026. I offered to record Ricky's wrist and knees "so everything the app
+generates for you respects them by default", and only then checked. The offer was
+wrong in two separate ways.
+
+`injuries` looks like the obvious home for it: proper columns, severity, a
+return-to-play ladder, screens in both apps. But `grep -rn injuries netlify/`
+returns nothing, and `coachContext.js` never mentions it. It is a UI-only table.
+`rehab` is also in `features` for pph alone, so on Rick.Fit the rows would have
+been invisible to the client as well as to the model. A row there would have
+asserted `availability='unavailable'` into the bargain.
+
+`profiles.health_conditions` is the field that travels, and even that only
+reaches `coach.mjs` (through `_context.mjs`) and the meal planner.
+`program-generate.mjs` and `exercise-swap.mjs` read neither field: the programme
+builder works entirely from its request body, so an injury reaches it only if the
+client happens to type it into the notes box, and the swap tool only learns about
+one if it is given as the swap reason. The two endpoints whose whole job is
+choosing exercises are the two that cannot see what to avoid.
+
+The tell: **storing a fact and the system acting on it are different claims, and
+only the second one is what the user asked for.** Before promising that something
+recorded will be honoured, grep for the column name across the server and count
+the endpoints that actually select it. A schema designed for a fact is not
+evidence that anything consumes it.
